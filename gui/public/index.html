@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Coretax Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand-sm">
+    <img class="brand-logo" src="/assets/djp-logo.png" width="30" height="28" alt="Logo DJP">
+    <span class="brand-word">Core<span class="accent">tax</span>&nbsp;Agent</span>
+    <span class="brand-tag">AGENT AUTOMATION</span>
+  </div>
+  <div class="topbar-right">
+    <button id="open-coretax-btn" class="btn btn-outline btn-sm" title="Buka jendela Coretax untuk login sendiri, tanpa otomasi">Login Coretax</button>
+    <button id="check-manual-btn" class="btn btn-ghost btn-sm" title="Cek apakah login manual sudah berhasil" style="display:none;">🔄 Cek Login</button>
+    <button id="settings-btn" class="btn btn-outline btn-sm" title="Kelola akun terhubung">⚙ Pengaturan</button>
+    <button id="quit-btn" class="btn btn-ghost btn-sm btn-danger">Keluar</button>
+  </div>
+</header>
+
+<div id="session-bar" class="session-bar" style="display:none;"></div>
+
+<div id="settings-overlay" class="overlay" style="display:none;">
+  <div class="overlay-card">
+    <div class="overlay-head">
+      <h2>Akun Terhubung</h2>
+      <button id="settings-close" class="btn btn-ghost btn-sm" aria-label="Tutup">✕</button>
+    </div>
+    <p class="overlay-sub">Hubungkan akun Taxio dan/atau Taxio.me untuk mengambil daftar entitas &amp; kredensial Coretax. Bisa keduanya sekaligus.</p>
+    <section id="connections-bar" class="connections-bar">
+      <!-- one card per project, rendered by app.js -->
+    </section>
+  </div>
+</div>
+
+<main id="main-layout" class="layout" style="display:none;">
+  <section class="panel entities-panel">
+    <div class="panel-head">
+      <h2>Entitas</h2>
+      <input type="search" id="entity-search" placeholder="Cari entitas...">
+    </div>
+    <div id="entity-list" class="entity-list"><div class="muted pad">Memuat...</div></div>
+  </section>
+
+  <section class="panel action-panel">
+    <div class="panel-head"><h2>Download</h2></div>
+    <div id="action-form" class="action-form">
+      <p class="muted pad" id="no-entity-hint">Pilih entitas di sebelah kiri terlebih dahulu.</p>
+      <div id="action-form-body" style="display:none;">
+        <div class="selected-entity" id="selected-entity-label"></div>
+
+        <button id="login-only-btn" class="btn btn-outline btn-block" title="Login &amp; impersonate entitas ini saja, tanpa mengisi form download - berguna untuk memastikan login berhasil dulu sebelum memutuskan mau download apa">🔓 Login Coretax Saja</button>
+
+        <div class="feature-tabs" id="feature-tabs">
+          <button type="button" class="feature-tab active" data-feature="ebupot">e-Bupot</button>
+          <button type="button" class="feature-tab" data-feature="spt">SPT</button>
+        </div>
+
+        <div id="feature-ebupot" class="feature-panel">
+          <label class="field-label">Jenis Bupot</label>
+          <select id="bupot-type">
+            <option value="bp21">BP21</option>
+            <option value="bppu">BPPU</option>
+            <option value="bpa1">BPA1</option>
+            <option value="bpmp">BPMP (Excel saja)</option>
+          </select>
+
+          <label class="field-label">Output</label>
+          <select id="output-mode">
+            <option value="pdf_excel" selected>PDF + Excel</option>
+            <option value="excel_only">Excel saja</option>
+          </select>
+
+          <label class="field-label">Masa (mis. 0126;0226 atau 0126-0526)</label>
+          <input type="text" id="masa-input" placeholder="0126-0526">
+
+          <div id="kode-objek-row">
+            <label class="field-label">Kode Objek Pajak (opsional, mis. 21-100-35;21-100-20)</label>
+            <input type="text" id="kode-objek-input" placeholder="kosongkan = semua kode">
+          </div>
+
+          <label class="field-label">Baris per Halaman</label>
+          <select id="page-size">
+            <option value="auto" selected>Auto (adaptif - ikut kecepatan web)</option>
+            <option value="100">100</option>
+            <option value="50">50</option>
+            <option value="25">25</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+
+        <div id="feature-spt" class="feature-panel" style="display:none;">
+          <label class="field-label">Jenis Pajak (bisa lebih dari 1)</label>
+          <div class="checkbox-row">
+            <label><input type="checkbox" class="spt-jenis" value="pph21" checked> PPh Pasal 21/26</label>
+            <label><input type="checkbox" class="spt-jenis" value="unifikasi"> PPh Unifikasi</label>
+            <label><input type="checkbox" class="spt-jenis" value="ppn"> PPN</label>
+          </div>
+
+          <label class="field-label">Masa (mis. 0126;0226 atau 0125-1225)</label>
+          <input type="text" id="spt-masa-input" placeholder="0125-1225">
+        </div>
+
+        <label class="field-label">Folder Simpan (opsional)</label>
+        <input type="text" id="save-root-input" placeholder="default: Downloads\CoretaxAgent">
+
+        <button id="start-download-btn" class="btn btn-primary btn-block">Mulai Download</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel log-panel">
+    <div class="panel-head">
+      <h2>Aktivitas</h2>
+      <div id="run-controls" class="run-controls" style="display:none;">
+        <span id="run-label" class="run-label"></span>
+        <span class="run-size" title="Paksa baris per halaman saat proses berjalan (override kalau web lambat)">Baris:
+          <button class="btn btn-ghost btn-xs" data-size="10">10</button>
+          <button class="btn btn-ghost btn-xs" data-size="25">25</button>
+          <button class="btn btn-ghost btn-xs" data-size="50">50</button>
+          <button class="btn btn-ghost btn-xs" data-size="100">100</button>
+        </span>
+        <button id="run-pause-btn" class="btn btn-ghost btn-sm" title="Jeda setelah baris saat ini">⏸ Jeda</button>
+        <button id="run-back-btn" class="btn btn-ghost btn-sm" title="Kembali ke kombinasi (masa/kode) sebelumnya">⏮ Mundur</button>
+        <button id="run-retry-btn" class="btn btn-ghost btn-sm" title="Ulang kombinasi saat ini dari awal (file yang sudah ada dilewati)">🔁 Ulang</button>
+        <button id="run-skip-btn" class="btn btn-ghost btn-sm" title="Lewati kombinasi saat ini, lanjut ke berikutnya">⏭ Lewati</button>
+        <button id="run-stop-btn" class="btn btn-ghost btn-sm btn-danger" title="Hentikan seluruh proses">⏹ Stop</button>
+      </div>
+    </div>
+    <div id="log-view" class="log-view"></div>
+  </section>
+</main>
+
+<div id="empty-hint" class="empty-hint">
+  <img class="brand-mark" src="/assets/djp-logo.png" alt="Logo DJP">
+  <strong>Belum ada akun terhubung</strong>
+  Hubungkan akun Taxio atau Taxio.me untuk mulai.
+  <button id="empty-settings-btn" class="btn btn-primary" style="margin-top:14px;">⚙ Buka Pengaturan</button>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
