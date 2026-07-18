@@ -1,0 +1,35 @@
+{
+  "name": "coretax-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone desktop app for Coretax automation - connects directly to your Taxio/Taxio.me account (email+password) and drives Coretax DJP via Playwright, controlled through a local GUI dashboard instead of a console.",
+  "main": "main.js",
+  "bin": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "build": "pkg .",
+    "postbuild": "node scripts/hide-console.js"
+  },
+  "pkg": {
+    "scripts": [
+      "main.js"
+    ],
+    "assets": [
+      "node_modules/playwright-core/**/*",
+      "node_modules/playwright/**/*",
+      "gui/public/**/*"
+    ],
+    "targets": [
+      "node22-win-x64"
+    ],
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "exceljs": "^4.4.0",
+    "playwright": "^1.47.0"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.21.0"
+  }
+}
