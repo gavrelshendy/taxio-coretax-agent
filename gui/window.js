@@ -24,7 +24,7 @@ function openWindow(url) {
     const browser = findBrowser();
     if (!browser) {
         log('Chrome/Edge tidak ditemukan - membuka dashboard di browser default.');
-        exec('start "" "' + url + '"');
+        exec('start "" "' + url + '"', { windowsHide: true });
         return;
     }
     windowProcess = spawn(browser, ['--app=' + url, '--window-size=1280,860'], { detached: true, stdio: 'ignore' });

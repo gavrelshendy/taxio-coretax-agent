@@ -23,6 +23,7 @@ const os = require('os');
 const fs = require('fs');
 const { log, showPopup } = require('../lib/log');
 const chrome = require('../lib/chrome');
+const loginStatus = require('../lib/login-status');
 const entitiesLib = require('../lib/entities');
 const { masaToIndoLabel, parseMasaListInput } = require('../lib/masa');
 const runcontrol = require('../lib/runcontrol');
@@ -69,10 +70,18 @@ async function setJenisPajakFilters(page, checkboxLabels) {
     const cell = await filterCellForHeader(page, 'Jenis Pajak');
     const clearBtn = cell.locator('.p-multiselect-clear-icon, .p-column-filter-clear-button, [aria-label="Clear"]').first();
     if (await clearBtn.isVisible({ timeout: 500 }).catch(() => false)) await clearBtn.click({ timeout: 2000 }).catch(() => {});
-    await cell.locator('.p-multiselect').click({ timeout: 2000 }).catch(() => {});
+    const multiselect = cell.locator('.p-multiselect');
+    const panel = page.locator('.p-multiselect-panel');
     const searchInput = page.locator('.p-multiselect-panel input[type="text"], .p-multiselect-filter-container input').first();
-    const hasSearch = await searchInput.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
     for (const label of checkboxLabels) {
+        // Re-check (and re-open if needed) EVERY iteration, not just once before the loop -
+        // CONFIRMED the actual cause of a "2nd label search timeout": selecting the first item
+        // can close this multiselect panel, and a stale `hasSearch`/panel-open flag computed only
+        // once made the loop blindly retry .fill() against a now-invisible input, hanging until
+        // timeout instead of just reopening the panel for the next label.
+        const panelOpen = await panel.isVisible().catch(() => false);
+        if (!panelOpen) await multiselect.click({ timeout: 2000 }).catch(() => {});
+        const hasSearch = await searchInput.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
         if (hasSearch) {
             await searchInput.fill(label).catch(() => {});
             await page.waitForTimeout(500);
@@ -147,7 +156,7 @@ async function downloadBpe(row, targetPath, page, emit) {
     const btn = row.locator('#ViewReceiptButton');
     const visible = await btn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
     if (!visible) { emit('Tombol "View Receipt" tidak ditemukan di baris ini - BPE dilewati.'); return false; }
-    await btn.evaluate(el => el.click()).catch(() => btn.click({ timeout: 3000, force: true }).catch(() => {}));
+    await btn.dispatchEvent('click').catch(() => btn.click({ timeout: 3000, force: true }).catch(() => {}));
     const iframe = page.locator('iframe[title="View Receipt"]').first();
     const iframeVisible = await iframe.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
     let ok = false;
@@ -321,6 +330,9 @@ async function runSptDownload(opts) {
             ? await chrome.getManualStatus().then((s) => s.identity).catch(() => '')
             : (entity.npwp ? entity.npwp + ' · ' : '') + entity.entity_name;
         runcontrol.setCoretaxAs(coretaxAs || entity.entity_name);
+        // Also feeds lib/login-status.js so the "Login as" chip stays visible after this run
+        // finishes (runcontrol's own coretaxAs is cleared then) - per explicit user direction.
+        if (!manual) loginStatus.set(picId, entity);
     } catch (e) {}
 
     async function openSptAndPrep() {
