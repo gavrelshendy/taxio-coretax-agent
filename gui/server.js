@@ -21,6 +21,7 @@ const loginStatus = require('../lib/login-status');
 const { runEbupotDownload } = require('../automation/ebupot');
 const { runLoginOnly } = require('../automation/login');
 const { runSptDownload } = require('../automation/spt');
+const { runDividenImport, runDividenCheck, openNewCase } = require('../automation/dividen');
 const deeplink = require('../lib/deeplink');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -213,6 +214,85 @@ async function handleDownloadSpt(req, res) {
     }
 }
 
+/** Reads a JSON body with a larger cap than readJsonBody's 1MB - the Dividen import posts the
+ *  whole .xlsx as base64, which (with 514-city + 122-form reference sheets) can run a few hundred
+ *  KB; 20MB is a comfortable ceiling that still guards against runaway uploads. */
+function readLargeJsonBody(req, maxBytes) {
+    return new Promise((resolve, reject) => {
+        let data = ''; const cap = maxBytes || 20 * 1024 * 1024;
+        req.on('data', (c) => { data += c; if (data.length > cap) { req.destroy(); reject(new Error('File terlalu besar.')); } });
+        req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
+        req.on('error', reject);
+    });
+}
+
+async function handleImportDividen(req, res) {
+    let body;
+    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
+    const { fileBase64 } = body || {};
+    if (!fileBase64) return sendJson(res, 400, { error: 'File template belum dipilih.' });
+
+    const manualPage = chrome.getManualPage();
+    if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu, lalu buka kasus e-Reporting.' });
+
+    let fileBuffer;
+    try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
+
+    try { runcontrol.start('Impor Dividen · Sesi Manual'); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true });
+    try {
+        await runDividenImport({ manualPage, fileBuffer });
+    } catch (e) {
+        if (e && e.validation) { /* already logged the per-row problems */ }
+        else if (e && e.isStop) log('Impor dihentikan oleh pengguna.');
+        else log('Gagal impor Dividen: ' + e.message);
+    } finally {
+        runcontrol.finish();
+    }
+}
+
+async function handleCheckDividen(req, res) {
+    let body;
+    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
+    const { fileBase64 } = body || {};
+    if (!fileBase64) return sendJson(res, 400, { error: 'File pembanding belum dipilih.' });
+
+    const manualPage = chrome.getManualPage();
+    if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu, lalu buka kasus e-Reporting.' });
+
+    let fileBuffer;
+    try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
+
+    try { runcontrol.start('Cek Hasil Dividen · Sesi Manual'); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true });
+    try {
+        await runDividenCheck({ manualPage, fileBuffer });
+    } catch (e) {
+        if (e && e.isStop) log('Cek Hasil dihentikan oleh pengguna.');
+        else log('Gagal Cek Hasil: ' + e.message);
+    } finally {
+        runcontrol.finish();
+    }
+}
+
+async function handleCreateDividenCase(req, res) {
+    const manualPage = chrome.getManualPage();
+    if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu.' });
+
+    try { runcontrol.start('Buat Kasus Dividen · Sesi Manual'); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true });
+    try {
+        await openNewCase(manualPage);
+    } catch (e) {
+        log('Gagal membuat kasus baru: ' + e.message);
+    } finally {
+        runcontrol.finish();
+    }
+}
+
 async function handleLoginEntity(req, res) {
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
@@ -291,6 +371,9 @@ function createGuiServer(port) {
             if (pathname === '/api/entities' && req.method === 'GET') return handleEntities(req, res);
             if (pathname === '/api/actions/download-ebupot' && req.method === 'POST') return handleDownloadEbupot(req, res);
             if (pathname === '/api/actions/download-spt' && req.method === 'POST') return handleDownloadSpt(req, res);
+            if (pathname === '/api/actions/import-dividen' && req.method === 'POST') return handleImportDividen(req, res);
+            if (pathname === '/api/actions/check-dividen' && req.method === 'POST') return handleCheckDividen(req, res);
+            if (pathname === '/api/actions/create-dividen-case' && req.method === 'POST') return handleCreateDividenCase(req, res);
             if (pathname === '/api/actions/login-entity' && req.method === 'POST') return handleLoginEntity(req, res);
             if (pathname === '/api/login/status' && req.method === 'GET') return sendJson(res, 200, loginStatus.get() || { at: 0 });
             if (pathname === '/api/actions/open-coretax' && req.method === 'POST') return handleOpenCoretaxManual(req, res);

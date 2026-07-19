@@ -250,7 +250,7 @@
     else { outSel.disabled = false; }
   }
 
-  // ---------- Feature tabs (e-Bupot / SPT) ----------
+  // ---------- Feature tabs (e-Bupot / SPT / Dividen) ----------
   let activeFeature = 'ebupot';
   $('feature-tabs').querySelectorAll('.feature-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -258,7 +258,71 @@
       $('feature-tabs').querySelectorAll('.feature-tab').forEach((b) => b.classList.toggle('active', b === btn));
       $('feature-ebupot').style.display = activeFeature === 'ebupot' ? 'block' : 'none';
       $('feature-spt').style.display = activeFeature === 'spt' ? 'block' : 'none';
+      $('feature-dividen').style.display = activeFeature === 'dividen' ? 'block' : 'none';
+      // Dividen has its own Import button + reads the live Coretax window (not a saved-to-disk
+      // download), so the shared Download fields/button are irrelevant for it.
+      $('dl-fields').style.display = activeFeature === 'dividen' ? 'none' : 'block';
     });
+  });
+
+  // ---------- Dividen import (reads the .xlsx locally, posts it as base64) ----------
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const bytes = new Uint8Array(reader.result);
+        let binary = '';
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+        resolve(btoa(binary));
+      };
+      reader.onerror = () => reject(reader.error || new Error('Gagal membaca file.'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  $('create-dividen-case-btn').addEventListener('click', async () => {
+    const btn = $('create-dividen-case-btn');
+    btn.disabled = true; btn.textContent = 'Membuat kasus...';
+    try {
+      await api('/api/actions/create-dividen-case', { method: 'POST' });
+      pollRunStatus();
+    } catch (e) {
+      alert('Gagal membuat kasus: ' + e.message);
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Buat Kasus Baru (AS.39-01)'; }, 1500);
+    }
+  });
+  $('import-dividen-btn').addEventListener('click', async () => {
+    const fileInput = $('dividen-file');
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) { alert('Pilih file template .xlsx dulu.'); return; }
+    const btn = $('import-dividen-btn');
+    btn.disabled = true; btn.textContent = 'Mengimpor...';
+    try {
+      const fileBase64 = await readFileAsBase64(file);
+      await api('/api/actions/import-dividen', { method: 'POST', body: JSON.stringify({ fileBase64, fileName: file.name }) });
+      pollRunStatus();
+    } catch (e) {
+      alert('Gagal memulai impor: ' + e.message);
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Impor ke Coretax'; }, 1500);
+    }
+  });
+  $('check-dividen-btn').addEventListener('click', async () => {
+    const fileInput = $('dividen-file');
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) { alert('Pilih file template .xlsx dulu (dipakai sebagai pembanding).'); return; }
+    const btn = $('check-dividen-btn');
+    btn.disabled = true; btn.textContent = 'Mengecek...';
+    try {
+      const fileBase64 = await readFileAsBase64(file);
+      await api('/api/actions/check-dividen', { method: 'POST', body: JSON.stringify({ fileBase64, fileName: file.name }) });
+      pollRunStatus();
+    } catch (e) {
+      alert('Gagal memulai Cek Hasil: ' + e.message);
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Cek Hasil (bandingkan dengan file ini)'; }, 1500);
+    }
   });
 
   $('start-download-btn').addEventListener('click', async () => {
