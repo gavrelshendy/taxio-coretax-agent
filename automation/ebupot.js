@@ -31,6 +31,7 @@ const os = require('os');
 const fs = require('fs');
 const { log, showPopup } = require('../lib/log');
 const chrome = require('../lib/chrome');
+const loginStatus = require('../lib/login-status');
 const entitiesLib = require('../lib/entities');
 const { masaToIndoLabel, parseMasaListInput, parseKodeObjekInput } = require('../lib/masa');
 const excel = require('../lib/excel');
@@ -167,7 +168,7 @@ async function downloadRow(page, row, targetPath, timeoutMs) {
         const [download] = await Promise.all([
             page.waitForEvent('download', { timeout: timeoutMs }),
             // Direct DOM element click bypasses visual overlays (e.g. open navbar/dropdown popups)
-            btn.evaluate(el => el.click()).catch(() => btn.click({ noWaitAfter: true, timeout: 5000, force: true }))
+            btn.dispatchEvent('click').catch(() => btn.click({ noWaitAfter: true, timeout: 5000, force: true }))
         ]);
         await download.saveAs(targetPath);
         const tempPath = await download.path().catch(() => null);
@@ -222,9 +223,11 @@ async function exportPageToExcel(page, tempDir, emit, pageSize) {
         try {
             const [download] = await Promise.all([
                 page.waitForEvent('download', { timeout: eventTimeoutMs }),
-                btn.evaluate(el => el.click()).catch(() => btn.click({ noWaitAfter: true, timeout: 3000, force: true }))
+                btn.dispatchEvent('click').catch(() => btn.click({ noWaitAfter: true, timeout: 3000, force: true }))
             ]);
             await download.saveAs(tempPath);
+            const srcPath = await download.path().catch(() => null);
+            if (srcPath && fs.existsSync(srcPath) && srcPath !== tempPath) { try { fs.rmSync(srcPath, { force: true }); } catch (e) {} }
         } catch (evErr) {
             const newFile = await waitForNewCompletedFile(chrome.DOWNLOAD_DIR, before, /\.xlsx?$/i, fallbackPollMs);
             if (!newFile) throw evErr;
@@ -489,11 +492,15 @@ async function runEbupotDownload(opts) {
     // Report who we're actually logged into Coretax as (NPWP + name) for the GUI's "Login as"
     // bar. For automation that's the impersonated entity; for manual it's read live from the
     // window's account pill. This is the Coretax account, NOT the Taxio/gmail login.
+    // Also feeds lib/login-status.js (not just runcontrol.setCoretaxAs, which is cleared the
+    // moment this run finishes) so the chip stays visible - per explicit user direction - as
+    // long as this Coretax session is actually still active, not just while a run is in progress.
     try {
         let coretaxAs;
         if (manual) coretaxAs = await chrome.getManualStatus().then((s) => s.identity).catch(() => '');
         else coretaxAs = (entity.npwp ? entity.npwp + ' · ' : '') + entity.entity_name;
         runcontrol.setCoretaxAs(coretaxAs || entity.entity_name);
+        if (!manual) loginStatus.set(picId, entity);
     } catch (e) {}
 
     // Page size: 'auto' = adaptive (starts at 25 - a middle ground that's cheap to size back
