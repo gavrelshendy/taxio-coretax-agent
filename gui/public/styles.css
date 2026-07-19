@@ -184,3 +184,8 @@ select:disabled { background: var(--surface-2); color: var(--ink-3); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* Dividen import feature - instruction list + file input */
+.hint-list { margin: 0 0 12px; padding-left: 20px; font-size: 13px; line-height: 1.55; color: var(--ink-3, #5a6472); }
+.hint-list li { margin-bottom: 5px; }
+#dividen-file { width: 100%; font-size: 13px; padding: 8px; border: 1px dashed var(--border-strong, #cbd3dd); border-radius: 8px; background: var(--surface-2, #f6f8fb); box-sizing: border-box; }
