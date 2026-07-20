@@ -118,23 +118,33 @@ async function waitForAuthCaptured(authState, timeoutMs) {
 
 /** Fires an authenticated POST from INSIDE the page (so real browser cookies/session apply
  *  automatically) using the captured headers. Returns {status, json}; never throws on a
- *  non-2xx or unparsable body - callers decide what that means. */
+ *  non-2xx or unparsable body - callers decide what that means.
+ *
+ *  Built as a literal source STRING (not `page.evaluate(fn, arg)`) on purpose: pkg's packaged
+ *  exe strips original function source text, so Playwright's normal fn+arg form - which needs
+ *  to `.toString()` the closure to ship it to the browser - throws "Passed function is not
+ *  well-serializable!" once compiled, even though the exact same code runs fine under plain
+ *  `node` (confirmed live: every dev-test run during development used plain `node` and never
+ *  hit this; the packaged .exe did on first real use). A string given to `page.evaluate` needs
+ *  no such round-trip, so it's immune to this - same technique already proven live via the
+ *  investigation bridge's `frame.evaluate(cmd.expr)` calls. */
 async function apiPost(page, authState, url, bodyObj) {
-    return page.evaluate(async ({ url, token, dgt, bodyStr }) => {
-        try {
-            const r = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': token, 'x-dgt-code': dgt },
-                credentials: 'include',
-                body: bodyStr
-            });
-            let json = null;
-            try { json = await r.json(); } catch (e) {}
-            return { status: r.status, json };
-        } catch (e) {
-            return { status: 0, json: null };
-        }
-    }, { url, token: authState.authorization, dgt: authState.dgtCode, bodyStr: JSON.stringify(bodyObj) });
+    const expr = '(async () => {'
+        + 'try {'
+        + '  const r = await fetch(' + JSON.stringify(url) + ', {'
+        + '    method: "POST",'
+        + '    headers: { "Content-Type": "application/json", "Authorization": ' + JSON.stringify(authState.authorization) + ', "x-dgt-code": ' + JSON.stringify(authState.dgtCode) + ' },'
+        + '    credentials: "include",'
+        + '    body: ' + JSON.stringify(JSON.stringify(bodyObj))
+        + '  });'
+        + '  let json = null;'
+        + '  try { json = await r.json(); } catch (e) {}'
+        + '  return { status: r.status, json };'
+        + '} catch (e) {'
+        + '  return { status: 0, json: null };'
+        + '}'
+        + '})()';
+    return page.evaluate(expr);
 }
 
 /** Filename per the user's exact spec: "MMYY - Kode Objek Pajak - Nomor Pemotongan - NIK -
