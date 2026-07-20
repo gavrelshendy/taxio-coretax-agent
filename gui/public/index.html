@@ -54,11 +54,12 @@
       <div id="action-form-body" style="display:none;">
         <div class="selected-entity" id="selected-entity-label"></div>
 
-        <button id="login-only-btn" class="btn btn-outline btn-block" title="Login &amp; impersonate entitas ini saja, tanpa mengisi form download - berguna untuk memastikan login berhasil dulu sebelum memutuskan mau download apa">🔓 Login Coretax Saja</button>
+        <button id="login-only-btn" class="btn btn-outline btn-block" title="Login &amp; impersonate entitas ini saja, tanpa mengisi form download - berguna untuk memastikan login berhasil dulu sebelum memutuskan mau download apa">Login Coretax</button>
 
         <div class="feature-tabs" id="feature-tabs">
           <button type="button" class="feature-tab active" data-feature="ebupot">e-Bupot</button>
           <button type="button" class="feature-tab" data-feature="spt">SPT</button>
+          <button type="button" class="feature-tab" data-feature="dividen">Dividen</button>
         </div>
 
         <div id="feature-ebupot" class="feature-panel">
@@ -106,10 +107,28 @@
           <input type="text" id="spt-masa-input" placeholder="0125-1225">
         </div>
 
-        <label class="field-label">Folder Simpan (opsional)</label>
-        <input type="text" id="save-root-input" placeholder="default: Downloads\CoretaxAgent">
+        <div id="feature-dividen" class="feature-panel" style="display:none;">
+          <p class="muted" style="margin:0 0 10px;">Impor massal <strong>e-Reporting Realisasi Investasi (Dividen)</strong> ke draft Coretax langsung dari Excel — form ini tidak punya impor bawaan.</p>
+          <ol class="hint-list">
+            <li>Login manual (tombol "Login Coretax" di atas), lalu klik <strong>"Buat Kasus Baru"</strong> di bawah — otomatis membuka kasus AS.39-01 sampai halaman Alur Kasus (~1 menit).</li>
+            <li>Isi file template (sheet Info Umum, Dividen, Investasi), lalu pilih di bawah.</li>
+            <li>Klik Impor. Data masuk otomatis ke tabel dan langsung disimpan — Anda tinggal <strong>periksa</strong>, lalu Create PDF → Sign → Kirim sendiri.</li>
+            <li>File pembanding (crosscheck) dibuat otomatis setiap Impor — atau klik <strong>"Cek Hasil"</strong> kapan saja untuk membuatnya ulang dari tabel yang sedang tampil.</li>
+          </ol>
+          <button id="create-dividen-case-btn" class="btn btn-outline btn-block" style="margin-bottom:12px;">Buat Kasus Baru (AS.39-01)</button>
+          <label class="field-label">File Template (.xlsx)</label>
+          <input type="file" id="dividen-file" accept=".xlsx">
+          <button id="import-dividen-btn" class="btn btn-primary btn-block" style="margin-top:12px;">Impor ke Coretax</button>
+          <button id="check-dividen-btn" class="btn btn-outline btn-block" style="margin-top:8px;" title="Baca tabel yang sedang tampil di Coretax dan bandingkan dengan file ini - tidak mengubah apapun di Coretax">Cek Hasil (bandingkan dengan file ini)</button>
+          <p class="muted" style="margin:8px 0 0; font-size:12px;">Data hanya masuk ke <em>draft</em> — tidak ada yang terkirim ke DJP sampai Anda menandatangani & klik Kirim sendiri.</p>
+        </div>
 
-        <button id="start-download-btn" class="btn btn-primary btn-block">Mulai Download</button>
+        <div id="dl-fields">
+          <label class="field-label">Folder Simpan (opsional)</label>
+          <input type="text" id="save-root-input" placeholder="default: Downloads\CoretaxAgent">
+
+          <button id="start-download-btn" class="btn btn-primary btn-block">Mulai Download</button>
+        </div>
       </div>
     </div>
   </section>
