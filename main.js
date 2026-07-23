@@ -56,7 +56,7 @@ async function tryRestoreSessions() {
             const membership = await entitiesLib.getMyOrgId(restored.client, restored.user.id);
             state.set(projectId, {
                 client: restored.client, project: restored.project, session: restored.session,
-                user: restored.session.user, orgId: membership.org_id, role: membership.role
+                user: restored.session.user, orgId: membership.org_id, role: membership.role, membership
             });
             log('Sesi tersimpan dipulihkan: ' + restored.session.user.email + ' (' + restored.project.label + ').');
         } catch (e) {

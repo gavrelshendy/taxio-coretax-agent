@@ -14,20 +14,21 @@ const entitiesLib = require('../lib/entities');
 const runcontrol = require('../lib/runcontrol');
 const loginStatus = require('../lib/login-status');
 
-/** `opts`: { client, orgId, entity ({entity_id, entity_name, npwp, individual}), picId } */
+/** `opts`: { client, orgId, entity ({entity_id, entity_name, npwp, individual}), picId, restricted, passphrase, allowedEbupotSections } */
 async function runLoginOnly(opts) {
-    const { client, orgId, entity, picId } = opts;
+    const { client, orgId, entity, picId, restricted, passphrase, allowedEbupotSections } = opts;
     log('Login Coretax untuk entitas "' + entity.entity_name + '" (tanpa download)...');
     const cred = await entitiesLib.getCredential(client, orgId, picId);
     const { page } = await chrome.launchOrReuseContext(picId, async (download) => {
         try { await download.saveAs(path.join(os.homedir(), 'Downloads', download.suggestedFilename())); } catch (e) {}
-    });
-    await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint });
+    }, restricted, allowedEbupotSections);
+    await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted, passphrase, allowedEbupotSections });
     const coretaxAs = (entity.npwp ? entity.npwp + ' · ' : '') + entity.entity_name;
     runcontrol.setCoretaxAs(coretaxAs);
     loginStatus.set(picId, entity);
     log('BERHASIL login & terkonfirmasi impersonate sebagai: ' + coretaxAs + '. Jendela dibiarkan terbuka - silakan pilih & mulai download kapan saja.');
     showPopup('Berhasil login & impersonate sebagai "' + entity.entity_name + '".', 'Coretax Agent', 'Information');
+    return page;
 }
 
 module.exports = { runLoginOnly };

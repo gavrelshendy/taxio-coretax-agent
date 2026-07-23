@@ -310,10 +310,13 @@ async function runSptDownload(opts) {
         page = opts.manualPage;
         if (chrome.isLoggedOut(page)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
     } else {
+        const restricted = !!opts.restricted;
+        const passphrase = opts.passphrase || null;
+        const allowedEbupotSections = opts.allowedEbupotSections || null;
         cred = await entitiesLib.getCredential(client, orgId, picId);
         ({ page } = await chrome.launchOrReuseContext(picId, async (download) => {
             try { await download.saveAs(path.join(os.homedir(), 'Downloads', download.suggestedFilename())); } catch (e) {}
-        }));
+        }, restricted, allowedEbupotSections));
     }
 
     async function loginAndImpersonate() {
@@ -321,7 +324,7 @@ async function runSptDownload(opts) {
             if (chrome.isLoggedOut(page)) throw new Error('Sesi manual berakhir - silakan login ulang di jendela Coretax lalu klik 🔁 Ulang.');
             return;
         }
-        await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint });
+        await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted, passphrase, allowedEbupotSections: opts.allowedEbupotSections });
     }
     await loginAndImpersonate();
 
@@ -343,7 +346,7 @@ async function runSptDownload(opts) {
                 await page.goto(SPT_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
                 if (chrome.isLoggedOut(page)) {
                     log('Halaman SPT memantulkan ke login - login ulang lalu buka lagi...');
-                    await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint });
+                    await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted: opts.restricted, passphrase: opts.passphrase, allowedEbupotSections: opts.allowedEbupotSections });
                     continue;
                 }
                 await waitForTableSettled(page, 20000);
