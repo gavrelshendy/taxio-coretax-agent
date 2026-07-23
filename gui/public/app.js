@@ -1,8 +1,9 @@
 (function () {
-  const PROJECT_ORDER = ['grup', 'personal'];
-  let sessionSummary = { grup: { connected: false, label: 'Taxio (Grup)' }, personal: { connected: false, label: 'Taxio.me' } };
+  const PROJECT_ORDER = ['taxio_hub'];
+  let sessionSummary = { taxio_hub: { connected: false, label: 'Taxio Hub' } };
   let entities = [];
   let selectedEntity = null;
+  let entityMode = (function () { try { return localStorage.getItem('coretax_entity_mode') || 'group'; } catch (e) { return 'group'; } })();
   let connectFormOpen = null; // project id currently showing its inline connect form, or null
 
   function $(id) { return document.getElementById(id); }
@@ -51,6 +52,9 @@
     bar.querySelectorAll('[data-disconnect]').forEach((b) => b.addEventListener('click', () => doDisconnect(b.dataset.disconnect)));
 
     const anyConnected = PROJECT_ORDER.some((id) => sessionSummary[id] && sessionSummary[id].connected);
+    const isRestricted = PROJECT_ORDER.some((id) => sessionSummary[id] && sessionSummary[id].connected && sessionSummary[id].role === 'restricted_editor');
+    const openBtn = $('open-coretax-btn');
+    if (openBtn) openBtn.style.display = isRestricted ? 'none' : '';
     const showApp = anyConnected || manualStatus.loggedIn;
     $('main-layout').style.display = showApp ? 'grid' : 'none';
     $('empty-hint').style.display = showApp ? 'none' : 'flex';
@@ -163,7 +167,7 @@
     let supa = [];
     if (anySupa) {
       try {
-        const data = await api('/api/entities');
+        const data = await api('/api/entities?mode=' + entityMode);
         supa = data.entities || [];
         if (data.errors && data.errors.length) log_local('Sebagian entitas gagal dimuat: ' + data.errors.join('; '));
       } catch (e) {
@@ -201,9 +205,10 @@
     list.innerHTML = filtered.map((e) => {
       const idx = entities.indexOf(e);
       const isSelected = selectedEntity && selectedEntity.entity_id === e.entity_id && selectedEntity.pic_id === e.pic_id && selectedEntity.project === e.project;
+      const tagHtml = e.project === 'manual' ? ' <span class="project-tag">MANUAL</span>' : '';
       return '<div class="entity-row' + (isSelected ? ' selected' : '') + '" data-idx="' + idx + '">'
-        + '<div class="entity-name">' + escapeHtml(e.entity_name) + ' <span class="project-tag">' + escapeHtml(e.project_label) + '</span></div>'
-        + '<div class="entity-meta">' + escapeHtml(e.entity_id) + ' · PIC: ' + escapeHtml(e.pic_name) + (e.pic_is_mine === false ? ' (bukan milik Anda)' : '') + '</div>'
+        + '<div class="entity-name">' + escapeHtml(e.entity_name) + tagHtml + '</div>'
+        + '<div class="entity-meta">' + escapeHtml(e.entity_id) + (e.pic_name ? (' · PIC: ' + escapeHtml(e.pic_name)) : '') + '</div>'
         + '</div>';
     }).join('');
     list.querySelectorAll('.entity-row').forEach((row) => {
@@ -216,13 +221,30 @@
   }
   $('entity-search').addEventListener('input', renderEntities);
 
+  function renderEntityModeSeg() {
+    $('entity-mode-btn-group').classList.toggle('active', entityMode === 'group');
+    $('entity-mode-btn-personal').classList.toggle('active', entityMode === 'personal');
+  }
+  document.querySelectorAll('#entity-mode-seg button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      if (mode === entityMode) return;
+      entityMode = mode;
+      try { localStorage.setItem('coretax_entity_mode', entityMode); } catch (e) { }
+      renderEntityModeSeg();
+      selectedEntity = null;
+      loadEntities();
+    });
+  });
+  renderEntityModeSeg();
+
   function renderActionForm() {
     if (!selectedEntity) return;
     $('no-entity-hint').style.display = 'none';
     $('action-form-body').style.display = 'block';
-    $('selected-entity-label').textContent = selectedEntity.entity_name + ' (' + selectedEntity.entity_id + ') · ' + selectedEntity.project_label;
+    $('selected-entity-label').textContent = selectedEntity.entity_name + (selectedEntity.entity_id !== 'MANUAL' ? (' (' + selectedEntity.entity_id + ')') : '');
     // Manual sessions already log themselves in by hand - the standalone Login action is only
-    // meaningful for Taxio/Taxio.me entities that need credential login + impersonate.
+    // meaningful for Taxio Hub entities that need credential login + impersonate.
     $('login-only-btn').style.display = selectedEntity.project === 'manual' ? 'none' : 'block';
     updateFormForBupot();
   }
@@ -238,15 +260,20 @@
       btn.disabled = false;
     }
   });
-  $('bupot-type').addEventListener('change', updateFormForBupot);
-  $('output-mode').addEventListener('change', updateFormForBupot);
+  document.querySelectorAll('.bupot-jenis').forEach((cb) => cb.addEventListener('change', updateFormForBupot));
+  const KODE_OBJEK_TYPES = ['bp21', 'bppu']; // only these two ever filter by Kode Objek Pajak
+  function selectedBupotTypes() { return [...document.querySelectorAll('.bupot-jenis:checked')].map((c) => c.value); }
   function updateFormForBupot() {
-    const type = $('bupot-type').value;
-    // Kode Objek filter only exists for BP21/BPPU.
-    $('kode-objek-row').style.display = (type === 'bp21' || type === 'bppu') ? 'block' : 'none';
-    // BPMP has no PDF at all - force Excel-only and lock the toggle.
+    const types = selectedBupotTypes();
+    // Kode Objek filter shows if ANY selected type supports it (BP21/BPPU) - irrelevant types
+    // in the same batch just ignore it (see the request-building loop below).
+    $('kode-objek-row').style.display = types.some((t) => KODE_OBJEK_TYPES.includes(t)) ? 'block' : 'none';
+    // BPMP has no PDF at all. If it's the ONLY thing selected, force Excel-only and lock the
+    // toggle same as before; if it's mixed with PDF-capable types, leave Output as the user's
+    // choice for those - the BPMP leg of the run always requests Excel-only regardless (handled
+    // per-request when the download queue is built), so the global toggle doesn't need to lie.
     const outSel = $('output-mode');
-    if (type === 'bpmp') { outSel.value = 'excel_only'; outSel.disabled = true; }
+    if (types.length === 1 && types[0] === 'bpmp') { outSel.value = 'excel_only'; outSel.disabled = true; }
     else { outSel.disabled = false; }
   }
 
@@ -280,6 +307,40 @@
       reader.readAsArrayBuffer(file);
     });
   }
+  let selectedDividenFile = null;
+
+  $('pick-dividen-file-btn').addEventListener('click', async () => {
+    try {
+      const data = await api('/api/actions/pick-file', { method: 'POST', body: JSON.stringify({ title: 'Pilih File Template Dividen (.xlsx)', filter: 'File Excel (*.xlsx)|*.xlsx|Semua File (*.*)|*.*' }) });
+      if (data && !data.canceled && data.fileBase64) {
+        selectedDividenFile = { fileName: data.fileName, fileBase64: data.fileBase64 };
+        $('dividen-file-label').textContent = '✓ ' + data.fileName;
+        return;
+      }
+    } catch (e) {}
+    $('dividen-file').click();
+  });
+
+  $('dividen-file').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      try {
+        const fileBase64 = await readFileAsBase64(file);
+        selectedDividenFile = { fileName: file.name, fileBase64 };
+        $('dividen-file-label').textContent = '✓ ' + file.name;
+      } catch (err) { alert('Gagal membaca file: ' + err.message); }
+    }
+  });
+
+  $('pick-folder-btn').addEventListener('click', async () => {
+    try {
+      const data = await api('/api/actions/pick-folder', { method: 'POST', body: JSON.stringify({ title: 'Pilih Folder Tempat Menyimpan Hasil Download' }) });
+      if (data && !data.canceled && data.folderPath) {
+        $('save-root-input').value = data.folderPath;
+      }
+    } catch (e) {}
+  });
+
   $('create-dividen-case-btn').addEventListener('click', async () => {
     const btn = $('create-dividen-case-btn');
     btn.disabled = true; btn.textContent = 'Membuat kasus...';
@@ -292,15 +353,21 @@
       setTimeout(() => { btn.disabled = false; btn.textContent = 'Buat Kasus Baru (AS.39-01)'; }, 1500);
     }
   });
+
   $('import-dividen-btn').addEventListener('click', async () => {
-    const fileInput = $('dividen-file');
-    const file = fileInput.files && fileInput.files[0];
-    if (!file) { alert('Pilih file template .xlsx dulu.'); return; }
+    let fileBase64 = selectedDividenFile ? selectedDividenFile.fileBase64 : null;
+    let fileName = selectedDividenFile ? selectedDividenFile.fileName : null;
+    if (!fileBase64) {
+      const fileInput = $('dividen-file');
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) { alert('Pilih file template .xlsx dulu.'); return; }
+      fileBase64 = await readFileAsBase64(file);
+      fileName = file.name;
+    }
     const btn = $('import-dividen-btn');
     btn.disabled = true; btn.textContent = 'Mengimpor...';
     try {
-      const fileBase64 = await readFileAsBase64(file);
-      await api('/api/actions/import-dividen', { method: 'POST', body: JSON.stringify({ fileBase64, fileName: file.name }) });
+      await api('/api/actions/import-dividen', { method: 'POST', body: JSON.stringify({ fileBase64, fileName }) });
       pollRunStatus();
     } catch (e) {
       alert('Gagal memulai impor: ' + e.message);
@@ -308,15 +375,21 @@
       setTimeout(() => { btn.disabled = false; btn.textContent = 'Impor ke Coretax'; }, 1500);
     }
   });
+
   $('check-dividen-btn').addEventListener('click', async () => {
-    const fileInput = $('dividen-file');
-    const file = fileInput.files && fileInput.files[0];
-    if (!file) { alert('Pilih file template .xlsx dulu (dipakai sebagai pembanding).'); return; }
+    let fileBase64 = selectedDividenFile ? selectedDividenFile.fileBase64 : null;
+    let fileName = selectedDividenFile ? selectedDividenFile.fileName : null;
+    if (!fileBase64) {
+      const fileInput = $('dividen-file');
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) { alert('Pilih file template .xlsx dulu (dipakai sebagai pembanding).'); return; }
+      fileBase64 = await readFileAsBase64(file);
+      fileName = file.name;
+    }
     const btn = $('check-dividen-btn');
     btn.disabled = true; btn.textContent = 'Mengecek...';
     try {
-      const fileBase64 = await readFileAsBase64(file);
-      await api('/api/actions/check-dividen', { method: 'POST', body: JSON.stringify({ fileBase64, fileName: file.name }) });
+      await api('/api/actions/check-dividen', { method: 'POST', body: JSON.stringify({ fileBase64, fileName }) });
       pollRunStatus();
     } catch (e) {
       alert('Gagal memulai Cek Hasil: ' + e.message);
@@ -324,6 +397,37 @@
       setTimeout(() => { btn.disabled = false; btn.textContent = 'Cek Hasil (bandingkan dengan file ini)'; }, 1500);
     }
   });
+
+  // Bupot types run one at a time (the underlying automation/ebupot.js run is built around a
+  // single type's endpoint/combo loop, with its own retry+run-control machinery already proven
+  // in production - reusing it unchanged per type here rather than teaching it a second type
+  // dimension). Multi-select just means the GUI queues one request per checked type and waits
+  // for each to finish (poll /api/run/status) before firing the next.
+  let bupotQueue = [];
+  function waitForRunToFinish() {
+    return new Promise((resolve) => {
+      const check = async () => {
+        let st; try { st = await api('/api/run/status'); } catch (e) { st = { active: false }; }
+        renderRunStatus(st);
+        if (st && st.active) setTimeout(check, 1200);
+        else resolve();
+      };
+      setTimeout(check, 1200);
+    });
+  }
+  async function runNextInBupotQueue() {
+    const next = bupotQueue.shift();
+    if (!next) return;
+    log_local('Bupot: memulai ' + next.bupotType.toUpperCase() + (bupotQueue.length ? (' (' + bupotQueue.length + ' jenis lagi menyusul)') : '') + '...');
+    try {
+      await api('/api/actions/download-ebupot', { method: 'POST', body: JSON.stringify(next) });
+      pollRunStatus();
+      await waitForRunToFinish();
+    } catch (e) {
+      log_local('Bupot ' + next.bupotType.toUpperCase() + ' gagal dimulai: ' + e.message);
+    }
+    if (bupotQueue.length) await runNextInBupotQueue();
+  }
 
   $('start-download-btn').addEventListener('click', async () => {
     if (!selectedEntity) return;
@@ -338,19 +442,30 @@
           method: 'POST',
           body: JSON.stringify({ entity: selectedEntity, jenisPajakKeys, masaInput, saveRoot: saveRoot || undefined })
         });
+        pollRunStatus();
       } else {
-        const bupotType = $('bupot-type').value;
+        const bupotTypes = selectedBupotTypes();
         const masaInput = $('masa-input').value.trim();
         const kodeInput = $('kode-objek-input').value.trim();
         const pageSize = $('page-size').value;
         const outputMode = $('output-mode').value;
         if (!masaInput) { alert('Masa wajib diisi.'); return; }
-        await api('/api/actions/download-ebupot', {
-          method: 'POST',
-          body: JSON.stringify({ entity: selectedEntity, bupotType, masaInput, kodeInput, saveRoot: saveRoot || undefined, pageSize, outputMode })
-        });
+        if (!bupotTypes.length) { alert('Pilih minimal satu Jenis Bupot.'); return; }
+        bupotQueue = bupotTypes.map((bupotType) => ({
+          entity: selectedEntity,
+          bupotType,
+          masaInput,
+          // Kode Objek only means anything for BP21/BPPU - sending it for BPA1/BPMP would just
+          // be a silently-ignored filter, but omitting it is clearer about what actually applies.
+          kodeInput: KODE_OBJEK_TYPES.includes(bupotType) ? kodeInput : '',
+          saveRoot: saveRoot || undefined,
+          pageSize,
+          // BPMP has no PDF, period - force Excel-only for that leg of the queue regardless of
+          // what the (possibly-disabled, possibly-PDF+Excel-for-other-types) toggle says.
+          outputMode: bupotType === 'bpmp' ? 'excel_only' : outputMode
+        }));
+        runNextInBupotQueue(); // fire-and-forget: it self-chains via waitForRunToFinish()
       }
-      pollRunStatus(); // pick up the "running" state immediately
     } catch (e) {
       alert('Gagal memulai: ' + e.message);
     }

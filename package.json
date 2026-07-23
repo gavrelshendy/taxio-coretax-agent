@@ -17,7 +17,8 @@
     "assets": [
       "node_modules/playwright-core/**/*",
       "node_modules/playwright/**/*",
-      "gui/public/**/*"
+      "gui/public/**/*",
+      "config/**/*"
     ],
     "targets": [
       "node22-win-x64"

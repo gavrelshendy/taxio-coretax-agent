@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Coretax Agent</title>
+<link rel="icon" href="/assets/coretax-favicon.png?v=3">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -11,8 +12,7 @@
 <body>
 <header class="topbar">
   <div class="brand-sm">
-    <img class="brand-logo" src="/assets/djp-logo.png" width="30" height="28" alt="Logo DJP">
-    <span class="brand-word">Core<span class="accent">tax</span>&nbsp;Agent</span>
+    <img class="brand-logo" src="/assets/coretax-agent-icon.png?v=3" height="28" alt="Coretax Agent">
     <span class="brand-tag">AGENT AUTOMATION</span>
   </div>
   <div class="topbar-right">
@@ -31,9 +31,9 @@
       <h2>Akun Terhubung</h2>
       <button id="settings-close" class="btn btn-ghost btn-sm" aria-label="Tutup">✕</button>
     </div>
-    <p class="overlay-sub">Hubungkan akun Taxio dan/atau Taxio.me untuk mengambil daftar entitas &amp; kredensial Coretax. Bisa keduanya sekaligus.</p>
+    <p class="overlay-sub">Hubungkan akun Taxio Hub Anda untuk mengambil daftar entitas &amp; kredensial Coretax.</p>
     <section id="connections-bar" class="connections-bar">
-      <!-- one card per project, rendered by app.js -->
+      <!-- Taxio Hub connection card rendered by app.js -->
     </section>
   </div>
 </div>
@@ -43,6 +43,10 @@
     <div class="panel-head">
       <h2>Entitas</h2>
       <input type="search" id="entity-search" placeholder="Cari entitas...">
+      <div class="entity-mode-seg" id="entity-mode-seg">
+        <button type="button" id="entity-mode-btn-group" data-mode="group">Group</button>
+        <button type="button" id="entity-mode-btn-personal" data-mode="personal">Me</button>
+      </div>
     </div>
     <div id="entity-list" class="entity-list"><div class="muted pad">Memuat...</div></div>
   </section>
@@ -63,13 +67,13 @@
         </div>
 
         <div id="feature-ebupot" class="feature-panel">
-          <label class="field-label">Jenis Bupot</label>
-          <select id="bupot-type">
-            <option value="bp21">BP21</option>
-            <option value="bppu">BPPU</option>
-            <option value="bpa1">BPA1</option>
-            <option value="bpmp">BPMP (Excel saja)</option>
-          </select>
+          <label class="field-label">Jenis Bupot (bisa lebih dari 1)</label>
+          <div class="checkbox-row">
+            <label><input type="checkbox" class="bupot-jenis" value="bp21" checked> BP21</label>
+            <label><input type="checkbox" class="bupot-jenis" value="bppu"> BPPU</label>
+            <label><input type="checkbox" class="bupot-jenis" value="bpa1"> BPA1</label>
+            <label><input type="checkbox" class="bupot-jenis" value="bpmp"> BPMP (Excel saja)</label>
+          </div>
 
           <label class="field-label">Output</label>
           <select id="output-mode">
@@ -117,7 +121,10 @@
           </ol>
           <button id="create-dividen-case-btn" class="btn btn-outline btn-block" style="margin-bottom:12px;">Buat Kasus Baru (AS.39-01)</button>
           <label class="field-label">File Template (.xlsx)</label>
-          <input type="file" id="dividen-file" accept=".xlsx">
+          <div style="display:flex;gap:6px;">
+            <button id="pick-dividen-file-btn" type="button" class="btn btn-outline" style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 <span id="dividen-file-label">Pilih File Excel...</span></button>
+            <input type="file" id="dividen-file" accept=".xlsx" style="display:none;">
+          </div>
           <button id="import-dividen-btn" class="btn btn-primary btn-block" style="margin-top:12px;">Impor ke Coretax</button>
           <button id="check-dividen-btn" class="btn btn-outline btn-block" style="margin-top:8px;" title="Baca tabel yang sedang tampil di Coretax dan bandingkan dengan file ini - tidak mengubah apapun di Coretax">Cek Hasil (bandingkan dengan file ini)</button>
           <p class="muted" style="margin:8px 0 0; font-size:12px;">Data hanya masuk ke <em>draft</em> — tidak ada yang terkirim ke DJP sampai Anda menandatangani & klik Kirim sendiri.</p>
@@ -125,7 +132,10 @@
 
         <div id="dl-fields">
           <label class="field-label">Folder Simpan (opsional)</label>
-          <input type="text" id="save-root-input" placeholder="default: Downloads\CoretaxAgent">
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="save-root-input" placeholder="default: Downloads\CoretaxAgent" style="flex:1;">
+            <button id="pick-folder-btn" type="button" class="btn btn-outline btn-sm" title="Pilih folder melalui File Explorer">📁 Cari</button>
+          </div>
 
           <button id="start-download-btn" class="btn btn-primary btn-block">Mulai Download</button>
         </div>
@@ -156,9 +166,9 @@
 </main>
 
 <div id="empty-hint" class="empty-hint">
-  <img class="brand-mark" src="/assets/djp-logo.png" alt="Logo DJP">
-  <strong>Belum ada akun terhubung</strong>
-  Hubungkan akun Taxio atau Taxio.me untuk mulai.
+  <img class="brand-mark" src="/assets/coretax-agent-icon.png?v=3" width="64" height="64" alt="Coretax Agent">
+  <strong>Belum Ada Akun Terhubung</strong>
+  <span>Hubungkan akun Taxio Hub Anda untuk mulai mengelola otomasi Coretax.</span>
   <button id="empty-settings-btn" class="btn btn-primary" style="margin-top:14px;">⚙ Buka Pengaturan</button>
 </div>
 

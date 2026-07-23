@@ -27,9 +27,7 @@ const deeplink = require('../lib/deeplink');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
 
-// Only Taxio.me's coretax_pics has the personal-ownership owner_user_id column
-// (schema_phase10.sql) - Taxio (Grup)'s coretax_pics is still org-shared.
-const PROJECTS_WITH_OWNER_COLUMN = { personal: true };
+const PROJECTS_WITH_OWNER_COLUMN = {};
 
 const LOG_BACKLOG_MAX = 200;
 const logBacklog = [];
@@ -52,6 +50,14 @@ function readJsonBody(req) {
     });
 }
 
+function isProjectRestricted(projectId) {
+    const s = state.get(projectId);
+    if (!s) return false;
+    const r1 = String(s.role || '').trim().toLowerCase().replace(/-/g, '_');
+    const r2 = String((s.membership && s.membership.role) || '').trim().toLowerCase().replace(/-/g, '_');
+    return r1.includes('restricted') || r2.includes('restricted');
+}
+
 function serveStatic(req, res, pathname) {
     let rel = pathname === '/' ? '/index.html' : pathname;
     const filePath = path.join(PUBLIC_DIR, rel);
@@ -59,7 +65,12 @@ function serveStatic(req, res, pathname) {
     fs.readFile(filePath, (err, buf) => {
         if (err) { res.writeHead(404); res.end('Not found'); return; }
         const ext = path.extname(filePath);
-        res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+        res.writeHead(200, {
+            'Content-Type': MIME[ext] || 'application/octet-stream',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        });
         res.end(buf);
     });
 }
@@ -68,8 +79,9 @@ function sessionSummary() {
     const out = {};
     for (const projectId of Object.keys(PROJECTS)) {
         const conn = state.get(projectId);
+        const restricted = isProjectRestricted(projectId);
         out[projectId] = conn && state.isConnected(projectId)
-            ? { connected: true, label: PROJECTS[projectId].label, email: conn.user.email, role: conn.role }
+            ? { connected: true, label: PROJECTS[projectId].label, email: conn.user.email, role: restricted ? 'restricted_editor' : conn.role }
             : { connected: false, label: PROJECTS[projectId].label };
     }
     return out;
@@ -84,7 +96,7 @@ async function handleConnect(req, res) {
     try {
         const { client, project: proj, session, user } = await sessionStore.connectWithPassword(project, email, password);
         const membership = await entitiesLib.getMyOrgId(client, user.id);
-        state.set(project, { client, project: proj, session, user, orgId: membership.org_id, role: membership.role });
+        state.set(project, { client, project: proj, session, user, orgId: membership.org_id, role: membership.role, membership });
         log('Terhubung sebagai ' + user.email + ' (' + proj.label + ').');
         return sendJson(res, 200, sessionSummary());
     } catch (e) {
@@ -105,7 +117,7 @@ async function handleDisconnect(req, res) {
     return sendJson(res, 200, sessionSummary());
 }
 
-async function handleEntities(req, res) {
+async function handleEntities(req, res, mode) {
     const connectedIds = state.connectedProjectIds();
     if (!connectedIds.length) return sendJson(res, 401, { error: 'Belum terhubung ke akun manapun.' });
     const all = [];
@@ -114,7 +126,7 @@ async function handleEntities(req, res) {
         const s = state.get(projectId);
         try {
             const hasOwnerColumn = !!PROJECTS_WITH_OWNER_COLUMN[projectId];
-            const list = await entitiesLib.listAutomatableEntities(s.client, s.orgId, s.user.id, hasOwnerColumn);
+            const list = await entitiesLib.listAutomatableEntities(s.client, s.orgId, s.user.id, hasOwnerColumn, mode);
             list.forEach((e) => { e.project = projectId; e.project_label = PROJECTS[projectId].label; });
             all.push(...list);
         } catch (e) {
@@ -151,10 +163,14 @@ async function handleDownloadEbupot(req, res) {
         const s = state.get(entity.project);
         if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
         await sessionStore.refreshIfNeeded(s.client);
+        const restricted = isProjectRestricted(entity.project);
+        const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
+        const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
         runOpts = {
             client: s.client, orgId: s.orgId, currentUserId: s.user.id,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode
+            picId: entity.pic_id, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode,
+            restricted, allowedEbupotSections, passphrase
         };
     }
 
@@ -194,10 +210,14 @@ async function handleDownloadSpt(req, res) {
         const s = state.get(entity.project);
         if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
         await sessionStore.refreshIfNeeded(s.client);
+        const restricted = isProjectRestricted(entity.project);
+        const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
+        const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
         runOpts = {
             client: s.client, orgId: s.orgId,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot
+            picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot,
+            restricted, allowedEbupotSections, passphrase
         };
     }
 
@@ -298,11 +318,14 @@ async function handleLoginEntity(req, res) {
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     const { entity } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
-    if (entity.project === 'manual') return sendJson(res, 400, { error: 'Sesi manual sudah login sendiri - tombol ini untuk entitas Taxio/Taxio.me.' });
+    if (entity.project === 'manual') return sendJson(res, 400, { error: 'Sesi manual sudah login sendiri - tombol ini khusus untuk entitas Taxio Hub.' });
     if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
     const s = state.get(entity.project);
     if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
     await sessionStore.refreshIfNeeded(s.client);
+    const restricted = isProjectRestricted(entity.project);
+    const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
+    const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
 
     try { runcontrol.start('Login Coretax · ' + entity.entity_name); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
@@ -311,7 +334,7 @@ async function handleLoginEntity(req, res) {
         await runLoginOnly({
             client: s.client, orgId: s.orgId,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id
+            picId: entity.pic_id, restricted, allowedEbupotSections, passphrase
         });
     } catch (e) {
         if (e && e.isStop) log('Login dibatalkan oleh pengguna.');
@@ -335,9 +358,24 @@ async function handleDeepLink(req, res) {
 }
 
 async function handleOpenCoretaxManual(req, res) {
-    // No account needed - just opens a plain Coretax window for the user to log in by hand.
+    const connectedIds = state.connectedProjectIds();
+    if (!connectedIds.length) return sendJson(res, 401, { error: 'Harus terhubung ke setidaknya satu akun Taxio/Taxio.me sebelum membuka Coretax manual.' });
+    
+    let restricted = false;
+    for (const id of connectedIds) {
+        if (isProjectRestricted(id)) {
+            restricted = true;
+            break;
+        }
+    }
+
+    if (restricted) {
+        log('Akses Coretax Manual ditolak untuk akun Restricted Editor.');
+        return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan menggunakan Login Coretax Manual. Silakan pilih entitas dan klik tombol Login pada entitas tersebut.' });
+    }
+
     sendJson(res, 202, { started: true });
-    chrome.openCoretaxManual().catch((e) => log('Gagal membuka Coretax manual: ' + e.message));
+    chrome.openCoretaxManual(false, null).catch((e) => log('Gagal membuka Coretax manual: ' + e.message));
 }
 
 async function handleQuit(req, res) {
@@ -354,9 +392,55 @@ function handleEvents(req, res) {
     });
     res.write(': connected\n\n');
     for (const entry of logBacklog) res.write('data: ' + JSON.stringify(entry) + '\n\n');
-    const unsubscribe = onLogLine((entry) => { try { res.write('data: ' + JSON.stringify(entry) + '\n\n'); } catch (e) {} });
-    const keepAlive = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 20000);
+    const unsubscribe = onLogLine((entry) => { try { res.write('data: ' + JSON.stringify(entry) + '\n\n'); } catch (e) { } });
+    const keepAlive = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) { } }, 20000);
     req.on('close', () => { clearInterval(keepAlive); unsubscribe(); });
+}
+
+const { exec: execChild } = require('child_process');
+
+function nativePickFile(title, filter) {
+    return new Promise((resolve) => {
+        const psScript = `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = '${title || 'Pilih File'}'; $f.Filter = '${filter || 'Semua File (*.*)|*.*'}'; $f.ShowHelp = $false; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }; $top.Dispose()`;
+        execChild(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { windowsHide: true }, (err, stdout) => {
+            if (err || !stdout) resolve(null);
+            else resolve(stdout.trim());
+        });
+    });
+}
+
+function nativePickFolder(title) {
+    return new Promise((resolve) => {
+        const psScript = `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${title || 'Pilih Folder'}'; $f.ShowNewFolderButton = $true; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }; $top.Dispose()`;
+        execChild(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { windowsHide: true }, (err, stdout) => {
+            if (err || !stdout) resolve(null);
+            else resolve(stdout.trim());
+        });
+    });
+}
+
+async function handlePickFile(req, res) {
+    let body = {};
+    try { body = await readJsonBody(req); } catch (e) { }
+    const filePath = await nativePickFile(body.title, body.filter);
+    if (!filePath) return sendJson(res, 200, { canceled: true });
+    let fileBase64 = null;
+    let fileName = path.basename(filePath);
+    try {
+        const buf = fs.readFileSync(filePath);
+        fileBase64 = buf.toString('base64');
+    } catch (e) {
+        return sendJson(res, 400, { error: 'Gagal membaca file dari ' + filePath + ': ' + e.message });
+    }
+    return sendJson(res, 200, { filePath, fileName, fileBase64 });
+}
+
+async function handlePickFolder(req, res) {
+    let body = {};
+    try { body = await readJsonBody(req); } catch (e) { }
+    const folderPath = await nativePickFolder(body.title);
+    if (!folderPath) return sendJson(res, 200, { canceled: true });
+    return sendJson(res, 200, { folderPath });
 }
 
 function createGuiServer(port) {
@@ -368,7 +452,7 @@ function createGuiServer(port) {
             if (pathname === '/api/session' && req.method === 'GET') return sendJson(res, 200, sessionSummary());
             if (pathname === '/api/connect' && req.method === 'POST') return handleConnect(req, res);
             if (pathname === '/api/disconnect' && req.method === 'POST') return handleDisconnect(req, res);
-            if (pathname === '/api/entities' && req.method === 'GET') return handleEntities(req, res);
+            if (pathname === '/api/entities' && req.method === 'GET') return handleEntities(req, res, url.searchParams.get('mode'));
             if (pathname === '/api/actions/download-ebupot' && req.method === 'POST') return handleDownloadEbupot(req, res);
             if (pathname === '/api/actions/download-spt' && req.method === 'POST') return handleDownloadSpt(req, res);
             if (pathname === '/api/actions/import-dividen' && req.method === 'POST') return handleImportDividen(req, res);
@@ -376,6 +460,8 @@ function createGuiServer(port) {
             if (pathname === '/api/actions/create-dividen-case' && req.method === 'POST') return handleCreateDividenCase(req, res);
             if (pathname === '/api/actions/login-entity' && req.method === 'POST') return handleLoginEntity(req, res);
             if (pathname === '/api/login/status' && req.method === 'GET') return sendJson(res, 200, loginStatus.get() || { at: 0 });
+            if (pathname === '/api/actions/pick-file' && req.method === 'POST') return handlePickFile(req, res);
+            if (pathname === '/api/actions/pick-folder' && req.method === 'POST') return handlePickFolder(req, res);
             if (pathname === '/api/actions/open-coretax' && req.method === 'POST') return handleOpenCoretaxManual(req, res);
             if (pathname === '/api/deeplink' && req.method === 'POST') return handleDeepLink(req, res);
             if (pathname === '/api/manual/status' && req.method === 'GET') return handleManualStatus(req, res);

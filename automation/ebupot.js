@@ -302,10 +302,13 @@ async function runEbupotDownload(opts) {
         page = opts.manualPage;
         if (chrome.isLoggedOut(page)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
     } else {
+        const restricted = !!opts.restricted;
+        const passphrase = opts.passphrase || null;
+        const allowedEbupotSections = opts.allowedEbupotSections || null;
         cred = await entitiesLib.getCredential(client, orgId, picId);
         ({ context, page } = await chrome.launchOrReuseContext(picId, async (download) => {
             try { await download.saveAs(path.join(os.homedir(), 'Downloads', download.suggestedFilename())); } catch (e) {}
-        }));
+        }, restricted, allowedEbupotSections));
     }
     const authState = attachApiAuthCapture(page);
 
@@ -314,7 +317,7 @@ async function runEbupotDownload(opts) {
             if (chrome.isLoggedOut(page)) throw new Error('Sesi manual berakhir - silakan login ulang di jendela Coretax lalu klik 🔁 Ulang.');
             return;
         }
-        await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint });
+        await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted, passphrase, allowedEbupotSections: opts.allowedEbupotSections });
     }
     await loginAndImpersonate();
 
@@ -336,11 +339,7 @@ async function runEbupotDownload(opts) {
                 await page.goto(BOOTSTRAP_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
                 if (chrome.isLoggedOut(page)) {
                     log('Halaman e-Bupot memantulkan ke login - login ulang lalu buka lagi...');
-                    await chrome.ensureLoggedIn(page, cred);
-                    await chrome.switchToEntity(page, cred, {
-                        npwp: entity.npwp, name: entity.entity_name, individual: entity.individual,
-                        entityCode: entity.entity_id, userDataDir: path.join(chrome.PROFILE_ROOT, picId)
-                    });
+                    await loginAndImpersonate();
                     continue;
                 }
                 const captured = await waitForAuthCaptured(authState, 20000);
