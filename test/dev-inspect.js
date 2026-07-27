@@ -22,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { chromium } = require('playwright');
-const chrome = require('./lib/chrome'); // only for the two shared constants below
+const chrome = require('../lib/chrome'); // only for the two shared constants below
 
 const DIR = path.join(__dirname, '.dev-inspect');
 fs.mkdirSync(DIR, { recursive: true });

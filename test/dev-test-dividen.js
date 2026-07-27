@@ -2,7 +2,7 @@
    using the generated template and the live-scraped reference data (no browser needed). */
 const fs = require('fs');
 const path = require('path');
-const dividen = require('./automation/dividen');
+const dividen = require('../automation/dividen');
 
 // Rebuild the ref maps the way readRefMaps() would, from scraped data.
 const scraped = JSON.parse(JSON.parse(fs.readFileSync('.dev-inspect/out-48.json', 'utf8')).find((e) => e.result && e.result.includes('income')).result);
@@ -22,7 +22,7 @@ const maps = {
     // are module-local. Instead exercise them through a tiny copy of the flow is overkill - so
     // just re-export check: call the internal funcs by requiring the file's private pieces isn't
     // possible. Re-implement the two-call sequence by temporarily exposing them:
-    const mod = require('./automation/dividen');
+    const mod = require('../automation/dividen');
     // parseTemplate + buildRows are internal; expose for the test via the module's own functions
     // by reading them off a fresh require with a test hook is messy - instead just re-run the
     // exact same logic here would duplicate. Simplest: add a hidden test export.

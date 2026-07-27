@@ -3,7 +3,7 @@
    query, doesn't matter which window/tab is "active"). Run: node dev-check-record.js <aggregateId> */
 const path = require('path');
 const { chromium } = require('playwright');
-const chrome = require('./lib/chrome');
+const chrome = require('../lib/chrome');
 
 const AGG = process.argv[2];
 if (!AGG) { console.error('Usage: node dev-check-record.js <aggregateId>'); process.exit(1); }

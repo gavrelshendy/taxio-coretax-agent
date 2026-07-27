@@ -6,8 +6,8 @@
 const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
-const chrome = require('./lib/chrome');
-const dividen = require('./automation/dividen');
+const chrome = require('../lib/chrome');
+const dividen = require('../automation/dividen');
 
 const AGG = process.argv[2];
 if (!AGG) { console.error('Usage: node dev-verify-bigtest.js <caseAggregateId>'); process.exit(1); }
