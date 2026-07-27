@@ -6,8 +6,8 @@ const path = require('path');
 const fs = require('fs');
 const ExcelJS = require('exceljs');
 const { chromium } = require('playwright');
-const chrome = require('./lib/chrome');
-const dividen = require('./automation/dividen');
+const chrome = require('../lib/chrome');
+const dividen = require('../automation/dividen');
 
 const TEST_FILE = path.join(__dirname, 'Test Impor Dividen - Coretax Agent.xlsx');
 
@@ -46,10 +46,10 @@ async function dumpControlFile(p) {
     const fileBuffer = fs.readFileSync(TEST_FILE);
     console.log('=== Import (with auto control-file) ===');
     let importControlPath = null;
-    const origLog = require('./lib/log').log;
+    const origLog = require('../lib/log').log;
     // Capture the logged control-file path (runDividenImport logs it, doesn't return it directly)
     const logs = [];
-    const unsub = require('./lib/log').onLogLine((e) => { logs.push(e.line || e.msg || ''); });
+    const unsub = require('../lib/log').onLogLine((e) => { logs.push(e.line || e.msg || ''); });
     try {
         await dividen.runDividenImport({ manualPage: page, fileBuffer });
     } catch (e) { console.log('Import error:', e.message); }

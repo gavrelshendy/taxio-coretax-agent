@@ -10,7 +10,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { log, onLogLine } = require('../lib/log');
+const { log, onLogLine, LOG_FILE } = require('../lib/log');
 const state = require('../lib/state');
 const sessionStore = require('../lib/session-store');
 const entitiesLib = require('../lib/entities');
@@ -19,10 +19,13 @@ const runcontrol = require('../lib/runcontrol');
 const chrome = require('../lib/chrome');
 const loginStatus = require('../lib/login-status');
 const { runEbupotDownload } = require('../automation/ebupot');
+const { runMyBuktiPotongDownload } = require('../automation/mybupot');
 const { runLoginOnly } = require('../automation/login');
 const { runSptDownload } = require('../automation/spt');
 const { runDividenImport, runDividenCheck, openNewCase } = require('../automation/dividen');
 const deeplink = require('../lib/deeplink');
+const tray = require('../lib/tray');
+const { openWindow, isWindowOpen, bringToFront, closeWindow } = require('./window');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
@@ -50,12 +53,53 @@ function readJsonBody(req) {
     });
 }
 
+// Local-only server (bound to 127.0.0.1, see createGuiServer below), but "local-only" is NOT
+// the same as "safe from the browser" - ANY webpage the user has open in ANY tab on this same
+// machine can have its JS fire a cross-origin fetch()/XHR at http://127.0.0.1:<port>/api/... too
+// (loopback isn't a trust boundary browsers enforce). Confirmed live during this audit: every
+// POST route here (including /api/quit) executed with a plain unauthenticated request - zero
+// Origin/Referer/token check existed anywhere. A "simple request" (Content-Type left as
+// text/plain, which skips the CORS preflight) reaches the handler and has its full side effect
+// even though the calling page can never read the JSON response back (blocked by the browser's
+// own CORS policy, since this server sends no Access-Control-Allow-Origin) - classic blind CSRF.
+// Fix: reject any state-changing request whose Origin header (when present - real cross-origin
+// browser requests always attach one; same-origin requests from THIS app's own dashboard window
+// also send it, matching exactly) isn't this same server's own origin. A non-browser caller could
+// still forge this header, but that requires code execution on the machine already - a
+// fundamentally different threat model than "visited the wrong webpage while this was running".
+function isForeignOrigin(req) {
+    const origin = req.headers.origin;
+    if (!origin) return false; // no Origin header = not a cross-origin browser request (curl, same-tab navigation, Playwright's own automation, etc - none of these are the CSRF threat this guards against)
+    return origin !== 'http://127.0.0.1:' + req.headers.host.split(':').pop() && origin !== 'http://' + req.headers.host;
+}
+
 function isProjectRestricted(projectId) {
     const s = state.get(projectId);
     if (!s) return false;
     const r1 = String(s.role || '').trim().toLowerCase().replace(/-/g, '_');
     const r2 = String((s.membership && s.membership.role) || '').trim().toLowerCase().replace(/-/g, '_');
     return r1.includes('restricted') || r2.includes('restricted');
+}
+
+// Server-side enforcement of allowed_ebupot_sections - previously this value was only ever
+// read to build the admin's "Manage Members" config UI and passed through into the automation
+// opts for the in-page watchdog to (imperfectly) enforce; nothing ever rejected a restricted
+// editor's download REQUEST itself here, so a direct POST to these routes bypassed it entirely
+// regardless of what was configured. Fixed 2026-07-27.
+// Maps a bupotType/buktiTypeKey (used in download requests) to the matching config key (used
+// in the admin panel's per-restricted_editor checkboxes, see supabase.js ebupotOpts) - the two
+// naming schemes don't line up 1:1 (e.g. download-type 'bppu' vs config-key 'ebupotbpu'), so
+// this has to be explicit rather than a generic string transform.
+const EBUPOT_TYPE_TO_SECTION = { bp21: 'ebupotbp21', bppu: 'ebupotbpu', bpmp: 'ebupotbpmp', bp26: 'ebupotbp26', bpnr: 'ebupotbpnr' };
+function isEbupotTypeAllowed(allowedSections, bupotType) {
+    if (!allowedSections) return true; // not configured yet - matches the admin panel's own "unset = all checked" default
+    const section = EBUPOT_TYPE_TO_SECTION[bupotType];
+    if (!section) return true; // no configurable section for this type (e.g. bpa1/bpa2/bpatc) - nothing to gate against
+    return allowedSections.includes(section);
+}
+function isMyBupotAllowed(allowedSections) {
+    if (!allowedSections) return true;
+    return allowedSections.includes('my-withholding-slips');
 }
 
 function serveStatic(req, res, pathname) {
@@ -165,6 +209,9 @@ async function handleDownloadEbupot(req, res) {
         await sessionStore.refreshIfNeeded(s.client);
         const restricted = isProjectRestricted(entity.project);
         const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
+        if (restricted && !isEbupotTypeAllowed(allowedEbupotSections, bupotType)) {
+            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis e-Bupot ini.' });
+        }
         const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
         runOpts = {
             client: s.client, orgId: s.orgId, currentUserId: s.user.id,
@@ -186,6 +233,52 @@ async function handleDownloadEbupot(req, res) {
     } catch (e) {
         if (e && e.isStop) log('Proses dihentikan oleh pengguna.');
         else log('Gagal download e-Bupot: ' + e.message);
+    } finally {
+        runcontrol.finish();
+    }
+}
+
+async function handleDownloadMyBupot(req, res) {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (!Array.isArray(buktiTypeKeys) || !buktiTypeKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis bukti potong & masa wajib diisi.' });
+
+    const isManual = entity.project === 'manual';
+    let runOpts;
+    if (isManual) {
+        const manualPage = chrome.getManualPage();
+        if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Manual" dan login dulu.' });
+        const folder = sanitizeFolder(entity.entity_name || 'Manual');
+        runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode };
+    } else {
+        if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
+        const s = state.get(entity.project);
+        if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
+        await sessionStore.refreshIfNeeded(s.client);
+        const restricted = isProjectRestricted(entity.project);
+        const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
+        if (restricted && !isMyBupotAllowed(allowedEbupotSections)) {
+            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses Bukti Potong Saya.' });
+        }
+        const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
+        runOpts = {
+            client: s.client, orgId: s.orgId, currentUserId: s.user.id,
+            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
+            picId: entity.pic_id, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode,
+            restricted, allowedEbupotSections, passphrase
+        };
+    }
+
+    try { runcontrol.start('Bukti Potong Saya · ' + (isManual ? 'Sesi Manual' : entity.entity_name)); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true });
+    try {
+        await runMyBuktiPotongDownload(runOpts);
+    } catch (e) {
+        if (e && e.isStop) log('Proses dihentikan oleh pengguna.');
+        else log('Gagal download Bukti Potong Saya: ' + e.message);
     } finally {
         runcontrol.finish();
     }
@@ -354,6 +447,15 @@ async function handleDeepLink(req, res) {
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     if (!body || !body.url) return sendJson(res, 400, { error: 'URL kosong.' });
     sendJson(res, 202, { received: true });
+    // A click from Taxio/Taxio.me arrives here whenever Coretax Agent is ALREADY running in the
+    // background (this is the forwarded-to-primary-instance path - see main.js's
+    // forwardDeepLinkToRunningInstance). Previously that ran the automation with no window ever
+    // shown, so the user had no way to see what it was doing. Bring the dashboard up so the log
+    // is visible, same as a cold start via the same link already does (main.js calls openWindow
+    // unconditionally there). `req.headers.host` is this same server's own host:port - no need
+    // to hardcode GUI_PORT here.
+    if (!isWindowOpen()) openWindow('http://' + req.headers.host + '/');
+    else bringToFront();
     deeplink.dispatch(body.url).catch((e) => log('Deep link gagal: ' + e.message));
 }
 
@@ -381,7 +483,30 @@ async function handleOpenCoretaxManual(req, res) {
 async function handleQuit(req, res) {
     sendJson(res, 200, { ok: true });
     log('Menutup Coretax Agent...');
+    tray.stop(); // otherwise the NotifyIcon is orphaned - still visible, both menu items dead
+    closeWindow(); // window is spawned detached+unref'd - survives process.exit() below on its own otherwise
+    // Chrome automation windows (per-PIC + manual login) are launchPersistentContext()'d - a
+    // genuinely separate OS process from this one, so process.exit() below never touches them on
+    // its own; any window opened this session (including a restricted editor's hidden off-screen
+    // one) would otherwise survive as an orphan. Race against a timeout so one stuck/unresponsive
+    // context can't block quitting forever.
+    await Promise.race([
+        chrome.closeAllAutomationWindows().catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 2000))
+    ]);
     setTimeout(() => process.exit(0), 300);
+}
+
+function handleTrayOpen(req, res) {
+    sendJson(res, 200, { ok: true });
+    if (!isWindowOpen()) openWindow('http://' + req.headers.host + '/');
+    else bringToFront();
+}
+
+function handleClearLog(req, res) {
+    logBacklog.length = 0;
+    log('Log dibersihkan dari layar (arsip tetap tersimpan di ' + LOG_FILE + ').');
+    sendJson(res, 200, { ok: true });
 }
 
 function handleEvents(req, res) {
@@ -399,9 +524,14 @@ function handleEvents(req, res) {
 
 const { exec: execChild } = require('child_process');
 
+// Escape a value for safe embedding inside a PowerShell single-quoted string literal: the only
+// metacharacter that matters there is the single quote itself, escaped by doubling it. Without
+// this, a `'` in title/filter would break out of the quotes and inject arbitrary PowerShell.
+function psSingleQuote(s) { return String(s == null ? '' : s).replace(/'/g, "''"); }
+
 function nativePickFile(title, filter) {
     return new Promise((resolve) => {
-        const psScript = `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = '${title || 'Pilih File'}'; $f.Filter = '${filter || 'Semua File (*.*)|*.*'}'; $f.ShowHelp = $false; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }; $top.Dispose()`;
+        const psScript = `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = '${psSingleQuote(title || 'Pilih File')}'; $f.Filter = '${psSingleQuote(filter || 'Semua File (*.*)|*.*')}'; $f.ShowHelp = $false; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }; $top.Dispose()`;
         execChild(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { windowsHide: true }, (err, stdout) => {
             if (err || !stdout) resolve(null);
             else resolve(stdout.trim());
@@ -411,7 +541,7 @@ function nativePickFile(title, filter) {
 
 function nativePickFolder(title) {
     return new Promise((resolve) => {
-        const psScript = `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${title || 'Pilih Folder'}'; $f.ShowNewFolderButton = $true; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }; $top.Dispose()`;
+        const psScript = `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${psSingleQuote(title || 'Pilih Folder')}'; $f.ShowNewFolderButton = $true; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }; $top.Dispose()`;
         execChild(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { windowsHide: true }, (err, stdout) => {
             if (err || !stdout) resolve(null);
             else resolve(stdout.trim());
@@ -448,12 +578,17 @@ function createGuiServer(port) {
         const url = new URL(req.url, 'http://127.0.0.1');
         const { pathname } = url;
         try {
+            if (req.method === 'POST' && isForeignOrigin(req)) {
+                log('[SECURITY] Permintaan POST ' + pathname + ' ditolak - Origin asing: ' + req.headers.origin);
+                return sendJson(res, 403, { error: 'Ditolak: permintaan lintas-origin tidak diizinkan.' });
+            }
             if (pathname === '/events' && req.method === 'GET') return handleEvents(req, res);
             if (pathname === '/api/session' && req.method === 'GET') return sendJson(res, 200, sessionSummary());
             if (pathname === '/api/connect' && req.method === 'POST') return handleConnect(req, res);
             if (pathname === '/api/disconnect' && req.method === 'POST') return handleDisconnect(req, res);
             if (pathname === '/api/entities' && req.method === 'GET') return handleEntities(req, res, url.searchParams.get('mode'));
             if (pathname === '/api/actions/download-ebupot' && req.method === 'POST') return handleDownloadEbupot(req, res);
+            if (pathname === '/api/actions/download-mybupot' && req.method === 'POST') return handleDownloadMyBupot(req, res);
             if (pathname === '/api/actions/download-spt' && req.method === 'POST') return handleDownloadSpt(req, res);
             if (pathname === '/api/actions/import-dividen' && req.method === 'POST') return handleImportDividen(req, res);
             if (pathname === '/api/actions/check-dividen' && req.method === 'POST') return handleCheckDividen(req, res);
@@ -476,6 +611,8 @@ function createGuiServer(port) {
                 return readJsonBody(req).then((b) => { const n = Number(b && b.size); if ([10, 25, 50, 100].includes(n)) runcontrol.setPageSizeOverride(n); return sendJson(res, 200, runcontrol.status()); }).catch(() => sendJson(res, 400, { error: 'Body tidak valid.' }));
             }
             if (pathname === '/api/quit' && req.method === 'POST') return handleQuit(req, res);
+            if (pathname === '/api/tray/open' && req.method === 'POST') return handleTrayOpen(req, res);
+            if (pathname === '/api/log/clear' && req.method === 'POST') return handleClearLog(req, res);
             return serveStatic(req, res, pathname);
         } catch (e) {
             log('GUI server error: ' + e.message);

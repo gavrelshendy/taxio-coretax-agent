@@ -5,7 +5,7 @@
 const path = require('path');
 const fs = require('fs');
 const ExcelJS = require('exceljs');
-const dividen = require('./automation/dividen');
+const dividen = require('../automation/dividen');
 
 const TEST_FILE = path.join(__dirname, 'Test Impor Dividen 800 - Coretax Agent.xlsx');
 

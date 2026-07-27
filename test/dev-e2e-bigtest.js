@@ -5,8 +5,8 @@
 const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
-const chrome = require('./lib/chrome');
-const dividen = require('./automation/dividen');
+const chrome = require('../lib/chrome');
+const dividen = require('../automation/dividen');
 
 const TEST_FILE = path.join(__dirname, 'Test Impor Dividen 800 - Coretax Agent.xlsx');
 
