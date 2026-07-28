@@ -494,6 +494,7 @@ async function handleQuit(req, res) {
         chrome.closeAllAutomationWindows().catch(() => {}),
         new Promise((resolve) => setTimeout(resolve, 2000))
     ]);
+    try { chrome.clearDownloadTemp(); } catch (e) {} // after automation windows close, so nothing's still mid-download
     setTimeout(() => process.exit(0), 300);
 }
 
