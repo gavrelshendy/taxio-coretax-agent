@@ -46,8 +46,14 @@ const entitiesLib = require('./lib/entities');
 const deeplink = require('./lib/deeplink');
 const { createGuiServer } = require('./gui/server');
 const { openWindow } = require('./gui/window');
+const tray = require('./lib/tray');
 
 const GUI_PORT = 51733;
+
+// Best-effort safety net: if the process exits WITHOUT going through /api/quit's handleQuit
+// (crash, Task Manager kill, etc), still take the tray helper process down with it rather than
+// leaving an orphaned icon whose menu silently does nothing forever.
+process.on('exit', () => tray.stop());
 
 async function tryRestoreSessions() {
     const restoredByProject = await sessionStore.restoreAllSessions();
@@ -79,6 +85,26 @@ function isPrimaryRunning() {
     });
 }
 
+/** Asks an already-running PRIMARY instance to open/focus its own dashboard window, via the
+ *  same `/api/tray/open` endpoint the tray icon's "Buka Dashboard" uses. This process (a fresh
+ *  double-click launch that found the port already bound) has no idea whether a window is
+ *  already open - only the PRIMARY's own gui/window.js module state knows that. Calling
+ *  openWindow() directly from HERE (the old behavior) always spawned a brand new Chrome window
+ *  on every double-click, even with one already open - forwarding the request instead lets the
+ *  primary's own isWindowOpen() check decide, so double-clicking the icon repeatedly reuses the
+ *  same single window instead of piling up duplicates. */
+function forwardOpenToRunningInstance() {
+    return new Promise((resolve) => {
+        const req = http.request({ host: '127.0.0.1', port: GUI_PORT, path: '/api/tray/open', method: 'POST', timeout: 3000 }, (res) => {
+            res.resume();
+            resolve(res.statusCode >= 200 && res.statusCode < 500);
+        });
+        req.on('error', () => resolve(false));
+        req.on('timeout', () => { req.destroy(); resolve(false); });
+        req.end();
+    });
+}
+
 /** POSTs a taxio-coretax:// URL to an already-running instance's dashboard server. Resolves
  *  true if an instance answered (this process's job is done, whoever is listening will handle
  *  it), false if nothing is listening on GUI_PORT (this process should become the primary
@@ -98,6 +124,7 @@ function forwardDeepLinkToRunningInstance(url) {
 
 async function main(deepLinkUrl) {
     log('Coretax Agent memulai...' + (deepLinkUrl ? ' (dipanggil dari taxio-coretax://)' : ''));
+    try { require('./lib/chrome').clearDownloadTemp(); } catch (e) {}
     await tryRestoreSessions();
     try {
         await createGuiServer(GUI_PORT);
@@ -107,6 +134,7 @@ async function main(deepLinkUrl) {
         showErrorPopup('Coretax Agent gagal membuka dashboard lokal (port ' + GUI_PORT + ' mungkin dipakai aplikasi lain): ' + e.message);
         process.exit(1);
     }
+    tray.start(GUI_PORT);
     // Idempotent - safe (and cheap) to re-assert this on every normal startup; a genuine no-op
     // in dev (`node main.js`, no process.pkg) since there's no self-contained exe path to point
     // the registry at yet - see the function's own header comment.
@@ -136,10 +164,10 @@ if (rawArg) {
     // to bring the dashboard back. Just open another window onto the SAME already-running
     // server instead (the dashboard is stateless/reconnectable - a fresh tab is all that's
     // needed) rather than trying to become a second primary instance.
-    isPrimaryRunning().then((already) => {
+    isPrimaryRunning().then(async (already) => {
         if (already) {
-            log('Coretax Agent sudah berjalan - membuka jendela dashboard baru.');
-            openWindow('http://127.0.0.1:' + GUI_PORT + '/');
+            log('Coretax Agent sudah berjalan - membawa jendela dashboard yang ada ke depan (atau membukanya jika belum ada).');
+            await forwardOpenToRunningInstance();
             process.exit(0);
         }
         main().catch((e) => {
