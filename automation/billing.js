@@ -26,17 +26,24 @@
         e-Bupot's endpoints) - fetched as base64 from inside the page and decoded back to a
         Buffer here, see apiPostBinary.
 
-   IMPORTANT LIMITATION - idempotency guard (confirmed live): paymentportal/api/
-   activebillingcode/list's row shape for a self-billed (not SPT-linked) code does NOT expose
-   TaxTypeCode/TaxPaymentCode/TaxPeriodCode at all (PeriodCode and ReturnSheetTypeCode were both
-   null on the real test record) - there is no field on this endpoint to match a listed active
-   code back to a specific KAP-KJS+period. findLikelyExistingBilling below falls back to
-   matching on Nominal alone, which catches the realistic everyday risk (an accidental same-
-   amount re-run for the same entity) but is NOT a period-exact guarantee - two different months
-   that happen to bill the same amount would collide. Hardening this properly needs either a
-   billing-detail-by-RecordId endpoint (not found yet) or cross-checking accounting-portal/
-   balancesheet-light (confirmed by the user to be the correct place to check PAID status,
-   filtered by TaxTypeCode + masa - not yet integrated here, left as a follow-up). */
+   TWO idempotency guards run before ever creating anything (confirmed live 2026-07-28 against
+   DFA's real, already-paid PPh 25 for masa 06/2026, Rp 58.327.235):
+     5) checkAlreadyPaid() - POST accountingportal/api/taxpayeraccounting/list (Buku Besar),
+        matched client-side by RevenueCode+PaymentCode+PeriodCode, AmountLeft<=0 = fully paid.
+        This is the DEFINITIVE check: a paid period drops off activebillingcode/list entirely
+        (confirmed live - DFA's paid record does not appear there), so without this check a
+        paid period would look "never billed" and get a redundant new code. Must run BEFORE the
+        duplicate guard below. Uses an explicit wide TransactionDate window (last year through
+        next year) since Coretax's own default (omitting that filter) silently narrows to the
+        last 30 days - confirmed via the Buku Besar UI's own disclaimer text.
+     6) findLikelyExistingBilling() - paymentportal/api/activebillingcode/list. IMPORTANT
+        LIMITATION (confirmed live): a self-billed (not SPT-linked) code's row shape does NOT
+        expose TaxTypeCode/TaxPaymentCode/TaxPeriodCode at all (both null on every self-billed
+        test record) - there is no field on this endpoint to match a listed ACTIVE code back to
+        a specific KAP-KJS+period. Falls back to matching on Nominal alone, which catches the
+        realistic everyday risk (an accidental same-amount re-run) but is NOT a period-exact
+        guarantee - two different months that happen to bill the same amount would collide.
+        Hardening this further would need a billing-detail-by-RecordId endpoint (not found). */
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -48,6 +55,7 @@ const { _sleep, sanitizeFilenamePart } = require('../lib/datatable');
 
 const API_PAYMENT = 'https://coretaxdjp.pajak.go.id/paymentportal/api';
 const API_REGISTRATION = 'https://coretaxdjp.pajak.go.id/registrationportal/api';
+const API_ACCOUNTING = 'https://coretaxdjp.pajak.go.id/accountingportal/api';
 const SELF_BILLING_URL = 'https://coretaxdjp.pajak.go.id/payment-portal/id-ID/self-billing';
 
 // KAP-KJS per taxpayer profile - confirmed live 2026-07-28 via createbillingcode/get-taxtype-
@@ -182,8 +190,75 @@ async function findLikelyExistingBilling(page, authState, nominal) {
     return rows.find((r) => Number(r.Nominal) === Number(nominal)) || null;
 }
 
+/** Downloads the PDF of an ALREADY-EXISTING active billing code (the "Lihat" button's action
+ *  in Daftar Kode Billing Aktif) - confirmed live 2026-07-28 clicking a real code. DocumentId
+ *  is the record's own BillingCode (not a separate ID); AggregateIdentifier is the record's own
+ *  AggregateIdentifier field - both already present on whatever findLikelyExistingBilling
+ *  returned, no extra lookup needed. Same raw-PDF-bytes response shape as createbillingcode. */
+async function downloadExistingBillingCode(page, authState, record) {
+    const result = await apiPostBinary(page, authState, API_PAYMENT + '/activebillingcode/download', {
+        TaxpayerAggregateIdentifier: authState.taxpayerId, DocumentId: record.BillingCode, AggregateIdentifier: record.AggregateIdentifier
+    });
+    if (result.status !== 200 || !result.base64) {
+        throw new Error('Gagal mengunduh Kode Billing yang sudah ada: HTTP ' + result.status);
+    }
+    return Buffer.from(result.base64, 'base64');
+}
+
+/** Checks Coretax's own general ledger (Buku Besar) for whether this KAP-KJS+period has
+ *  already been fully paid - confirmed live 2026-07-28 against a real settled PPh 25 record: a
+ *  fully-paid transaction shows AmountLeft: 0 (Amount is the original amount owed, AmountLeft
+ *  is what's still outstanding - same shape as an invoice/AR balance). This is the definitive
+ *  check the Nominal-only activebillingcode/list guard can't do: a PAID period drops off the
+ *  active-codes list entirely (confirmed live - DFA's real paid PPh 25 for 06062026 does not
+ *  appear there), so without this check a paid period would incorrectly look "never billed" and
+ *  get a redundant new code.
+ *
+ *  Uses an explicit wide TransactionDate window (last year through next year) because Coretax's
+ *  own default - omitting the TransactionDate filter entirely - silently narrows results to the
+ *  last 30 days (confirmed via the Buku Besar UI's own disclaimer text), which would miss
+ *  anything paid earlier than that relative to whenever this happens to run. */
+async function checkAlreadyPaid(page, authState, taxTypeCode, taxPaymentCode, periodCode) {
+    const now = new Date();
+    const from = new Date(now.getFullYear() - 1, 0, 1);
+    const to = new Date(now.getFullYear() + 1, 0, 1);
+    const fmt = (d) => d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+    const { status, json } = await apiPost(page, authState, API_ACCOUNTING + '/taxpayeraccounting/list', {
+        TaxpayerAggregateIdentifier: authState.taxpayerId, First: 0, Rows: 200, SortField: 'PostingDate', SortOrder: -1,
+        Filters: [
+            { PropertyName: 'Amount', Value: 0, MatchMode: 'notEquals' },
+            { PropertyName: 'IsCancelled', Value: 0, MatchMode: 'equals' },
+            { PropertyName: 'TransactionDate', Value: [fmt(from), fmt(to)], MatchMode: 'between' }
+        ],
+        LanguageId: 'id-ID'
+    });
+    if (status !== 200 || !json || json.IsSuccessful === false) return null;
+    const rows = (json.Payload && json.Payload.Data) || [];
+    return rows.find((r) => r.RevenueCode === taxTypeCode && r.PaymentCode === taxPaymentCode && r.PeriodCode === periodCode && Number(r.AmountLeft) <= 0) || null;
+}
+
 function buildBillingFilename(entityCode, mmYY) {
     return sanitizeFilenamePart(entityCode) + ' - Billing PPh 25 ' + mmYY + '.pdf';
+}
+
+/** Shared by both the "create new" and "existing code found" paths - same destination/naming
+ *  convention either way, since from the user's perspective the point is having the PDF
+ *  locally, not whether this run happened to create it or just fetched an already-existing one. */
+function saveBillingPdf(entity, mmYY, buffer, saveRoot, compFolder) {
+    const root = saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
+    const saveDir = path.join(root, entity.entity_id, 'PPh25');
+    fs.mkdirSync(saveDir, { recursive: true });
+    const filePath = path.join(saveDir, buildBillingFilename(entity.entity_id, mmYY));
+    fs.writeFileSync(filePath, buffer);
+    if (compFolder) {
+        try {
+            fs.mkdirSync(compFolder, { recursive: true });
+            const dest = path.join(compFolder, path.basename(filePath));
+            if (fs.existsSync(dest)) fs.rmSync(dest, { force: true });
+            fs.copyFileSync(filePath, dest);
+        } catch (e) { log('Gagal menyalin ke folder compliance: ' + e.message); }
+    }
+    return filePath;
 }
 
 /** Top-level entry point.
@@ -232,16 +307,33 @@ async function runBillingPph25(opts) {
 
     const taxTypeCode = TAX_TYPE_CODE[entity.individual ? 'individual' : 'badan'];
     const taxTypeAndPaymentCode = taxTypeCode + '-' + TAX_PAYMENT_CODE;
+    const taxPeriodCode = await resolveTaxPeriodCode(page, authState, taxTypeAndPaymentCode, mmYY);
 
+    // Check 1: already paid? (Buku Besar) - this is the definitive check; a paid period drops
+    // off the active-codes list entirely, so this MUST run before the Nominal-based duplicate
+    // guard below, not after - otherwise a paid period would look "never billed" and get billed
+    // again.
+    const paid = await checkAlreadyPaid(page, authState, taxTypeCode, TAX_PAYMENT_CODE, taxPeriodCode);
+    if (paid) {
+        log('PPh 25 masa ' + mmYY + ' SUDAH DIBAYAR (Rp ' + Number(paid.Amount).toLocaleString('id-ID') + ', lunas di Buku Besar, ' + paid.TransactionDate + ') - dilewati, tidak membuat kode baru.');
+        return { created: false, reason: 'already_paid', paidAmount: paid.Amount };
+    }
+
+    // Check 2: an active/unpaid code already exists? (best-effort, Nominal-only match - see
+    // module header comment for why period-exact matching isn't available here). Download it
+    // (the "Lihat" button's own action, confirmed live) instead of just warning, so the user
+    // still ends up with the PDF locally even when this run doesn't create anything new.
     const dup = await findLikelyExistingBilling(page, authState, nominal);
     if (dup) {
-        log('Kode Billing dengan nominal sama (Rp ' + nominal.toLocaleString('id-ID') + ') sudah aktif: ' + dup.BillingCode + ' (kedaluwarsa ' + dup.BillingCodeExpirationTime + ') - dilewati, tidak membuat kode baru.');
-        return { created: false, reason: 'duplicate', billingCode: dup.BillingCode };
+        log('Kode Billing dengan nominal sama (Rp ' + nominal.toLocaleString('id-ID') + ') sudah aktif: ' + dup.BillingCode + ' (kedaluwarsa ' + dup.BillingCodeExpirationTime + ') - dilewati, mengunduh yang sudah ada.');
+        const buffer = await downloadExistingBillingCode(page, authState, dup);
+        const filePath = saveBillingPdf(entity, mmYY, buffer, opts.saveRoot, opts.compFolder);
+        log('Kode Billing PPh 25 (sudah ada) diunduh: ' + path.basename(filePath));
+        return { created: false, reason: 'duplicate', billingCode: dup.BillingCode, filePath };
     }
 
     await runcontrol.checkpoint();
     const info = await fetchGeneralInfo(page, authState);
-    const taxPeriodCode = await resolveTaxPeriodCode(page, authState, taxTypeAndPaymentCode, mmYY);
 
     // Best-effort, mirrors the real UI's own flow before letting you submit - not fatal if it
     // errors, the create call itself is still the real gate.
@@ -272,21 +364,8 @@ async function runBillingPph25(opts) {
         throw new Error('Gagal membuat Kode Billing: ' + msg);
     }
 
-    const saveRoot = opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
-    const saveDir = path.join(saveRoot, entity.entity_id, 'PPh25');
-    fs.mkdirSync(saveDir, { recursive: true });
-    const filePath = path.join(saveDir, buildBillingFilename(entity.entity_id, mmYY));
-    fs.writeFileSync(filePath, Buffer.from(result.base64, 'base64'));
+    const filePath = saveBillingPdf(entity, mmYY, Buffer.from(result.base64, 'base64'), opts.saveRoot, opts.compFolder);
     log('Kode Billing PPh 25 dibuat: ' + path.basename(filePath));
-
-    if (opts.compFolder) {
-        try {
-            fs.mkdirSync(opts.compFolder, { recursive: true });
-            const dest = path.join(opts.compFolder, path.basename(filePath));
-            if (fs.existsSync(dest)) fs.rmSync(dest, { force: true });
-            fs.copyFileSync(filePath, dest);
-        } catch (e) { log('Gagal menyalin ke folder compliance: ' + e.message); }
-    }
 
     return { created: true, filePath };
 }
