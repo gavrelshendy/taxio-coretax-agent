@@ -52,14 +52,34 @@
     bar.querySelectorAll('[data-disconnect]').forEach((b) => b.addEventListener('click', () => doDisconnect(b.dataset.disconnect)));
 
     const anyConnected = PROJECT_ORDER.some((id) => sessionSummary[id] && sessionSummary[id].connected);
-    const isRestricted = PROJECT_ORDER.some((id) => sessionSummary[id] && sessionSummary[id].connected && sessionSummary[id].role === 'restricted_editor');
+    const isRestricted = PROJECT_ORDER.some((id) => sessionSummary[id] && sessionSummary[id].connected && (String(sessionSummary[id].role || '').toLowerCase().includes('restricted')));
     const openBtn = $('open-coretax-btn');
     if (openBtn) openBtn.style.display = isRestricted ? 'none' : '';
     const showApp = anyConnected || manualStatus.loggedIn;
     $('main-layout').style.display = showApp ? 'grid' : 'none';
     $('empty-hint').style.display = showApp ? 'none' : 'flex';
+    updateUserProfileHeader();
     renderSessionBar();
     if (showApp) loadEntities();
+  }
+
+  function updateUserProfileHeader() {
+    const profileBadge = $('user-profile-badge');
+    if (!profileBadge) return;
+    const activeSession = Object.values(sessionSummary || {}).find((s) => s && s.connected);
+    if (activeSession && activeSession.email) {
+      const r = String(activeSession.role || '').toLowerCase();
+      const isRestricted = r.includes('restricted');
+      const roleLabel = isRestricted ? 'Restricted Editor' : (activeSession.role || 'Member');
+      const roleClass = isRestricted ? 'restricted' : 'admin';
+      profileBadge.style.display = 'inline-flex';
+      profileBadge.innerHTML = '<span style="font-size:12px;">👤</span>'
+        + '<span class="user-email">' + escapeHtml(activeSession.email) + '</span>'
+        + '<span class="role-badge ' + roleClass + '">' + escapeHtml(roleLabel) + '</span>';
+    } else {
+      profileBadge.style.display = 'none';
+      profileBadge.innerHTML = '';
+    }
   }
 
   // "Login as" = who you're logged into CORETAX as (NPWP · name), NOT the Taxio/gmail account
@@ -109,6 +129,11 @@
     selectedEntity = null;
     renderConnections();
   }
+
+  $('clear-log-btn').addEventListener('click', async () => {
+    $('log-view').innerHTML = '';
+    try { await api('/api/log/clear', { method: 'POST' }); } catch (e) {}
+  });
 
   $('quit-btn').addEventListener('click', async () => {
     if (!confirm('Tutup Coretax Agent sepenuhnya?')) return;
@@ -206,9 +231,15 @@
       const idx = entities.indexOf(e);
       const isSelected = selectedEntity && selectedEntity.entity_id === e.entity_id && selectedEntity.pic_id === e.pic_id && selectedEntity.project === e.project;
       const tagHtml = e.project === 'manual' ? ' <span class="project-tag">MANUAL</span>' : '';
+      const initial = (e.entity_name || 'E').trim().charAt(0).toUpperCase();
       return '<div class="entity-row' + (isSelected ? ' selected' : '') + '" data-idx="' + idx + '">'
-        + '<div class="entity-name">' + escapeHtml(e.entity_name) + tagHtml + '</div>'
-        + '<div class="entity-meta">' + escapeHtml(e.entity_id) + (e.pic_name ? (' · PIC: ' + escapeHtml(e.pic_name)) : '') + '</div>'
+        + '<div style="display:flex;align-items:center;gap:10px;">'
+        + '<div style="width:30px;height:30px;border-radius:8px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--cyan);flex-shrink:0;">' + initial + '</div>'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div class="entity-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(e.entity_name) + tagHtml + '</div>'
+        + '<div class="entity-meta">' + escapeHtml(e.entity_id) + (e.pic_name ? (' · PIC Coretax: ' + escapeHtml(e.pic_name)) : '') + '</div>'
+        + '</div>'
+        + '</div>'
         + '</div>';
     }).join('');
     list.querySelectorAll('.entity-row').forEach((row) => {
@@ -247,6 +278,23 @@
     // meaningful for Taxio Hub entities that need credential login + impersonate.
     $('login-only-btn').style.display = selectedEntity.project === 'manual' ? 'none' : 'block';
     updateFormForBupot();
+    updateMyBupotForEntity();
+  }
+  // BPMP/BP21/BPA1/BPA2 only ever have data under the PIC's own personal identity (confirmed
+  // live - see automation/mybupot.js's header comment), never under an impersonated company, so
+  // disable+uncheck them whenever the selected entity requires impersonation. Manual sessions
+  // are skipped entirely (the user already drives that browser window directly, same "manual
+  // bypasses automated guardrails" pattern used elsewhere in this app).
+  const PERSONAL_ONLY_MYBUPOT_TYPES = ['bpmp', 'bp21', 'bpa1', 'bpa2'];
+  function updateMyBupotForEntity() {
+    if (!selectedEntity) return;
+    const allow = selectedEntity.project === 'manual' || !!selectedEntity.individual;
+    document.querySelectorAll('.mybupot-jenis').forEach((cb) => {
+      if (!PERSONAL_ONLY_MYBUPOT_TYPES.includes(cb.value)) return;
+      cb.disabled = !allow;
+      if (!allow && cb.checked) cb.checked = false;
+    });
+    if (typeof syncMyBupotSelectAll === 'function') syncMyBupotSelectAll();
   }
   $('login-only-btn').addEventListener('click', async () => {
     if (!selectedEntity) return;
@@ -260,6 +308,30 @@
       btn.disabled = false;
     }
   });
+  // ---------- Generic "select all" icon buttons for checkbox groups ----------
+  function wireSelectAll(btnId, checkboxSelector, onChangeAfter) {
+    const btn = $(btnId);
+    if (!btn) return;
+    function enabledBoxes() { return [...document.querySelectorAll(checkboxSelector)].filter((cb) => !cb.disabled); }
+    function sync() {
+      const boxes = enabledBoxes();
+      btn.classList.toggle('all-selected', boxes.length > 0 && boxes.every((cb) => cb.checked));
+    }
+    btn.addEventListener('click', () => {
+      const boxes = enabledBoxes();
+      const allChecked = boxes.length > 0 && boxes.every((cb) => cb.checked);
+      boxes.forEach((cb) => { cb.checked = !allChecked; });
+      sync();
+      if (onChangeAfter) onChangeAfter();
+    });
+    document.querySelectorAll(checkboxSelector).forEach((cb) => cb.addEventListener('change', sync));
+    sync();
+    return sync;
+  }
+  wireSelectAll('ebupot-select-all-btn', '.bupot-jenis', updateFormForBupot);
+  const syncMyBupotSelectAll = wireSelectAll('mybupot-select-all-btn', '.mybupot-jenis');
+  wireSelectAll('spt-select-all-btn', '.spt-jenis');
+
   document.querySelectorAll('.bupot-jenis').forEach((cb) => cb.addEventListener('change', updateFormForBupot));
   const KODE_OBJEK_TYPES = ['bp21', 'bppu']; // only these two ever filter by Kode Objek Pajak
   function selectedBupotTypes() { return [...document.querySelectorAll('.bupot-jenis:checked')].map((c) => c.value); }
@@ -272,9 +344,9 @@
     // toggle same as before; if it's mixed with PDF-capable types, leave Output as the user's
     // choice for those - the BPMP leg of the run always requests Excel-only regardless (handled
     // per-request when the download queue is built), so the global toggle doesn't need to lie.
-    const outSel = $('output-mode');
-    if (types.length === 1 && types[0] === 'bpmp') { outSel.value = 'excel_only'; outSel.disabled = true; }
-    else { outSel.disabled = false; }
+    const outPdf = $('output-pdf');
+    if (types.length === 1 && types[0] === 'bpmp') { outPdf.checked = false; outPdf.disabled = true; }
+    else { outPdf.disabled = false; }
   }
 
   // ---------- Feature tabs (e-Bupot / SPT / Dividen) ----------
@@ -284,6 +356,7 @@
       activeFeature = btn.dataset.feature;
       $('feature-tabs').querySelectorAll('.feature-tab').forEach((b) => b.classList.toggle('active', b === btn));
       $('feature-ebupot').style.display = activeFeature === 'ebupot' ? 'block' : 'none';
+      $('feature-mybupot').style.display = activeFeature === 'mybupot' ? 'block' : 'none';
       $('feature-spt').style.display = activeFeature === 'spt' ? 'block' : 'none';
       $('feature-dividen').style.display = activeFeature === 'dividen' ? 'block' : 'none';
       // Dividen has its own Import button + reads the live Coretax window (not a saved-to-disk
@@ -433,7 +506,19 @@
     if (!selectedEntity) return;
     const saveRoot = $('save-root-input').value.trim();
     try {
-      if (activeFeature === 'spt') {
+      if (activeFeature === 'mybupot') {
+        const buktiTypeKeys = [...document.querySelectorAll('.mybupot-jenis:checked')].map((c) => c.value);
+        const masaInput = $('mybupot-masa-input').value.trim();
+        const pageSize = $('mybupot-page-size').value;
+        const outputMode = $('mybupot-output-pdf').checked ? 'pdf_excel' : 'excel_only';
+        if (!masaInput) { alert('Masa wajib diisi.'); return; }
+        if (!buktiTypeKeys.length) { alert('Pilih minimal satu Jenis Bukti Potong.'); return; }
+        await api('/api/actions/download-mybupot', {
+          method: 'POST',
+          body: JSON.stringify({ entity: selectedEntity, buktiTypeKeys, masaInput, saveRoot: saveRoot || undefined, pageSize, outputMode })
+        });
+        pollRunStatus();
+      } else if (activeFeature === 'spt') {
         const masaInput = $('spt-masa-input').value.trim();
         const jenisPajakKeys = [...document.querySelectorAll('.spt-jenis:checked')].map((c) => c.value);
         if (!masaInput) { alert('Masa wajib diisi.'); return; }
@@ -448,7 +533,7 @@
         const masaInput = $('masa-input').value.trim();
         const kodeInput = $('kode-objek-input').value.trim();
         const pageSize = $('page-size').value;
-        const outputMode = $('output-mode').value;
+        const outputMode = $('output-pdf').checked ? 'pdf_excel' : 'excel_only';
         if (!masaInput) { alert('Masa wajib diisi.'); return; }
         if (!bupotTypes.length) { alert('Pilih minimal satu Jenis Bupot.'); return; }
         bupotQueue = bupotTypes.map((bupotType) => ({
@@ -542,6 +627,11 @@
   // ---------- Boot ----------
   (async function boot() {
     connectEvents();
+    try {
+      const v = await api('/api/version');
+      const badge = document.querySelector('.version-badge');
+      if (badge && v && v.version) badge.textContent = 'v' + v.version;
+    } catch (e) {}
     try { sessionSummary = await api('/api/session'); } catch (e) {}
     startManualPolling(); // detect an already-open manual window too
     pollLoginStatus();
