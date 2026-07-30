@@ -273,21 +273,58 @@ async function processSptCombo(ctx) {
         if (fs.existsSync(sptPath) && fs.existsSync(bpePath)) continue; // already have both artifacts
 
         let rowOk = true;
+
+        // BPE first: it's a single fast fetch (no server-side "still generating" wait), so it
+        // should never sit blocked behind a slow/stuck SPT induk. Explicit user request
+        // 2026-07-30: if BPE can download, download it - don't make it wait on the induk.
+        if (!fs.existsSync(bpePath)) {
+            try {
+                const html = await fetchBpeHtml(page, authState, row);
+                fs.mkdirSync(saveDir, { recursive: true });
+                await htmlToPdf.renderHtmlToPdf(html, bpePath);
+                downloadedAny = true;
+                emit('Terunduh: ' + path.basename(bpePath));
+                copyToCompliance(bpePath, compFolder, emit);
+            } catch (e) {
+                if (e.isSessionExpired) throw e;
+                rowOk = false;
+                emit('Baris ke-' + (i + 1) + ': BPE gagal terunduh - ' + e.message + ' - dilewati, bisa diulang manual.');
+            }
+        } else copyToCompliance(bpePath, compFolder, emit);
+
         if (!fs.existsSync(sptPath)) {
-            let result = await tryFetchPdf(page, authState, row);
-            let attempt = 0;
-            while (!result.ready && attempt < GENERATE_POLL_ATTEMPTS) {
-                await runcontrol.checkpoint();
-                if (attempt === 0) emit('Baris ke-' + (i + 1) + ' (' + JENIS_PAJAK_LABELS[jenisKey] + ', ' + (row.ReturnSheetModel || 'Normal') + '): PDF belum tersedia - meminta pembuatan...');
-                await _sleep(GENERATE_POLL_WAIT_MS);
-                // Re-fetch this row's own fresh state (DocumentFormAggregateIdentifier only
-                // populates once generation finishes server-side) rather than trusting the
-                // stale copy from the initial listing fetch.
-                const refreshed = await fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, () => {});
-                const match = refreshed.find((r) => r.RecordId === row.RecordId) || row;
-                row = match;
+            // CONFIRMED LIVE 2026-07-30 (real Coretax platform-side stuck document, reproduced
+            // both via automation and via a manual UI click - see apiPost's header comment): a
+            // single row's fetch failing (timeout, or genuinely stuck server-side generation)
+            // used to throw all the way out of this function uncaught, pausing the ENTIRE run
+            // and blocking every OTHER row - including ones that would have downloaded fine on
+            // their own. Explicit user request: one bad row should fail/skip on its own, not
+            // take the whole batch down with it. Mirrors the try/catch the BPE fetch above -
+            // this was a pre-existing inconsistency between the two, not a deliberate design
+            // difference. isSessionExpired still propagates (correctly - every remaining row
+            // needs a fresh login too, so pausing there is the right call).
+            let result = { ready: false };
+            let caughtError = null;
+            try {
                 result = await tryFetchPdf(page, authState, row);
-                attempt++;
+                let attempt = 0;
+                while (!result.ready && attempt < GENERATE_POLL_ATTEMPTS) {
+                    await runcontrol.checkpoint();
+                    if (attempt === 0) emit('Baris ke-' + (i + 1) + ' (' + JENIS_PAJAK_LABELS[jenisKey] + ', ' + (row.ReturnSheetModel || 'Normal') + '): PDF belum tersedia - meminta pembuatan...');
+                    await _sleep(GENERATE_POLL_WAIT_MS);
+                    // Re-fetch this row's own fresh state (DocumentFormAggregateIdentifier only
+                    // populates once generation finishes server-side) rather than trusting the
+                    // stale copy from the initial listing fetch.
+                    const refreshed = await fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, () => {});
+                    const match = refreshed.find((r) => r.RecordId === row.RecordId) || row;
+                    row = match;
+                    result = await tryFetchPdf(page, authState, row);
+                    attempt++;
+                }
+            } catch (e) {
+                if (e.isSessionExpired) throw e;
+                caughtError = e;
+                result = { ready: false };
             }
             if (result.ready) {
                 fs.mkdirSync(saveDir, { recursive: true });
@@ -297,23 +334,13 @@ async function processSptCombo(ctx) {
                 copyToCompliance(sptPath, compFolder, emit);
             } else {
                 rowOk = false;
-                emit('Baris ke-' + (i + 1) + ': SPT PDF gagal terunduh (masih dalam proses pembuatan setelah ' + GENERATE_POLL_ATTEMPTS + ' percobaan) - dilewati, bisa diulang manual.');
+                if (caughtError) {
+                    emit('Baris ke-' + (i + 1) + ': SPT PDF gagal terunduh - ' + caughtError.message + ' - dilewati, bisa diulang manual.');
+                } else {
+                    emit('Baris ke-' + (i + 1) + ': SPT PDF gagal terunduh (masih dalam proses pembuatan setelah ' + GENERATE_POLL_ATTEMPTS + ' percobaan) - dilewati, bisa diulang manual.');
+                }
             }
         } else copyToCompliance(sptPath, compFolder, emit);
-
-        if (!fs.existsSync(bpePath)) {
-            try {
-                const html = await fetchBpeHtml(page, authState, row);
-                fs.mkdirSync(saveDir, { recursive: true });
-                await htmlToPdf.renderHtmlToPdf(html, bpePath);
-                emit('Terunduh: ' + path.basename(bpePath));
-                copyToCompliance(bpePath, compFolder, emit);
-            } catch (e) {
-                if (e.isSessionExpired) throw e;
-                rowOk = false;
-                emit('Baris ke-' + (i + 1) + ': BPE gagal terunduh - ' + e.message + ' - dilewati, bisa diulang manual.');
-            }
-        } else copyToCompliance(bpePath, compFolder, emit);
 
         if (onRowDone) { try { onRowDone(jenisKey, mmYY, rowOk); } catch (e) {} }
     }
