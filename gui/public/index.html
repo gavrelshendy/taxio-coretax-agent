@@ -6,19 +6,26 @@
 <link rel="icon" href="/assets/coretax-favicon.png?v=3">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 <header class="topbar">
   <div class="brand-sm">
-    <img class="brand-logo" src="/assets/coretax-agent-icon.png?v=3" height="28" alt="Coretax Agent">
-    <span class="brand-tag">AGENT AUTOMATION</span>
+    <div class="brand-logo-wrapper">
+      <img class="brand-logo" src="/assets/coretax-agent-icon.png?v=3" height="28" alt="Coretax Agent">
+    </div>
+    <div class="brand-titles">
+      <span class="brand-title">CORETAX AGENT</span>
+      <span class="brand-tag">AUTOMATION STUDIO</span>
+    </div>
+    <span class="version-badge"></span>
   </div>
   <div class="topbar-right">
+    <div id="user-profile-badge" class="user-profile-badge" style="display:none;"></div>
     <button id="open-coretax-btn" class="btn btn-outline btn-sm" title="Buka jendela Coretax untuk login sendiri, tanpa otomasi">Login Coretax</button>
-    <button id="check-manual-btn" class="btn btn-ghost btn-sm" title="Cek apakah login manual sudah berhasil" style="display:none;">🔄 Cek Login</button>
-    <button id="settings-btn" class="btn btn-outline btn-sm" title="Kelola akun terhubung">⚙ Pengaturan</button>
+    <button id="check-manual-btn" class="btn btn-ghost btn-sm" title="Cek apakah login manual sudah berhasil" style="display:none;">Cek Login</button>
+    <button id="settings-btn" class="btn btn-outline btn-sm" title="Kelola akun terhubung">Pengaturan</button>
     <button id="quit-btn" class="btn btn-ghost btn-sm btn-danger">Keluar</button>
   </div>
 </header>
@@ -28,10 +35,13 @@
 <div id="settings-overlay" class="overlay" style="display:none;">
   <div class="overlay-card">
     <div class="overlay-head">
-      <h2>Akun Terhubung</h2>
+      <div class="overlay-title-group">
+        <span class="status-indicator"></span>
+        <h2>Akun Terhubung</h2>
+      </div>
       <button id="settings-close" class="btn btn-ghost btn-sm" aria-label="Tutup">✕</button>
     </div>
-    <p class="overlay-sub">Hubungkan akun Taxio Hub Anda untuk mengambil daftar entitas &amp; kredensial Coretax.</p>
+    <p class="overlay-sub">Hubungkan akun Taxio Hub Anda untuk mengambil daftar entitas &amp; kredensial Coretax secara aman.</p>
     <section id="connections-bar" class="connections-bar">
       <!-- Taxio Hub connection card rendered by app.js -->
     </section>
@@ -39,126 +49,306 @@
 </div>
 
 <main id="main-layout" class="layout" style="display:none;">
+  <!-- LEFT PANEL: ENTITIES -->
   <section class="panel entities-panel">
     <div class="panel-head">
-      <h2>Entitas</h2>
-      <input type="search" id="entity-search" placeholder="Cari entitas...">
+      <div class="panel-head-title">
+        <span class="panel-head-badge">ENTITAS</span>
+      </div>
+      <div class="search-box-wrapper">
+        <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="search" id="entity-search" placeholder="Cari entitas...">
+      </div>
       <div class="entity-mode-seg" id="entity-mode-seg">
         <button type="button" id="entity-mode-btn-group" data-mode="group">Group</button>
         <button type="button" id="entity-mode-btn-personal" data-mode="personal">Me</button>
       </div>
     </div>
-    <div id="entity-list" class="entity-list"><div class="muted pad">Memuat...</div></div>
+    <div id="entity-list" class="entity-list"><div class="muted pad">Memuat entitas...</div></div>
   </section>
 
+  <!-- CENTER PANEL: PANEL OTOMASI CORETAX -->
   <section class="panel action-panel">
-    <div class="panel-head"><h2>Download</h2></div>
+    <div class="panel-head">
+      <div class="panel-head-title">
+        <span class="panel-head-badge">CORETAX STUDIO</span>
+        <h2>Panel Otomasi Coretax</h2>
+      </div>
+    </div>
     <div id="action-form" class="action-form">
-      <p class="muted pad" id="no-entity-hint">Pilih entitas di sebelah kiri terlebih dahulu.</p>
+      <div class="empty-selection-card" id="no-entity-hint">
+        <div class="empty-card-visual">
+          <span class="visual-line"></span>
+          <span class="visual-dot"></span>
+        </div>
+        <strong>Pilih Entitas Target</strong>
+        <span>Pilih entitas Wajib Pajak di sebelah kiri untuk memulai otomasi Coretax.</span>
+      </div>
       <div id="action-form-body" style="display:none;">
-        <div class="selected-entity" id="selected-entity-label"></div>
+        <div class="selected-entity-card">
+          <div class="entity-card-badge">ENTITAS AKTIF</div>
+          <div class="selected-entity" id="selected-entity-label"></div>
+        </div>
 
-        <button id="login-only-btn" class="btn btn-outline btn-block" title="Login &amp; impersonate entitas ini saja, tanpa mengisi form download - berguna untuk memastikan login berhasil dulu sebelum memutuskan mau download apa">Login Coretax</button>
+        <button id="login-only-btn" class="btn btn-outline btn-block btn-glow-indigo" title="Login &amp; impersonate entitas ini saja, tanpa mengisi form download">Login Coretax</button>
 
         <div class="feature-tabs" id="feature-tabs">
           <button type="button" class="feature-tab active" data-feature="ebupot">e-Bupot</button>
+          <button type="button" class="feature-tab" data-feature="mybupot">Bukti Potong Saya</button>
           <button type="button" class="feature-tab" data-feature="spt">SPT</button>
           <button type="button" class="feature-tab" data-feature="dividen">Dividen</button>
         </div>
 
+        <!-- e-Bupot Tab -->
         <div id="feature-ebupot" class="feature-panel">
-          <label class="field-label">Jenis Bupot (bisa lebih dari 1)</label>
-          <div class="checkbox-row">
-            <label><input type="checkbox" class="bupot-jenis" value="bp21" checked> BP21</label>
-            <label><input type="checkbox" class="bupot-jenis" value="bppu"> BPPU</label>
-            <label><input type="checkbox" class="bupot-jenis" value="bpa1"> BPA1</label>
-            <label><input type="checkbox" class="bupot-jenis" value="bpmp"> BPMP (Excel saja)</label>
+          <div class="field-label-row">
+            <label class="field-label">Jenis Bupot <i class="hint-icon" title="Pilih minimal 1">?</i></label>
+            <button type="button" class="select-all-icon-btn" id="ebupot-select-all-btn" title="Pilih semua">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"></rect><path d="M8 12.5l2.5 2.5L16 9.5"></path></svg>
+            </button>
+          </div>
+          <div class="checkbox-grid">
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="bupot-jenis" value="bp21" checked>
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BP21</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="bupot-jenis" value="bppu">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BPPU</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="bupot-jenis" value="bpa1">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BPA1</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="bupot-jenis" value="bpmp">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BPMP</span>
+            </label>
           </div>
 
-          <label class="field-label">Output</label>
-          <select id="output-mode">
-            <option value="pdf_excel" selected>PDF + Excel</option>
-            <option value="excel_only">Excel saja</option>
-          </select>
-
-          <label class="field-label">Masa (mis. 0126;0226 atau 0126-0526)</label>
-          <input type="text" id="masa-input" placeholder="0126-0526">
-
-          <div id="kode-objek-row">
-            <label class="field-label">Kode Objek Pajak (opsional, mis. 21-100-35;21-100-20)</label>
-            <input type="text" id="kode-objek-input" placeholder="kosongkan = semua kode">
+          <div class="form-group">
+            <label class="field-label">Format Output</label>
+            <div class="checkbox-grid">
+              <label class="custom-checkbox-card">
+                <input type="checkbox" id="output-excel" checked disabled>
+                <span class="checkbox-indicator"></span>
+                <span class="checkbox-text">Excel</span>
+              </label>
+              <label class="custom-checkbox-card">
+                <input type="checkbox" id="output-pdf" checked>
+                <span class="checkbox-indicator"></span>
+                <span class="checkbox-text">PDF</span>
+              </label>
+            </div>
           </div>
 
-          <label class="field-label">Baris per Halaman</label>
-          <select id="page-size">
-            <option value="auto" selected>Auto (adaptif - ikut kecepatan web)</option>
-            <option value="100">100</option>
-            <option value="50">50</option>
-            <option value="25">25</option>
-            <option value="10">10</option>
-          </select>
+          <div class="form-group">
+            <label class="field-label" for="masa-input">Masa Pajak <i class="hint-icon" title="mis. 0126;0226 atau 0126-0526">?</i></label>
+            <input type="text" id="masa-input" class="styled-input">
+          </div>
+
+          <div id="kode-objek-row" class="form-group">
+            <label class="field-label" for="kode-objek-input">Kode Objek Pajak <i class="hint-icon" title="Opsional, mis. 21-100-35;21-100-20">?</i></label>
+            <input type="text" id="kode-objek-input" class="styled-input" placeholder="kosongkan = semua kode">
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="page-size">Baris per Halaman</label>
+            <select id="page-size" class="styled-select">
+              <option value="auto" selected>Auto</option>
+              <option value="100">100 baris</option>
+              <option value="50">50 baris</option>
+              <option value="25">25 baris</option>
+              <option value="10">10 baris</option>
+            </select>
+          </div>
         </div>
 
+        <!-- Bukti Potong Saya Tab (received, not issued - see automation/mybupot.js) -->
+        <div id="feature-mybupot" class="feature-panel" style="display:none;">
+          <div class="field-label-row">
+            <label class="field-label">Jenis Bukti Potong <i class="hint-icon" title="Pilih minimal 1. Entitas = milik badan/perusahaan yang di-impersonate (BPPU, BPNR, BP 26, Dokumen yang Dipersamakan). PIC pribadi = selalu tercatat atas nama pribadi PIC, bukan entitas (BPMP, BP 21, BP A1, BP A2).">?</i></label>
+            <button type="button" class="select-all-icon-btn" id="mybupot-select-all-btn" title="Pilih semua">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"></rect><path d="M8 12.5l2.5 2.5L16 9.5"></path></svg>
+            </button>
+          </div>
+          <div class="checkbox-grid vertical">
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="mybupot-jenis" value="bppu" checked>
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BPPU</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="mybupot-jenis" value="bpnr">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BPNR</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="mybupot-jenis" value="bp26">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BP 26</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="mybupot-jenis" value="bpatc">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">Dokumen yang Dipersamakan</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="mybupot-jenis" value="bpmp">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BPMP</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="mybupot-jenis" value="bp21">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BP 21</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="mybupot-jenis" value="bpa1">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BP A1</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="mybupot-jenis" value="bpa2">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">BP A2</span>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label class="field-label">Format Output</label>
+            <div class="checkbox-grid">
+              <label class="custom-checkbox-card">
+                <input type="checkbox" id="mybupot-output-excel" checked disabled>
+                <span class="checkbox-indicator"></span>
+                <span class="checkbox-text">Excel</span>
+              </label>
+              <label class="custom-checkbox-card">
+                <input type="checkbox" id="mybupot-output-pdf" checked>
+                <span class="checkbox-indicator"></span>
+                <span class="checkbox-text">PDF</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="mybupot-masa-input">Masa Pajak <i class="hint-icon" title="mis. 0126;0226 atau 0126-1226 - tahun otomatis dari isian">?</i></label>
+            <input type="text" id="mybupot-masa-input" class="styled-input">
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="mybupot-page-size">Baris per Halaman</label>
+            <select id="mybupot-page-size" class="styled-select">
+              <option value="auto" selected>Auto</option>
+              <option value="100">100 baris</option>
+              <option value="50">50 baris</option>
+              <option value="25">25 baris</option>
+              <option value="10">10 baris</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- SPT Tab -->
         <div id="feature-spt" class="feature-panel" style="display:none;">
-          <label class="field-label">Jenis Pajak (bisa lebih dari 1)</label>
-          <div class="checkbox-row">
-            <label><input type="checkbox" class="spt-jenis" value="pph21" checked> PPh Pasal 21/26</label>
-            <label><input type="checkbox" class="spt-jenis" value="unifikasi"> PPh Unifikasi</label>
-            <label><input type="checkbox" class="spt-jenis" value="ppn"> PPN</label>
+          <div class="field-label-row">
+            <label class="field-label">Jenis Pajak <i class="hint-icon" title="Pilih minimal 1">?</i></label>
+            <button type="button" class="select-all-icon-btn" id="spt-select-all-btn" title="Pilih semua">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"></rect><path d="M8 12.5l2.5 2.5L16 9.5"></path></svg>
+            </button>
+          </div>
+          <div class="checkbox-grid vertical">
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="spt-jenis" value="pph21" checked>
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">PPh Pasal 21/26</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="spt-jenis" value="unifikasi">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">PPh Unifikasi</span>
+            </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="spt-jenis" value="ppn">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">PPN</span>
+            </label>
           </div>
 
-          <label class="field-label">Masa (mis. 0126;0226 atau 0125-1225)</label>
-          <input type="text" id="spt-masa-input" placeholder="0125-1225">
+          <div class="form-group">
+            <label class="field-label" for="spt-masa-input">Masa Pajak <i class="hint-icon" title="mis. 0126;0226 atau 0125-1225">?</i></label>
+            <input type="text" id="spt-masa-input" class="styled-input">
+          </div>
         </div>
 
+        <!-- Dividen Tab -->
         <div id="feature-dividen" class="feature-panel" style="display:none;">
-          <p class="muted" style="margin:0 0 10px;">Impor massal <strong>e-Reporting Realisasi Investasi (Dividen)</strong> ke draft Coretax langsung dari Excel — form ini tidak punya impor bawaan.</p>
+          <div class="info-callout">
+            <div class="callout-content">
+              <strong>Impor Massal Dividen (AS.39-01)</strong>
+              <span>Impor e-Reporting Realisasi Investasi langsung dari template Excel ke draft Coretax.</span>
+            </div>
+          </div>
+          
           <ol class="hint-list">
-            <li>Login manual (tombol "Login Coretax" di atas), lalu klik <strong>"Buat Kasus Baru"</strong> di bawah — otomatis membuka kasus AS.39-01 sampai halaman Alur Kasus (~1 menit).</li>
-            <li>Isi file template (sheet Info Umum, Dividen, Investasi), lalu pilih di bawah.</li>
-            <li>Klik Impor. Data masuk otomatis ke tabel dan langsung disimpan — Anda tinggal <strong>periksa</strong>, lalu Create PDF → Sign → Kirim sendiri.</li>
-            <li>File pembanding (crosscheck) dibuat otomatis setiap Impor — atau klik <strong>"Cek Hasil"</strong> kapan saja untuk membuatnya ulang dari tabel yang sedang tampil.</li>
+            <li>Klik tombol <strong>Login Coretax</strong> di atas, lalu tekan <strong>Buat Kasus Baru</strong>.</li>
+            <li>Unggah file template <code>.xlsx</code> yang sudah terisi di bawah ini.</li>
+            <li>Klik <strong>Impor ke Coretax</strong> untuk memasukkan data otomatis ke draft.</li>
           </ol>
+
           <button id="create-dividen-case-btn" class="btn btn-outline btn-block" style="margin-bottom:12px;">Buat Kasus Baru (AS.39-01)</button>
-          <label class="field-label">File Template (.xlsx)</label>
-          <div style="display:flex;gap:6px;">
-            <button id="pick-dividen-file-btn" type="button" class="btn btn-outline" style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 <span id="dividen-file-label">Pilih File Excel...</span></button>
+          
+          <label class="field-label">File Template Excel (.xlsx)</label>
+          <div class="file-picker-group">
+            <button id="pick-dividen-file-btn" type="button" class="btn btn-outline file-btn"><span id="dividen-file-label">Pilih File Excel (.xlsx)...</span></button>
             <input type="file" id="dividen-file" accept=".xlsx" style="display:none;">
           </div>
-          <button id="import-dividen-btn" class="btn btn-primary btn-block" style="margin-top:12px;">Impor ke Coretax</button>
-          <button id="check-dividen-btn" class="btn btn-outline btn-block" style="margin-top:8px;" title="Baca tabel yang sedang tampil di Coretax dan bandingkan dengan file ini - tidak mengubah apapun di Coretax">Cek Hasil (bandingkan dengan file ini)</button>
-          <p class="muted" style="margin:8px 0 0; font-size:12px;">Data hanya masuk ke <em>draft</em> — tidak ada yang terkirim ke DJP sampai Anda menandatangani & klik Kirim sendiri.</p>
+
+          <button id="import-dividen-btn" class="btn btn-primary btn-block btn-gradient" style="margin-top:14px;">Impor ke Coretax</button>
+          <button id="check-dividen-btn" class="btn btn-outline btn-block" style="margin-top:8px;" title="Baca tabel yang sedang tampil di Coretax dan bandingkan dengan file ini">Cek Hasil (Bandingkan Tabel)</button>
+          <p class="muted-note">Data masuk ke <em>draft</em> — tidak dikirim ke DJP sampai Anda menandatangani sendiri.</p>
         </div>
 
-        <div id="dl-fields">
-          <label class="field-label">Folder Simpan (opsional)</label>
-          <div style="display:flex;gap:6px;">
-            <input type="text" id="save-root-input" placeholder="default: Downloads\CoretaxAgent" style="flex:1;">
-            <button id="pick-folder-btn" type="button" class="btn btn-outline btn-sm" title="Pilih folder melalui File Explorer">📁 Cari</button>
+        <!-- Common Download Controls -->
+        <div id="dl-fields" class="form-group" style="margin-top:16px;">
+          <label class="field-label" for="save-root-input">Folder Simpan <i class="hint-icon" title="Opsional - default: Downloads\CoretaxAgent">?</i></label>
+          <div class="input-group">
+            <input type="text" id="save-root-input" class="styled-input">
+            <button id="pick-folder-btn" type="button" class="btn btn-outline btn-sm" title="Pilih folder via File Explorer">Cari</button>
           </div>
 
-          <button id="start-download-btn" class="btn btn-primary btn-block">Mulai Download</button>
+          <button id="start-download-btn" class="btn btn-primary btn-block btn-gradient btn-lg">Mulai Otomasi</button>
         </div>
       </div>
     </div>
   </section>
 
+  <!-- RIGHT PANEL: ACTIVITY LOG TERMINAL -->
   <section class="panel log-panel">
     <div class="panel-head">
-      <h2>Aktivitas</h2>
+      <div class="panel-head-title">
+        <span class="terminal-dot"></span>
+        <h2>Terminal Aktivitas</h2>
+        <button id="clear-log-btn" class="btn btn-ghost btn-xs" style="margin-left:auto;" title="Bersihkan layar log (arsip di coretax-agent.log tetap tersimpan)">Bersihkan</button>
+      </div>
       <div id="run-controls" class="run-controls" style="display:none;">
         <span id="run-label" class="run-label"></span>
-        <span class="run-size" title="Paksa baris per halaman saat proses berjalan (override kalau web lambat)">Baris:
+        <span class="run-size" title="Paksa baris per halaman saat proses berjalan">Baris:
           <button class="btn btn-ghost btn-xs" data-size="10">10</button>
           <button class="btn btn-ghost btn-xs" data-size="25">25</button>
           <button class="btn btn-ghost btn-xs" data-size="50">50</button>
           <button class="btn btn-ghost btn-xs" data-size="100">100</button>
         </span>
-        <button id="run-pause-btn" class="btn btn-ghost btn-sm" title="Jeda setelah baris saat ini">⏸ Jeda</button>
-        <button id="run-back-btn" class="btn btn-ghost btn-sm" title="Kembali ke kombinasi (masa/kode) sebelumnya">⏮ Mundur</button>
-        <button id="run-retry-btn" class="btn btn-ghost btn-sm" title="Ulang kombinasi saat ini dari awal (file yang sudah ada dilewati)">🔁 Ulang</button>
-        <button id="run-skip-btn" class="btn btn-ghost btn-sm" title="Lewati kombinasi saat ini, lanjut ke berikutnya">⏭ Lewati</button>
-        <button id="run-stop-btn" class="btn btn-ghost btn-sm btn-danger" title="Hentikan seluruh proses">⏹ Stop</button>
+        <div class="playback-controls">
+          <button id="run-pause-btn" class="btn btn-ghost btn-sm" title="Jeda setelah baris saat ini">Jeda</button>
+          <button id="run-back-btn" class="btn btn-ghost btn-sm" title="Kembali ke kombinasi sebelumnya">Mundur</button>
+          <button id="run-retry-btn" class="btn btn-ghost btn-sm" title="Ulang kombinasi saat ini">Ulang</button>
+          <button id="run-skip-btn" class="btn btn-ghost btn-sm" title="Lewati kombinasi saat ini">Lewati</button>
+          <button id="run-stop-btn" class="btn btn-ghost btn-sm btn-danger" title="Hentikan seluruh proses">Stop</button>
+        </div>
       </div>
     </div>
     <div id="log-view" class="log-view"></div>
@@ -166,10 +356,12 @@
 </main>
 
 <div id="empty-hint" class="empty-hint">
-  <img class="brand-mark" src="/assets/coretax-agent-icon.png?v=3" width="64" height="64" alt="Coretax Agent">
-  <strong>Belum Ada Akun Terhubung</strong>
-  <span>Hubungkan akun Taxio Hub Anda untuk mulai mengelola otomasi Coretax.</span>
-  <button id="empty-settings-btn" class="btn btn-primary" style="margin-top:14px;">⚙ Buka Pengaturan</button>
+  <div class="empty-brand-glow">
+    <img class="brand-mark" src="/assets/coretax-agent-icon.png?v=3" width="72" height="72" alt="Coretax Agent">
+  </div>
+  <h2 class="empty-title">Selamat Datang di Coretax Agent</h2>
+  <span class="empty-subtitle">Hubungkan akun Taxio Hub Anda untuk mulai mengelola otomasi e-Bupot, SPT, & Dividen.</span>
+  <button id="empty-settings-btn" class="btn btn-primary btn-gradient btn-lg" style="margin-top:20px;">Hubungkan Akun Taxio Hub</button>
 </div>
 
 <script src="/app.js"></script>

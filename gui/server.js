@@ -26,6 +26,12 @@ const { runDividenImport, runDividenCheck, openNewCase } = require('../automatio
 const deeplink = require('../lib/deeplink');
 const tray = require('../lib/tray');
 const { openWindow, isWindowOpen, bringToFront, closeWindow } = require('./window');
+// Single source of truth for the version badge in gui/public/index.html - that used to be a
+// hardcoded <span>v1.8.1</span> that nobody remembered to bump across three straight releases
+// (1.9.0/1.9.1/1.9.2 all shipped correctly but kept showing v1.8.1 in the dashboard itself).
+// Reading it live here means every future version bump only ever has to happen in one place
+// (package.json) again.
+const pkg = require('../package.json');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
@@ -585,6 +591,7 @@ function createGuiServer(port) {
             }
             if (pathname === '/events' && req.method === 'GET') return handleEvents(req, res);
             if (pathname === '/api/session' && req.method === 'GET') return sendJson(res, 200, sessionSummary());
+            if (pathname === '/api/version' && req.method === 'GET') return sendJson(res, 200, { version: pkg.version });
             if (pathname === '/api/connect' && req.method === 'POST') return handleConnect(req, res);
             if (pathname === '/api/disconnect' && req.method === 'POST') return handleDisconnect(req, res);
             if (pathname === '/api/entities' && req.method === 'GET') return handleEntities(req, res, url.searchParams.get('mode'));
