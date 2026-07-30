@@ -1,23 +1,38 @@
 /* Coretax Agent - SPT PDF + BPE download automation (automation feature #2).
-   Spec: "Coretax Agent/download SPT.pdf" (user-provided) + live DOM inspection against a real
-   session (BAI/BKA/PNG entities, 2026-07-18) - the spec's screenshots don't show real
-   selectors, so every id/class below was confirmed live before being written here (see the
-   inline "CONFIRMED LIVE" notes), the same discipline already proven for automation/ebupot.js.
 
-   Shares its generic PrimeNG datatable mechanics (filter cells, pagination, event-driven
-   single-file download) with ebupot.js via lib/datatable.js rather than duplicating them.
-
-   Two things this page does that e-Bupot's pages don't:
-     - "Model SPT" (Normal vs "Amendment NNN") changes the target filename (adds " PB N");
-     - the PDF-download button has an on-demand GENERATE step: a not-yet-generated SPT shows a
-       grey #RequestDownloadPdfButton (click it, wait, refresh) which becomes a red
-       #SubmittedDownloadPdfButton once ready (confirmed live: usually ~4s, and only needs
-       requesting once - a later run sees it already generated).
-     - a SECOND artifact per row: the "View Receipt" (BPE) modal's <iframe srcdoc="..."> turned
-       out to be a complete, self-contained HTML document (own <title>, full inline CSS) - not
-       something that needs a screenshot at all. Rendered straight to an A4 PDF via
-       lib/html-to-pdf.js's headless-Chromium renderer, which produces crisper vector text than
-       rasterizing a screenshot would and sidesteps fitting an arbitrary on-screen size to A4. */
+   REWRITTEN 2026-07-27 from the original click-based version to call Coretax's own listing/
+   download APIs directly, mirroring automation/ebupot.js's proven approach - per live
+   investigation (PIC Fredi Setyawan, entities PT Pesona Natasha Gemilang and PT Berkat Kana
+   Abadi) that found:
+     - the listing endpoint (`returnsheetportal/api/returnsheetssubmitted`) returns every field
+       needed to drive a download - RecordId, AggregateIdentifier, TaxTypeCode,
+       DocumentFormAggregateIdentifier, ReturnSheetNumber, ReturnSheetModel, LastUpdatedDate -
+       with no need to open/scroll a DOM table at all;
+     - the three UI "Jenis Pajak" checkboxes map to TaxTypeCode values CONFIRMED LIVE by
+       checking each box alone and reading the resulting filter's own Filters.TaxTypeCode value
+       (not guessed/order-matched): PPh 21/26 -> `ICT_WIT`, PPh Unifikasi -> `ICT_WT`,
+       PPN -> `VAT_VAT` (yes, WIT=21/26 and WT=Unifikasi - counter-intuitive but empirically
+       confirmed, don't "fix" this mapping without re-verifying live);
+     - the auth token capture technique, apiPost-as-string-literal packaging workaround, and
+       overall combo/retry/pause/skip/back/stop control-flow are carried over unchanged from
+       automation/ebupot.js's own header comment (same rationale, same pkg bytecode constraint);
+     - one PDF-download call (`downloadreturnsheet/download-returnsheet-document`) covers BOTH
+       "generate on demand" and "download once ready" - call it with whatever
+       DocumentFormAggregateIdentifier the listing currently shows (an all-zero sentinel GUID if
+       never generated); a still-generating document responds 200 with
+       `Payload:{IsError:true,ErrorMessage:"Generate Document is In Progress",ErrorCode:1}`
+       (CONFIRMED LIVE against PT Berkat Kana Abadi, Feb 2025 PPh21/26 Amendment 001) rather than
+       an HTTP error - poll by re-fetching the listing (which eventually reports a real
+       DocumentFormAggregateIdentifier) and retrying, exactly like the old click-based version's
+       generate-then-refresh loop, just without ever touching the DOM;
+     - the "View Receipt" (BPE) endpoint (`downloadreturnsheet/view-receipt`) returns the same
+       complete standalone HTML document the old version had to open a modal and read an
+       iframe's `srcdoc` to get - here it's just `Payload`, a plain string, no DOM interaction
+       needed at all.
+   This eliminates the previous version's entire DOM/PrimeNG reliability surface: multiselect
+   filter panels, exact-vs-substring option matching, table-settle waits, click/download-event
+   racing - replaced by direct fetch() calls issued from inside the already-authenticated page
+   (via page.evaluate, so real browser cookies/session apply automatically), same as ebupot.js. */
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -28,159 +43,121 @@ const entitiesLib = require('../lib/entities');
 const { masaToIndoLabel, parseMasaListInput } = require('../lib/masa');
 const runcontrol = require('../lib/runcontrol');
 const htmlToPdf = require('../lib/html-to-pdf');
-const {
-    _sleep, waitForTableSettled, filterCellForHeader,
-    getDataRows, getHeaderIndexMap, findHeaderIndex, rowCellText, sanitizeFilenamePart,
-    downloadViaClick
-} = require('../lib/datatable');
+const { _sleep, sanitizeFilenamePart } = require('../lib/datatable');
 
 const SPT_URL = 'https://coretaxdjp.pajak.go.id/returnsheets-portal/id-ID/submitted-returnsheets';
+const API_BASE = 'https://coretaxdjp.pajak.go.id/returnsheetportal/api';
+const ZERO_DOC_ID = '00000000-0000-0000-0000-000000000000'; // sentinel meaning "never generated yet"
 
-// CONFIRMED LIVE (2026-07-18): the "Jenis Pajak" filter is a p-multiselect whose checkbox
-// labels are these exact strings; "Jenis Surat Pemberitahuan Pajak" column text and filename
-// tokens (SPT vs BPE) per the user's spec.
+// CONFIRMED LIVE 2026-07-27 (see header comment) - do not "correct" WIT/WT without re-verifying.
 const JENIS_PAJAK = {
-    pph21: { checkboxLabel: 'PPh Pasal 21/26', jenisSurat: 'SPT Masa PPh Pasal 21/26', sptToken: '1721 INDUK', bpeToken: '1721 BPE' },
-    unifikasi: { checkboxLabel: 'PPh Unifikasi', jenisSurat: 'SPT Masa PPh Unifikasi', sptToken: 'UNIFIKASI INDUK', bpeToken: 'UNIFIKASI BPE' },
-    ppn: { checkboxLabel: 'PPN', jenisSurat: 'SPT Masa PPN', sptToken: 'PPN INDUK', bpeToken: 'PPN BPE' }
+    pph21: { taxTypeCode: 'ICT_WIT', sptToken: '1721 INDUK', bpeToken: '1721 BPE' },
+    unifikasi: { taxTypeCode: 'ICT_WT', sptToken: 'UNIFIKASI INDUK', bpeToken: 'UNIFIKASI BPE' },
+    ppn: { taxTypeCode: 'VAT_VAT', sptToken: 'PPN INDUK', bpeToken: 'PPN BPE' }
 };
 const JENIS_PAJAK_LABELS = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN' };
+const TAXTYPE_TO_JENIS = { ICT_WIT: 'pph21', ICT_WT: 'unifikasi', VAT_VAT: 'ppn' };
 
-function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-/** Matches an option's FULL, exact text (anchored regex) rather than Playwright's default
- *  substring `hasText` - CONFIRMED LIVE this matters here: "PPN" as a substring also matches
- *  "PPN Bagi PKP yang Menggunakan...", "PPN Bagi Pemungut PPN PMSE", etc in the Jenis Pajak
- *  list, and (even more visibly, per a live screenshot) searching "Januari 2025" in the Masa
- *  Pajak dropdown returns the exact "Januari 2025" entry MIXED IN with several range entries
- *  that also contain that string ("Oktober 2024 - Januari 2025", "Februari 2024 - Januari
- *  2025", ...) - a plain substring match would click whichever of those happens to be first. */
-function exactOptionLocator(page, panelSelector, label) {
-    return page.locator(panelSelector).filter({ hasText: new RegExp('^\\s*' + escapeRegExp(label) + '\\s*$') }).first();
+/** "0326" -> "03032026" - same MM+MM+YYYY period-code convention confirmed for ebupot.js,
+ *  confirmed live here too (e.g. Feb 2025 -> "02022025"). */
+function mmYYToTaxPeriodCode(mmYY) {
+    const mm = mmYY.slice(0, 2);
+    return mm + mm + '20' + mmYY.slice(2);
 }
 
-/** Sets the "Jenis Pajak" multi-select filter to check EXACTLY `checkboxLabels` (and nothing
- *  else) - revised per explicit user direction: check every requested type AT ONCE (e.g. PPN +
- *  PPh 21/26 together) rather than looping one type at a time, since the multiselect already
- *  supports it and doing so cuts the number of filter-reapply cycles from
- *  jenisKeys.length*masaList.length down to just masaList.length. Always clears first (the
- *  exact BPA1 stale-filter lesson: a previous combo's checked box left checked would silently
- *  widen this one). Confirmed live the panel has a search box - used per label instead of
- *  scrolling a virtualized list to find e.g. "PPh Unifikasi". */
-async function setJenisPajakFilters(page, checkboxLabels) {
-    const cell = await filterCellForHeader(page, 'Jenis Pajak');
-    const clearBtn = cell.locator('.p-multiselect-clear-icon, .p-column-filter-clear-button, [aria-label="Clear"]').first();
-    if (await clearBtn.isVisible({ timeout: 500 }).catch(() => false)) await clearBtn.click({ timeout: 2000 }).catch(() => {});
-    const multiselect = cell.locator('.p-multiselect');
-    const panel = page.locator('.p-multiselect-panel');
-    const searchInput = page.locator('.p-multiselect-panel input[type="text"], .p-multiselect-filter-container input').first();
-    for (const label of checkboxLabels) {
-        // Re-check (and re-open if needed) EVERY iteration, not just once before the loop -
-        // CONFIRMED the actual cause of a "2nd label search timeout": selecting the first item
-        // can close this multiselect panel, and a stale `hasSearch`/panel-open flag computed only
-        // once made the loop blindly retry .fill() against a now-invisible input, hanging until
-        // timeout instead of just reopening the panel for the next label.
-        const panelOpen = await panel.isVisible().catch(() => false);
-        if (!panelOpen) await multiselect.click({ timeout: 2000 }).catch(() => {});
-        const hasSearch = await searchInput.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
-        if (hasSearch) {
-            await searchInput.fill(label).catch(() => {});
-            await page.waitForTimeout(500);
-        }
-        const item = exactOptionLocator(page, '.p-multiselect-panel li, .p-multiselect-item', label);
-        await item.waitFor({ state: 'visible', timeout: 5000 });
-        await item.click({ timeout: 2000 });
-        if (hasSearch) { await searchInput.fill('').catch(() => {}); await page.waitForTimeout(300); }
-    }
-    await page.keyboard.press('Escape').catch(() => {});
+/** Pulls the `taxpayer_id` claim out of a captured Bearer JWT - the impersonated entity's own
+ *  TaxpayerAggregateIdentifier, same technique as ebupot.js's decodeJwtTaxpayerId. */
+function decodeJwtTaxpayerId(bearerToken) {
+    try {
+        const token = String(bearerToken || '').replace(/^Bearer\s+/i, '');
+        const payloadB64 = token.split('.')[1];
+        const json = Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+        return JSON.parse(json).taxpayer_id || null;
+    } catch (e) { return null; }
 }
 
-/** Sets the "Masa Pajak" filter to the EXACT single month `mmYY`. CONFIRMED LIVE this column's
- *  dropdown is NOT the same simple per-month picker as e-Bupot's "Masa Pajak" - its default
- *  option list is a bunch of coarse preset RANGES ("Agustus 2025 - Juli 2026", etc.), and even
- *  after typing a specific month into its search box, the exact single-month entry appears
- *  mixed in among several range entries that also contain that month as their start/end
- *  (confirmed via live screenshot: searching "Januari 2025" surfaces "Januari 2025" itself
- *  alongside "Oktober 2024 - Januari 2025", "November 2024 - Januari 2025", etc). Per explicit
- *  user direction, filtering (not paginating and text-matching every row - row order isn't
- *  reliably sorted by masa, confirmed live) is still the right approach here; it just needs an
- *  EXACT text match on the option, not a substring one. */
-async function setSptMasaFilter(page, mmYY) {
-    const label = masaToIndoLabel(mmYY);
-    const cell = await filterCellForHeader(page, 'Masa Pajak');
-    const clearBtn = cell.locator('.p-multiselect-clear-icon, .p-dropdown-clear-icon, .p-column-filter-clear-button, [aria-label="Clear"]').first();
-    if (await clearBtn.isVisible({ timeout: 500 }).catch(() => false)) await clearBtn.click({ timeout: 2000 }).catch(() => {});
-    await cell.locator('.p-dropdown').click({ timeout: 2000 }).catch(() => {});
-    const searchInput = page.locator('.p-dropdown-panel input[type="text"], .p-dropdown-filter-container input').first();
-    if (await searchInput.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) {
-        await searchInput.fill(label).catch(() => {});
-        await page.waitForTimeout(600);
+/** Passively watches every request this page's context fires and keeps the latest
+ *  `authorization`/`x-dgt-code` headers (+ decoded taxpayer id) - same rationale as ebupot.js's
+ *  attachApiAuthCapture: stable for the whole session, so "latest seen" is always usable. */
+function attachApiAuthCapture(page) {
+    const state = { authorization: null, dgtCode: null, taxpayerId: null };
+    page.context().on('request', (req) => {
+        if (req.url().indexOf('/returnsheetportal/api/') === -1) return;
+        const h = req.headers();
+        if (h.authorization) { state.authorization = h.authorization; state.taxpayerId = decodeJwtTaxpayerId(h.authorization) || state.taxpayerId; }
+        if (h['x-dgt-code']) state.dgtCode = h['x-dgt-code'];
+    });
+    return state;
+}
+async function waitForAuthCaptured(authState, timeoutMs) {
+    const start = Date.now();
+    while (!authState.authorization || !authState.taxpayerId) {
+        if (Date.now() - start > timeoutMs) return false;
+        await _sleep(300);
     }
-    const option = exactOptionLocator(page, '.p-dropdown-panel li, .p-dropdown-item', label);
-    const found = await option.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
-    if (!found) { await page.keyboard.press('Escape').catch(() => {}); throw new Error('Masa "' + label + '" tidak ditemukan di daftar SPT (mungkin tidak ada data untuk periode ini).'); }
-    await option.click({ timeout: 2000 });
-    await page.keyboard.press('Escape').catch(() => {});
+    return true;
+}
+
+/** Fires an authenticated POST from INSIDE the page. Built as a literal source STRING (not
+ *  `page.evaluate(fn, arg)`) for the exact same pkg-packaging reason documented in ebupot.js's
+ *  apiPost - Function.toString()-based serialization breaks once compiled to bytecode. */
+/** CONFIRMED LIVE BUG 2026-07-30 (real user, reproduced identically twice): this fetch() had no
+ *  timeout at all - if Coretax's backend just never answers (network stall, server hang), the
+ *  fetch never resolves, page.evaluate() never resolves, and the WHOLE run sits frozen forever
+ *  right after "Total data: N baris." with zero further log output, until the user force-closes
+ *  the app. AbortController below turns an indefinite hang into an explicit failure after 30s,
+ *  which the existing status!==200 handling in every caller (tryFetchPdf, fetchBpeHtml, etc.)
+ *  already knows how to surface as a real logged error instead of silence. */
+async function apiPost(page, authState, url, bodyObj) {
+    const expr = '(async () => {'
+        + 'try {'
+        + '  const ctrl = new AbortController();'
+        + '  const timer = setTimeout(() => ctrl.abort(), 30000);'
+        + '  let r;'
+        + '  try {'
+        + '    r = await fetch(' + JSON.stringify(url) + ', {'
+        + '      method: "POST",'
+        + '      headers: { "Content-Type": "application/json", "Authorization": ' + JSON.stringify(authState.authorization) + ', "x-dgt-code": ' + JSON.stringify(authState.dgtCode) + ' },'
+        + '      credentials: "include",'
+        + '      body: ' + JSON.stringify(JSON.stringify(bodyObj)) + ','
+        + '      signal: ctrl.signal'
+        + '    });'
+        + '  } finally { clearTimeout(timer); }'
+        + '  let json = null;'
+        + '  try { json = await r.json(); } catch (e) {}'
+        + '  return { status: r.status, json };'
+        + '} catch (e) {'
+        + '  return { status: 0, json: null };'
+        + '}'
+        + '})()';
+    return page.evaluate(expr);
 }
 
 /** "Normal" -> null (no filename suffix); "Amendment 001" -> "1" (leading zeros stripped) per
- *  the spec's "Kalo ammendment X -> MMYY PB X" naming rule. */
+ *  the spec's "Kalo ammendment X -> MMYY PB X" naming rule. Unchanged from the click-based
+ *  version - still reads the SAME ReturnSheetModel text, just from JSON now instead of a DOM
+ *  cell. */
 function parseModelSptSuffix(modelText) {
     const m = /amendment\s+0*(\d+)/i.exec(modelText || '');
     return m ? String(parseInt(m[1], 10)) : null;
 }
 
-/** Per the spec's exact format: "ENTITY CODE - <token> MMYY[ PB N]" - ONE dash (after the
- *  entity code only); everything after that is space-separated, e.g. "BAI - PPN INDUK 0326.pdf"
- *  or "PJS - 1721 INDUK 0626 PB 1.pdf" for an amendment. */
+/** Per the spec's exact format: "ENTITY CODE - <token> MMYY[ PB N]". Unchanged from the
+ *  click-based version. */
 function buildSptFilename(entityCode, token, mmYY, pbSuffix) {
     const suffix = mmYY + (pbSuffix ? ' PB ' + pbSuffix : '');
     return sanitizeFilenamePart(entityCode) + ' - ' + token + ' ' + suffix + '.pdf';
 }
 
-/** CONFIRMED LIVE: the toolbar's refresh icon, same "table needs a manual refresh after a
- *  server-side generate request" pattern the user's spec calls out. */
-async function clickRefreshIcon(page) {
-    const btn = page.locator('button:has(.pi-refresh)').first();
-    const visible = await btn.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
-    if (!visible) return false;
-    await btn.click({ noWaitAfter: true, timeout: 5000, force: true }).catch(() => {});
-    return true;
-}
-
-/** Opens the row's "View Receipt" (BPE) modal, reads the iframe's full standalone HTML
- *  document straight from its `srcdoc` attribute (CONFIRMED LIVE: not a screenshot target at
- *  all - a complete <html> doc with its own <title>Bukti Penerimaan Elektronik</title> and
- *  inline CSS), renders it to an A4 PDF via the shared headless-Chromium renderer, and closes
- *  the modal. Returns true on success. */
-async function downloadBpe(row, targetPath, page, emit) {
-    const btn = row.locator('#ViewReceiptButton');
-    const visible = await btn.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
-    if (!visible) { emit('Tombol "View Receipt" tidak ditemukan di baris ini - BPE dilewati.'); return false; }
-    await btn.dispatchEvent('click').catch(() => btn.click({ timeout: 3000, force: true }).catch(() => {}));
-    const iframe = page.locator('iframe[title="View Receipt"]').first();
-    const iframeVisible = await iframe.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
-    let ok = false;
-    if (iframeVisible) {
-        const html = await iframe.getAttribute('srcdoc').catch(() => null);
-        if (html) {
-            try { await htmlToPdf.renderHtmlToPdf(html, targetPath); ok = true; }
-            catch (e) { emit('Gagal membuat PDF BPE: ' + e.message); }
-        } else {
-            emit('Konten BPE kosong - dilewati.');
-        }
-    } else {
-        emit('Modal "View Receipt" tidak terbuka - BPE dilewati.');
-    }
-    // Close the dialog regardless of outcome so the next row's actions aren't blocked by it.
-    await page.locator('.p-dialog-header-close').first().click({ timeout: 2000, force: true }).catch(() => {});
-    await page.keyboard.press('Escape').catch(() => {});
-    return ok;
-}
-
-/** Mirrors coretax-helper/run.js's copyToCompliance(): a SEPARATE copy of each downloaded file
- *  alongside the original save, into whatever folder Taxio's own compliance settings resolved
- *  (`comp_folder`, from the deep link) - a legacy feature explicitly called out as one to keep,
- *  not drop, in this replacement. Best-effort; never fails the download itself over this. */
+/** Mirrors coretax-helper/run.js's copyToCompliance() - unchanged from the click-based
+ *  version. Best-effort; never fails the download itself over this. */
+/** Moves rather than copies as of 2026-07-30 (explicit user request): once the file is safely
+ *  in the compliance folder, the CoretaxAgent-local copy under Downloads/CoretaxAgent/ is
+ *  removed instead of being kept alongside it. Only deletes srcPath AFTER copyFileSync succeeds
+ *  (never on a failed/partial copy, so nothing is ever lost). Tradeoff worth knowing: the
+ *  existsSync(sptPath) "already downloaded" skip-check elsewhere in this file can no longer see
+ *  a file that's been moved out - re-running the same masa later will re-fetch, re-copy, and
+ *  re-delete it again rather than skipping. Harmless (idempotent end result) but not free. */
 function copyToCompliance(srcPath, compFolder, emit) {
     if (!compFolder) return;
     try {
@@ -188,113 +165,168 @@ function copyToCompliance(srcPath, compFolder, emit) {
         const dest = path.join(compFolder, path.basename(srcPath));
         if (fs.existsSync(dest)) fs.rmSync(dest, { force: true });
         fs.copyFileSync(srcPath, dest);
+        fs.rmSync(srcPath, { force: true });
     } catch (e) {
-        emit('Gagal menyalin ke folder compliance: ' + e.message);
+        emit('Gagal memindahkan ke folder compliance: ' + e.message);
     }
 }
 
-const REQUEST_ROUNDS = 3; // matches the legacy tool's own retry depth for the generate-then-refresh cycle
-// CONFIRMED LIVE: a row can show ready yet a single click doesn't fire a download (timing
-// hiccup on the click/event race, not a broken row - the SAME row succeeded moments later) -
-// two short attempts in place, same shape as e-Bupot's own proven ROW_TIMEOUTS_MS.
-const ROW_RETRY_TIMEOUTS_MS = [8000, 15000];
+const SIZE_STEPS = [10, 25, 50, 100, 250, 500];
 
-const LABEL_TO_JENIS_KEY = new Map(Object.entries(JENIS_PAJAK).map(([k, v]) => [v.checkboxLabel, k]));
-
-/** Runs one already-filtered (Jenis Pajak(s) + exact Masa Pajak) combo. Revised per explicit
- *  user direction to check MULTIPLE Jenis Pajak at once (e.g. PPN + PPh 21/26 together) rather
- *  than looping one type at a time - so a combo's rows can now span more than one tax type, and
- *  each row's OWN "Jenis Pajak" column text (not a fixed combo-wide value) decides which
- *  filename token/meta applies. Requests generation for any row still showing the grey button,
- *  refreshes, and re-checks up to REQUEST_ROUNDS times, downloading the SPT PDF + BPE once each
- *  row's button is ready. `onRowDone(jenisKey, mmYY, ok)` lets the caller (the deep-link
- *  integration) mark Taxio's own compliance record the same way the legacy tool did - optional
- *  for the plain GUI-driven run. */
-async function processSptCombo(ctx) {
-    const { page, saveDir, entityCode, mmYY, compFolder, onRowDone, log: emit } = ctx;
-    let downloadedAny = false;
-    let foundAny = false;
-    for (let round = 0; round < REQUEST_ROUNDS; round++) {
+/** Pages through one masa's listing (ALL requested TaxTypeCodes at once, matching the old
+ *  multiselect-checks-several-at-once behavior) until a page comes back shorter than requested -
+ *  `TotalRecords`'s reliability was never checked live for THIS endpoint (only confirmed
+ *  UNRELIABLE for ebupot's), so the same defensive stop-condition is used rather than trusting
+ *  it. Throws with `.isSessionExpired = true` on a 401. */
+async function fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, emit) {
+    const filters = [
+        { PropertyName: 'TaxTypeCode', Value: taxTypeCodes, MatchMode: 'contains', CaseSensitive: true, AsString: false },
+        { PropertyName: 'TaxPeriodCode', Value: mmYYToTaxPeriodCode(mmYY), MatchMode: 'equals', CaseSensitive: true, AsString: false }
+    ];
+    const all = [];
+    let first = 0;
+    for (;;) {
         await runcontrol.checkpoint();
-        if (round > 0) {
-            emit('Menunggu proses permintaan PDF selesai (percobaan ke-' + (round + 1) + '/' + REQUEST_ROUNDS + ')...');
-            await _sleep(5000);
-            await clickRefreshIcon(page);
-            await waitForTableSettled(page, 10000);
+        const override = Number(runcontrol.takePageSizeOverride());
+        if (override) { sizeState.current = override; emit('Baris per pengambilan diubah manual ke ' + override + '.'); }
+        runcontrol.reportPageSize(sizeState.current);
+        const body = { TaxpayerAggregateIdentifier: authState.taxpayerId, isArchieved: false, First: first, Rows: sizeState.current, SortField: '', SortOrder: 1, Filters: filters, LanguageId: 'id-ID' };
+        const { status, json } = await apiPost(page, authState, API_BASE + '/returnsheetssubmitted', body);
+        if (status === 401) { const e = new Error('Sesi berakhir (401) saat mengambil data.'); e.isSessionExpired = true; throw e; }
+        if (status !== 200 || !json || json.IsSuccessful === false) {
+            throw new Error('Gagal mengambil data SPT: HTTP ' + status + (json && json.Errors ? ' - ' + JSON.stringify(json.Errors) : ''));
         }
-        const headerMap = await getHeaderIndexMap(page);
-        const modelIdx = findHeaderIndex(headerMap, [/model spt/]);
-        const jenisIdx = findHeaderIndex(headerMap, [/^jenis pajak$/]);
-        const rows = getDataRows(page);
-        const count = await rows.count();
-        if (count === 0) { emit('Tidak ada data untuk filter ini.'); break; }
-        if (count === 1) {
-            const t = (await rows.first().innerText().catch(() => '')).toLowerCase();
-            if (t.indexOf('tidak ada data') !== -1) { emit('Tidak ada data untuk filter ini.'); break; }
-        }
-        foundAny = true;
-        let anyStillPending = false;
-        for (let i = 0; i < count; i++) {
-            await runcontrol.checkpoint();
-            const row = rows.nth(i);
-            const jenisText = await rowCellText(row, jenisIdx);
-            const jenisKey = LABEL_TO_JENIS_KEY.get(jenisText);
-            if (!jenisKey) { emit('Baris ke-' + (i + 1) + ': Jenis Pajak "' + jenisText + '" tidak dikenali - dilewati.'); continue; }
-            const meta = JENIS_PAJAK[jenisKey];
-            const modelText = await rowCellText(row, modelIdx);
-            const pbSuffix = parseModelSptSuffix(modelText);
-            const sptPath = path.join(saveDir, buildSptFilename(entityCode, meta.sptToken, mmYY, pbSuffix));
-            const bpePath = path.join(saveDir, buildSptFilename(entityCode, meta.bpeToken, mmYY, pbSuffix));
-            if (fs.existsSync(sptPath) && fs.existsSync(bpePath)) continue; // already have both artifacts
-            const subBtn = row.locator('#SubmittedDownloadPdfButton');
-            const isReady = (await subBtn.count()) > 0;
-            if (!isReady) {
-                const reqBtn = row.locator('#RequestDownloadPdfButton');
-                if ((await reqBtn.count()) > 0) {
-                    emit('Baris ke-' + (i + 1) + ' (' + jenisText + ', ' + modelText + '): PDF belum tersedia - meminta pembuatan...');
-                    await reqBtn.click({ timeout: 3000, force: true }).catch(() => {});
-                    anyStillPending = true;
-                }
-                continue; // re-checked next round after a refresh
-            }
-            let rowOk = true;
-            if (!fs.existsSync(sptPath)) {
-                // Short in-place retry (mirrors e-Bupot's own proven ROW_TIMEOUTS_MS pattern):
-                // CONFIRMED LIVE that a row can show ready (#SubmittedDownloadPdfButton present)
-                // yet a single click doesn't fire a download - re-checking moments later found
-                // the SAME row still ready and downloadable, so this is a timing hiccup on the
-                // click/event race, not a genuinely broken row. Retrying now (still within this
-                // round) is far cheaper than falling through to a whole extra 5s-wait+refresh
-                // combo-level round just to re-click a button that was already ready.
-                let result = 'not-ready';
-                for (let attempt = 0; attempt < ROW_RETRY_TIMEOUTS_MS.length && result === 'not-ready'; attempt++) {
-                    await runcontrol.checkpoint();
-                    chrome.downloadFlag.automated = true;
-                    try { result = await downloadViaClick(page, subBtn, chrome.DOWNLOAD_DIR, sptPath, ROW_RETRY_TIMEOUTS_MS[attempt]); }
-                    finally { chrome.downloadFlag.automated = false; }
-                }
-                if (result === 'downloaded') { downloadedAny = true; emit('Terunduh: ' + path.basename(sptPath)); copyToCompliance(sptPath, compFolder, emit); }
-                else { rowOk = false; emit('Baris ke-' + (i + 1) + ': SPT PDF gagal terunduh - dilewati, bisa diulang manual.'); }
-            } else copyToCompliance(sptPath, compFolder, emit); // already had it from an earlier run - still ensure the compliance copy exists
-            if (!fs.existsSync(bpePath)) {
-                const bpeOk = await downloadBpe(row, bpePath, page, emit);
-                if (bpeOk) { emit('Terunduh: ' + path.basename(bpePath)); copyToCompliance(bpePath, compFolder, emit); }
-                else rowOk = false;
-            } else copyToCompliance(bpePath, compFolder, emit);
-            if (onRowDone) { try { onRowDone(jenisKey, mmYY, rowOk); } catch (e) {} }
-        }
-        if (!anyStillPending) break;
+        const pageRows = (json.Payload && json.Payload.Data) || [];
+        all.push(...pageRows);
+        if (pageRows.length) emit('Data diambil: ' + all.length + ' baris' + (pageRows.length === sizeState.current ? ' (lanjut...)' : '.'));
+        if (pageRows.length < sizeState.current) break;
+        first += sizeState.current;
     }
-    return { downloadedAny, foundAny };
+    return all;
 }
 
-/** Top-level entry point. `opts`:
+/** One attempt at generating-or-downloading a row's SPT PDF. Returns {ready:true, buffer} once
+ *  the PDF is available, or {ready:false} if Coretax is still generating it (CONFIRMED LIVE
+ *  response shape: `Payload.IsError:true, ErrorMessage:"Generate Document is In Progress"`) -
+ *  callers wait + re-fetch the row's listing state before retrying, same as the old click-based
+ *  version's generate-then-refresh loop. */
+async function tryFetchPdf(page, authState, row) {
+    const body = {
+        ReturnSheetRecordIdentifier: row.RecordId,
+        ReturnSheetAggregateIdentifier: row.AggregateIdentifier,
+        DocumentAggregateIdentifier: row.DocumentFormAggregateIdentifier || ZERO_DOC_ID,
+        TaxpayerAggregateIdentifier: authState.taxpayerId,
+        LetterNumber: row.ReturnSheetNumber,
+        DocumentDate: String(row.LastUpdatedDate || '').slice(0, 19),
+        IsReceipt: false,
+        SignParameter: null
+    };
+    const { status, json } = await apiPost(page, authState, API_BASE + '/downloadreturnsheet/download-returnsheet-document', body);
+    if (status === 401) { const e = new Error('Sesi berakhir (401) saat mengambil PDF SPT.'); e.isSessionExpired = true; throw e; }
+    if (status !== 200 || !json || json.IsSuccessful === false) {
+        throw new Error('Gagal mengambil PDF SPT: HTTP ' + status + (json && json.Errors ? ' - ' + JSON.stringify(json.Errors) : ''));
+    }
+    if (json.Payload && json.Payload.IsError) return { ready: false }; // still generating - not an error to surface
+    if (!json.Content) return { ready: false };
+    return { ready: true, buffer: Buffer.from(json.Content, 'base64') };
+}
+
+/** Fetches the BPE (View Receipt) as a ready-to-render standalone HTML document - the API
+ *  returns the exact same complete HTML the old version had to open a modal and read an
+ *  iframe's `srcdoc` to get, so no DOM interaction is needed at all here. */
+async function fetchBpeHtml(page, authState, row) {
+    const body = { ReturnSheetRecordIdentifier: row.RecordId, ReturnSheetAggregateIdentifier: row.AggregateIdentifier, TaxpayerAggregateIdentifier: authState.taxpayerId };
+    const { status, json } = await apiPost(page, authState, API_BASE + '/downloadreturnsheet/view-receipt', body);
+    if (status === 401) { const e = new Error('Sesi berakhir (401) saat mengambil BPE.'); e.isSessionExpired = true; throw e; }
+    if (status !== 200 || !json || json.IsSuccessful === false || !json.Payload) {
+        throw new Error('Gagal mengambil BPE: HTTP ' + status + (json && json.Errors ? ' - ' + JSON.stringify(json.Errors) : ''));
+    }
+    return json.Payload;
+}
+
+// How long to keep polling a single row that's still generating - CONFIRMED LIVE a real
+// generation can take well over a minute (PT Berkat Kana Abadi's Feb 2025 PPh21/26 Amendment
+// 001 case), so this is generous: up to 12 attempts * 5s = 60s per row before giving up.
+const GENERATE_POLL_ATTEMPTS = 12;
+const GENERATE_POLL_WAIT_MS = 5000;
+
+/** Runs one already-filtered (all requested Jenis Pajak + exact Masa Pajak) combo entirely via
+ *  the API - fetches every matching row, generates+downloads each row's SPT PDF (polling if
+ *  Coretax is still rendering it) and BPE, skipping anything already on disk. A session-expiry
+ *  mid-fetch bubbles up (`.isSessionExpired`) for the caller to re-login and re-run this combo. */
+async function processSptCombo(ctx) {
+    const { page, authState, saveDir, entityCode, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, log: emit } = ctx;
+    let downloadedAny = false;
+    const rows = await fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, emit);
+    if (!rows.length) { emit('Tidak ada data untuk filter ini.'); return { downloadedAny: false, foundAny: false }; }
+    emit('Total data: ' + rows.length + ' baris.');
+
+    for (let i = 0; i < rows.length; i++) {
+        await runcontrol.checkpoint();
+        let row = rows[i];
+        const jenisKey = TAXTYPE_TO_JENIS[row.TaxTypeCode];
+        if (!jenisKey) { emit('Baris ke-' + (i + 1) + ': TaxTypeCode "' + row.TaxTypeCode + '" tidak dikenali - dilewati.'); continue; }
+        const meta = JENIS_PAJAK[jenisKey];
+        const pbSuffix = parseModelSptSuffix(row.ReturnSheetModel);
+        const sptPath = path.join(saveDir, buildSptFilename(entityCode, meta.sptToken, mmYY, pbSuffix));
+        const bpePath = path.join(saveDir, buildSptFilename(entityCode, meta.bpeToken, mmYY, pbSuffix));
+        if (fs.existsSync(sptPath) && fs.existsSync(bpePath)) continue; // already have both artifacts
+
+        let rowOk = true;
+        if (!fs.existsSync(sptPath)) {
+            let result = await tryFetchPdf(page, authState, row);
+            let attempt = 0;
+            while (!result.ready && attempt < GENERATE_POLL_ATTEMPTS) {
+                await runcontrol.checkpoint();
+                if (attempt === 0) emit('Baris ke-' + (i + 1) + ' (' + JENIS_PAJAK_LABELS[jenisKey] + ', ' + (row.ReturnSheetModel || 'Normal') + '): PDF belum tersedia - meminta pembuatan...');
+                await _sleep(GENERATE_POLL_WAIT_MS);
+                // Re-fetch this row's own fresh state (DocumentFormAggregateIdentifier only
+                // populates once generation finishes server-side) rather than trusting the
+                // stale copy from the initial listing fetch.
+                const refreshed = await fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, () => {});
+                const match = refreshed.find((r) => r.RecordId === row.RecordId) || row;
+                row = match;
+                result = await tryFetchPdf(page, authState, row);
+                attempt++;
+            }
+            if (result.ready) {
+                fs.mkdirSync(saveDir, { recursive: true });
+                fs.writeFileSync(sptPath, result.buffer);
+                downloadedAny = true;
+                emit('Terunduh: ' + path.basename(sptPath));
+                copyToCompliance(sptPath, compFolder, emit);
+            } else {
+                rowOk = false;
+                emit('Baris ke-' + (i + 1) + ': SPT PDF gagal terunduh (masih dalam proses pembuatan setelah ' + GENERATE_POLL_ATTEMPTS + ' percobaan) - dilewati, bisa diulang manual.');
+            }
+        } else copyToCompliance(sptPath, compFolder, emit);
+
+        if (!fs.existsSync(bpePath)) {
+            try {
+                const html = await fetchBpeHtml(page, authState, row);
+                fs.mkdirSync(saveDir, { recursive: true });
+                await htmlToPdf.renderHtmlToPdf(html, bpePath);
+                emit('Terunduh: ' + path.basename(bpePath));
+                copyToCompliance(bpePath, compFolder, emit);
+            } catch (e) {
+                if (e.isSessionExpired) throw e;
+                rowOk = false;
+                emit('Baris ke-' + (i + 1) + ': BPE gagal terunduh - ' + e.message + ' - dilewati, bisa diulang manual.');
+            }
+        } else copyToCompliance(bpePath, compFolder, emit);
+
+        if (onRowDone) { try { onRowDone(jenisKey, mmYY, rowOk); } catch (e) {} }
+    }
+    return { downloadedAny, foundAny: true };
+}
+
+const SIZE_DEFAULT = 10;
+
+/** Top-level entry point. `opts`: unchanged shape from the click-based version -
  *   client, orgId, entity ({entity_id, entity_name, npwp, individual}), picId,
  *   jenisPajakKeys (array of 'pph21'|'unifikasi'|'ppn'), masaInput (string, e.g. "0125-1225"
  *   or a single "0626"), saveRoot (optional), manualPage (optional, manual-session mode),
- *   compFolder (optional - a SEPARATE copy of each downloaded file also lands here, e.g.
- *   Taxio's own per-entity compliance folder; legacy tool's copyToCompliance() equivalent),
- *   onRowDone (optional (jenisKey, mmYY, ok) => void - compliance write-back hook). */
+ *   compFolder (optional), onRowDone (optional (jenisKey, mmYY, ok) => void). */
 async function runSptDownload(opts) {
     const { client, orgId, entity, picId, jenisPajakKeys } = opts;
     const keys = (jenisPajakKeys || []).filter((k) => JENIS_PAJAK[k]);
@@ -303,6 +335,12 @@ async function runSptDownload(opts) {
     const saveRoot = opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
 
     const manual = !!opts.manualPage;
+    // Declared at function scope (not inside the `else` below) - loginAndImpersonate() below
+    // closes over these; a block-scoped `const` inside `else` previously left them undefined by
+    // the time it ran, throwing "restricted is not defined" on every normal (non-manual) run.
+    const restricted = !!opts.restricted;
+    const passphrase = opts.passphrase || null;
+    const allowedEbupotSections = opts.allowedEbupotSections || null;
     log('Memulai download SPT (' + keys.map((k) => JENIS_PAJAK_LABELS[k]).join(', ') + ')'
         + (manual ? ' (sesi manual)' : ' untuk entitas "' + entity.entity_name + '"') + '...');
     let cred = null, page;
@@ -310,21 +348,22 @@ async function runSptDownload(opts) {
         page = opts.manualPage;
         if (chrome.isLoggedOut(page)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
     } else {
-        const restricted = !!opts.restricted;
-        const passphrase = opts.passphrase || null;
-        const allowedEbupotSections = opts.allowedEbupotSections || null;
         cred = await entitiesLib.getCredential(client, orgId, picId);
         ({ page } = await chrome.launchOrReuseContext(picId, async (download) => {
-            try { await download.saveAs(path.join(os.homedir(), 'Downloads', download.suggestedFilename())); } catch (e) {}
+            try {
+                await download.saveAs(path.join(os.homedir(), 'Downloads', download.suggestedFilename()));
+                await download.delete().catch(() => {});
+            } catch (e) {}
         }, restricted, allowedEbupotSections));
     }
+    const authState = attachApiAuthCapture(page);
 
     async function loginAndImpersonate() {
         if (manual) {
             if (chrome.isLoggedOut(page)) throw new Error('Sesi manual berakhir - silakan login ulang di jendela Coretax lalu klik 🔁 Ulang.');
             return;
         }
-        await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted, passphrase, allowedEbupotSections: opts.allowedEbupotSections });
+        await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted, passphrase, allowedEbupotSections });
     }
     await loginAndImpersonate();
 
@@ -333,8 +372,6 @@ async function runSptDownload(opts) {
             ? await chrome.getManualStatus().then((s) => s.identity).catch(() => '')
             : (entity.npwp ? entity.npwp + ' · ' : '') + entity.entity_name;
         runcontrol.setCoretaxAs(coretaxAs || entity.entity_name);
-        // Also feeds lib/login-status.js so the "Login as" chip stays visible after this run
-        // finishes (runcontrol's own coretaxAs is cleared then) - per explicit user direction.
         if (!manual) loginStatus.set(picId, entity);
     } catch (e) {}
 
@@ -346,13 +383,11 @@ async function runSptDownload(opts) {
                 await page.goto(SPT_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
                 if (chrome.isLoggedOut(page)) {
                     log('Halaman SPT memantulkan ke login - login ulang lalu buka lagi...');
-                    await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted: opts.restricted, passphrase: opts.passphrase, allowedEbupotSections: opts.allowedEbupotSections });
+                    await loginAndImpersonate();
                     continue;
                 }
-                await waitForTableSettled(page, 20000);
-                const tableThere = await page.locator('table.p-datatable-table, .p-datatable-tbody, .p-paginator').first()
-                    .isVisible({ timeout: 8000 }).catch(() => false);
-                if (!tableThere) throw new Error('Tabel SPT tidak muncul (halaman mungkin gagal dimuat).');
+                const captured = await waitForAuthCaptured(authState, 20000);
+                if (!captured) throw new Error('Tidak berhasil menangkap sesi API Coretax (authorization header) dari halaman.');
                 return;
             } catch (e) {
                 if (attempt === NAV_ATTEMPTS) throw new Error('Gagal membuka halaman SPT setelah ' + NAV_ATTEMPTS + ' percobaan: ' + e.message);
@@ -362,32 +397,43 @@ async function runSptDownload(opts) {
             }
         }
     }
+    async function reLoginAndReopen() {
+        await loginAndImpersonate();
+        await openSptAndPrep();
+    }
     await openSptAndPrep();
 
     const stats = { downloaded: 0, combosDone: 0, combosSkipped: 0 };
     let stopped = false;
 
-    // One combo per masa - the Jenis Pajak filter checks ALL requested types at once (per
-    // explicit user revision), so a single filtered result set can contain rows of several
-    // types; processSptCombo reads each row's own "Jenis Pajak" column to sort that out.
+    const taxTypeCodes = keys.map((k) => JENIS_PAJAK[k].taxTypeCode);
     const jenisLabel = keys.map((k) => JENIS_PAJAK_LABELS[k]).join(' + ');
     const combos = masaList.map((mmYY) => ({ mmYY, comboLabel: jenisLabel + ' / ' + masaToIndoLabel(mmYY) }));
+    const sizeState = { current: SIZE_STEPS.includes(Number(opts.pageSize)) ? Number(opts.pageSize) : SIZE_DEFAULT };
 
     async function runCombo(combo) {
         const { mmYY, comboLabel } = combo;
         const emit = (m) => log('[SPT ' + comboLabel + '] ' + m);
         try {
-            await setJenisPajakFilters(page, keys.map((k) => JENIS_PAJAK[k].checkboxLabel));
-            await setSptMasaFilter(page, mmYY);
-            await waitForTableSettled(page, 15000);
             const saveDir = path.join(saveRoot, entity.entity_id, 'SPT', mmYY);
-            fs.mkdirSync(saveDir, { recursive: true });
-            const result = await processSptCombo({
-                page, saveDir, entityCode: entity.entity_id, mmYY, compFolder: opts.compFolder,
-                onRowDone: opts.onRowDone ? (jk, m, ok) => opts.onRowDone(jk, m, ok) : null,
-                log: emit
-            });
-            if (result.downloadedAny) stats.downloaded++;
+            for (let sessionRetries = 0; ; sessionRetries++) {
+                try {
+                    const result = await processSptCombo({
+                        page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
+                        compFolder: opts.compFolder, onRowDone: opts.onRowDone ? (jk, m, ok) => opts.onRowDone(jk, m, ok) : null,
+                        log: emit
+                    });
+                    if (result.downloadedAny) stats.downloaded++;
+                    break;
+                } catch (e) {
+                    if (e.isSessionExpired && sessionRetries < 3) {
+                        emit('Sesi Coretax berakhir di tengah proses (auto-logout) - login ulang dan melanjutkan...');
+                        await reLoginAndReopen();
+                        continue;
+                    }
+                    throw e;
+                }
+            }
             stats.combosDone++;
             return 'next';
         } catch (e) {
@@ -400,7 +446,6 @@ async function runSptDownload(opts) {
                 stopped = true;
                 throw Object.assign(new Error('Jendela browser ditutup.'), { isStop: true });
             }
-            const curIdx = combos.indexOf(combo);
             emit('Kombinasi ini GAGAL: ' + e.message);
             runcontrol.pauseForDecision(e.message);
             try {

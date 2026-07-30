@@ -98,15 +98,24 @@ async function waitForAuthCaptured(authState, timeoutMs) {
 
 /** Same fetch-from-inside-the-page technique as spt.js/ebupot.js (string source, not fn+arg -
  *  pkg strips function source text, breaking page.evaluate(fn, arg)'s serialization). */
+/** Timeout added 2026-07-30 (same fix as spt.js - see its comment there for the confirmed-live
+ *  hang this fixes: no timeout meant a stalled Coretax response froze the whole run forever with
+ *  zero further log output). */
 async function apiPost(page, authState, url, bodyObj) {
     const expr = '(async () => {'
         + 'try {'
-        + '  const r = await fetch(' + JSON.stringify(url) + ', {'
-        + '    method: "POST",'
-        + '    headers: { "Content-Type": "application/json", "Authorization": ' + JSON.stringify(authState.authorization) + ', "x-dgt-code": ' + JSON.stringify(authState.dgtCode) + ' },'
-        + '    credentials: "include",'
-        + '    body: ' + JSON.stringify(JSON.stringify(bodyObj))
-        + '  });'
+        + '  const ctrl = new AbortController();'
+        + '  const timer = setTimeout(() => ctrl.abort(), 30000);'
+        + '  let r;'
+        + '  try {'
+        + '    r = await fetch(' + JSON.stringify(url) + ', {'
+        + '      method: "POST",'
+        + '      headers: { "Content-Type": "application/json", "Authorization": ' + JSON.stringify(authState.authorization) + ', "x-dgt-code": ' + JSON.stringify(authState.dgtCode) + ' },'
+        + '      credentials: "include",'
+        + '      body: ' + JSON.stringify(JSON.stringify(bodyObj)) + ','
+        + '      signal: ctrl.signal'
+        + '    });'
+        + '  } finally { clearTimeout(timer); }'
         + '  let json = null;'
         + '  try { json = await r.json(); } catch (e) {}'
         + '  return { status: r.status, json };'
@@ -120,15 +129,22 @@ async function apiPost(page, authState, url, bodyObj) {
 /** Same technique, but createbillingcode answers with raw PDF bytes, not JSON. page.evaluate
  *  can't return a Buffer/ArrayBuffer directly, so the bytes are base64-encoded inside the page
  *  and decoded back to a Buffer on this side. */
+/** Timeout added 2026-07-30 (same fix as spt.js/apiPost above). */
 async function apiPostBinary(page, authState, url, bodyObj) {
     const expr = '(async () => {'
         + 'try {'
-        + '  const r = await fetch(' + JSON.stringify(url) + ', {'
-        + '    method: "POST",'
-        + '    headers: { "Content-Type": "application/json", "Authorization": ' + JSON.stringify(authState.authorization) + ', "x-dgt-code": ' + JSON.stringify(authState.dgtCode) + ' },'
-        + '    credentials: "include",'
-        + '    body: ' + JSON.stringify(JSON.stringify(bodyObj))
-        + '  });'
+        + '  const ctrl = new AbortController();'
+        + '  const timer = setTimeout(() => ctrl.abort(), 30000);'
+        + '  let r;'
+        + '  try {'
+        + '    r = await fetch(' + JSON.stringify(url) + ', {'
+        + '      method: "POST",'
+        + '      headers: { "Content-Type": "application/json", "Authorization": ' + JSON.stringify(authState.authorization) + ', "x-dgt-code": ' + JSON.stringify(authState.dgtCode) + ' },'
+        + '      credentials: "include",'
+        + '      body: ' + JSON.stringify(JSON.stringify(bodyObj)) + ','
+        + '      signal: ctrl.signal'
+        + '    });'
+        + '  } finally { clearTimeout(timer); }'
         + '  if (!r.ok) { let errJson = null; try { errJson = await r.json(); } catch (e) {} return { status: r.status, errJson }; }'
         + '  const buf = await r.arrayBuffer();'
         + '  const bytes = new Uint8Array(buf);'
@@ -244,6 +260,12 @@ function buildBillingFilename(entityCode, mmYY) {
 /** Shared by both the "create new" and "existing code found" paths - same destination/naming
  *  convention either way, since from the user's perspective the point is having the PDF
  *  locally, not whether this run happened to create it or just fetched an already-existing one. */
+/** Moves rather than copies into compFolder as of 2026-07-30 (explicit user request, same
+ *  change as spt.js's copyToCompliance) - once safely in the compliance folder, the
+ *  CoretaxAgent-local copy is removed instead of kept alongside it. Only removes filePath after
+ *  copyFileSync succeeds. The returned filePath then points at the compliance-folder location
+ *  when a move happened - fine here since no caller re-reads the file after this returns (the
+ *  deep-link path discards the whole result, only checking .catch()). */
 function saveBillingPdf(entity, mmYY, buffer, saveRoot, compFolder) {
     const root = saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
     const saveDir = path.join(root, entity.entity_id, 'PPh25');
@@ -256,7 +278,9 @@ function saveBillingPdf(entity, mmYY, buffer, saveRoot, compFolder) {
             const dest = path.join(compFolder, path.basename(filePath));
             if (fs.existsSync(dest)) fs.rmSync(dest, { force: true });
             fs.copyFileSync(filePath, dest);
-        } catch (e) { log('Gagal menyalin ke folder compliance: ' + e.message); }
+            fs.rmSync(filePath, { force: true });
+            return dest;
+        } catch (e) { log('Gagal memindahkan ke folder compliance: ' + e.message); }
     }
     return filePath;
 }
