@@ -460,7 +460,7 @@ async function handleDeepLink(req, res) {
     // is visible, same as a cold start via the same link already does (main.js calls openWindow
     // unconditionally there). `req.headers.host` is this same server's own host:port - no need
     // to hardcode GUI_PORT here.
-    if (!isWindowOpen()) openWindow('http://' + req.headers.host + '/');
+    if (!(await isWindowOpen())) openWindow('http://' + req.headers.host + '/');
     else bringToFront();
     deeplink.dispatch(body.url).catch((e) => log('Deep link gagal: ' + e.message));
 }
@@ -504,9 +504,9 @@ async function handleQuit(req, res) {
     setTimeout(() => process.exit(0), 300);
 }
 
-function handleTrayOpen(req, res) {
+async function handleTrayOpen(req, res) {
     sendJson(res, 200, { ok: true });
-    if (!isWindowOpen()) openWindow('http://' + req.headers.host + '/');
+    if (!(await isWindowOpen())) openWindow('http://' + req.headers.host + '/');
     else bringToFront();
 }
 

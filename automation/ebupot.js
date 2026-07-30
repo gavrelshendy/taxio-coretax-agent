@@ -128,15 +128,24 @@ async function waitForAuthCaptured(authState, timeoutMs) {
  *  hit this; the packaged .exe did on first real use). A string given to `page.evaluate` needs
  *  no such round-trip, so it's immune to this - same technique already proven live via the
  *  investigation bridge's `frame.evaluate(cmd.expr)` calls. */
+/** Timeout added 2026-07-30 (same fix as spt.js - see its comment there for the confirmed-live
+ *  hang this fixes: no timeout meant a stalled Coretax response froze the whole run forever with
+ *  zero further log output). */
 async function apiPost(page, authState, url, bodyObj) {
     const expr = '(async () => {'
         + 'try {'
-        + '  const r = await fetch(' + JSON.stringify(url) + ', {'
-        + '    method: "POST",'
-        + '    headers: { "Content-Type": "application/json", "Authorization": ' + JSON.stringify(authState.authorization) + ', "x-dgt-code": ' + JSON.stringify(authState.dgtCode) + ' },'
-        + '    credentials: "include",'
-        + '    body: ' + JSON.stringify(JSON.stringify(bodyObj))
-        + '  });'
+        + '  const ctrl = new AbortController();'
+        + '  const timer = setTimeout(() => ctrl.abort(), 30000);'
+        + '  let r;'
+        + '  try {'
+        + '    r = await fetch(' + JSON.stringify(url) + ', {'
+        + '      method: "POST",'
+        + '      headers: { "Content-Type": "application/json", "Authorization": ' + JSON.stringify(authState.authorization) + ', "x-dgt-code": ' + JSON.stringify(authState.dgtCode) + ' },'
+        + '      credentials: "include",'
+        + '      body: ' + JSON.stringify(JSON.stringify(bodyObj)) + ','
+        + '      signal: ctrl.signal'
+        + '    });'
+        + '  } finally { clearTimeout(timer); }'
         + '  let json = null;'
         + '  try { json = await r.json(); } catch (e) {}'
         + '  return { status: r.status, json };'
@@ -297,17 +306,21 @@ async function runEbupotDownload(opts) {
     const manual = !!opts.manualPage;
     log('Memulai ' + (pdfEnabled ? 'download PDF + Excel' : 'download Excel saja') + ' e-Bupot ' + bupotLabel
         + (manual ? ' (sesi manual)' : ' untuk entitas "' + entity.entity_name + '"') + '...');
+    const restricted = !!opts.restricted;
+    const passphrase = opts.passphrase || null;
+    const allowedEbupotSections = opts.allowedEbupotSections || null;
+
     let cred = null, page, context;
     if (manual) {
         page = opts.manualPage;
         if (chrome.isLoggedOut(page)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
     } else {
-        const restricted = !!opts.restricted;
-        const passphrase = opts.passphrase || null;
-        const allowedEbupotSections = opts.allowedEbupotSections || null;
         cred = await entitiesLib.getCredential(client, orgId, picId);
         ({ context, page } = await chrome.launchOrReuseContext(picId, async (download) => {
-            try { await download.saveAs(path.join(os.homedir(), 'Downloads', download.suggestedFilename())); } catch (e) {}
+            try {
+                await download.saveAs(path.join(os.homedir(), 'Downloads', download.suggestedFilename()));
+                await download.delete().catch(() => {});
+            } catch (e) {}
         }, restricted, allowedEbupotSections));
     }
     const authState = attachApiAuthCapture(page);
@@ -317,7 +330,7 @@ async function runEbupotDownload(opts) {
             if (chrome.isLoggedOut(page)) throw new Error('Sesi manual berakhir - silakan login ulang di jendela Coretax lalu klik 🔁 Ulang.');
             return;
         }
-        await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted, passphrase, allowedEbupotSections: opts.allowedEbupotSections });
+        await chrome.loginAndImpersonate(page, cred, entity, picId, { checkpoint: runcontrol.checkpoint, restricted, passphrase, allowedEbupotSections });
     }
     await loginAndImpersonate();
 
