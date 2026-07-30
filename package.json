@@ -1,6 +1,6 @@
 {
   "name": "coretax-agent",
-  "version": "1.9.5",
+  "version": "1.9.6",
   "private": true,
   "description": "Standalone desktop app for Coretax automation - connects directly to your Taxio/Taxio.me account (email+password) and drives Coretax DJP via Playwright, controlled through a local GUI dashboard instead of a console.",
   "main": "main.js",
