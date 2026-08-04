@@ -355,7 +355,12 @@ const SIZE_DEFAULT = 10;
  *   or a single "0626"), saveRoot (optional), manualPage (optional, manual-session mode),
  *   compFolder (optional), onRowDone (optional (jenisKey, mmYY, ok) => void). */
 async function runSptDownload(opts) {
-    const { client, orgId, entity, picId, jenisPajakKeys } = opts;
+    const { client, orgId, entity, jenisPajakKeys } = opts;
+    // Reassignable (not const) - the automatic fallback-PIC retry pass further down needs to
+    // point login/cred at a DIFFERENT linked PIC after the first pass finishes, and
+    // loginAndImpersonate()/openSptAndPrep() below close over this as a free variable so
+    // reassigning it here is what makes the retry actually use the new PIC.
+    let picId = opts.picId;
     const keys = (jenisPajakKeys || []).filter((k) => JENIS_PAJAK[k]);
     if (!keys.length) throw new Error('Jenis pajak belum dipilih.');
     const masaList = parseMasaListInput(opts.masaInput);
@@ -366,7 +371,10 @@ async function runSptDownload(opts) {
     // closes over these; a block-scoped `const` inside `else` previously left them undefined by
     // the time it ran, throwing "restricted is not defined" on every normal (non-manual) run.
     const restricted = !!opts.restricted;
-    const passphrase = opts.passphrase || null;
+    // Reassignable - the fallback-PIC pass fetches this PIC's OWN passphrase (each PIC has their
+    // own e-signing passphrase; reusing the originally-selected PIC's would show the wrong one in
+    // the copy-passphrase widget for the fallback PIC's window).
+    let passphrase = opts.passphrase || null;
     const allowedEbupotSections = opts.allowedEbupotSections || null;
     log('Memulai download SPT (' + keys.map((k) => JENIS_PAJAK_LABELS[k]).join(', ') + ')'
         + (manual ? ' (sesi manual)' : ' untuk entitas "' + entity.entity_name + '"') + '...');
@@ -383,7 +391,9 @@ async function runSptDownload(opts) {
             } catch (e) {}
         }, restricted, allowedEbupotSections));
     }
-    const authState = attachApiAuthCapture(page);
+    // Reassignable - same reason as `picId` above, needs a fresh capture state bound to the
+    // fallback pass's own page/context.
+    let authState = attachApiAuthCapture(page);
 
     async function loginAndImpersonate() {
         if (manual) {
@@ -438,6 +448,19 @@ async function runSptDownload(opts) {
     const combos = masaList.map((mmYY) => ({ mmYY, comboLabel: jenisLabel + ' / ' + masaToIndoLabel(mmYY) }));
     const sizeState = { current: SIZE_STEPS.includes(Number(opts.pageSize)) ? Number(opts.pageSize) : SIZE_DEFAULT };
 
+    // Some entities have more than one PIC linked on Coretax's side (e.g. Dion Farma Abadi -
+    // Fredi Setyawan AND Ronald Tony) - an SPT can only ever be fetched by whichever PIC actually
+    // signed it, so a row failing under the requested PIC doesn't necessarily mean it's stuck; it
+    // may just need the OTHER PIC's session. Track which masa had at least one row genuinely fail
+    // (not "still generating", not session-expiry - those already retry/pause on their own) so a
+    // fallback-PIC pass further down can retry ONLY those, once the first PIC's pass is done.
+    const failedMmYY = new Set();
+    const baseOnRowDone = opts.onRowDone;
+    const trackingOnRowDone = (jk, m, ok) => {
+        if (!ok) failedMmYY.add(m); else failedMmYY.delete(m);
+        if (baseOnRowDone) baseOnRowDone(jk, m, ok);
+    };
+
     async function runCombo(combo) {
         const { mmYY, comboLabel } = combo;
         const emit = (m) => log('[SPT ' + comboLabel + '] ' + m);
@@ -447,7 +470,7 @@ async function runSptDownload(opts) {
                 try {
                     const result = await processSptCombo({
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
-                        compFolder: opts.compFolder, onRowDone: opts.onRowDone ? (jk, m, ok) => opts.onRowDone(jk, m, ok) : null,
+                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone,
                         log: emit
                     });
                     if (result.downloadedAny) stats.downloaded++;
@@ -495,6 +518,48 @@ async function runSptDownload(opts) {
             if (action === 'retry') continue;
             else if (action === 'back') i = Math.max(0, i - 1);
             else i++;
+        }
+
+        // Fallback-PIC pass: explicit request 2026-08-04 (Dion Farma Abadi cs. - entities with
+        // more than one linked Coretax PIC). Only the masa that had a genuine failure get
+        // retried, under each remaining linked PIC in turn, stopping as soon as none are left
+        // failing. processSptCombo's own existsSync-skip means a masa that partially succeeded
+        // under the first PIC just picks up whatever's still missing here - no double-downloads.
+        const fallbackPicIds = (opts.fallbackPicIds || []).filter((id) => id && id !== picId);
+        if (!manual && !stopped && fallbackPicIds.length) {
+            for (const fbPicId of fallbackPicIds) {
+                if (!failedMmYY.size) break;
+                const retryMmYY = new Set(failedMmYY);
+                log('Beberapa SPT gagal terunduh sebagai PIC sebelumnya (mungkin bukan penandatangannya) - mencoba ulang ' + retryMmYY.size + ' masa sebagai PIC lain yang tertaut ke entitas ini...');
+                try {
+                    cred = await entitiesLib.getCredential(client, orgId, fbPicId);
+                    passphrase = await entitiesLib.getPassphrase(client, orgId, fbPicId).catch(() => null);
+                    ({ page } = await chrome.launchOrReuseContext(fbPicId, async (download) => {
+                        try {
+                            await download.saveAs(path.join(os.homedir(), 'Downloads', download.suggestedFilename()));
+                            await download.delete().catch(() => {});
+                        } catch (e) {}
+                    }, restricted, allowedEbupotSections));
+                    authState = attachApiAuthCapture(page);
+                    picId = fbPicId;
+                    await loginAndImpersonate();
+                    runcontrol.setCoretaxAs((entity.npwp ? entity.npwp + ' · ' : '') + entity.entity_name + ' (PIC lain)');
+                    loginStatus.set(picId, entity);
+                    await openSptAndPrep();
+                } catch (e) {
+                    log('Gagal masuk sebagai PIC lain (' + fbPicId + '): ' + e.message + ' - dilewati.');
+                    continue;
+                }
+                const retryCombos = combos.filter((c) => retryMmYY.has(c.mmYY));
+                let j = 0;
+                while (j < retryCombos.length) {
+                    const action2 = await runCombo(retryCombos[j]);
+                    if (action2 === 'retry') continue;
+                    else if (action2 === 'back') j = Math.max(0, j - 1);
+                    else j++;
+                }
+            }
+            if (failedMmYY.size) log('Masih ada ' + failedMmYY.size + ' masa yang gagal setelah dicoba di semua PIC tertaut - kemungkinan memang belum digenerate di Coretax.');
         }
     } catch (e) {
         if (!(e && e.isStop)) throw e;

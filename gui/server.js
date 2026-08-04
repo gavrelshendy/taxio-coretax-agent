@@ -312,11 +312,16 @@ async function handleDownloadSpt(req, res) {
         const restricted = isProjectRestricted(entity.project);
         const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
         const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
+        // Entitas dengan >1 PIC tertaut (mis. Dion Farma Abadi - Fredi Setyawan & Ronald Tony):
+        // SPT cuma bisa digenerate sesuai penandatangan aslinya, jadi kasih tau runSptDownload
+        // PIC lain yang tertaut ke entitas ini supaya baris yang gagal di PIC terpilih otomatis
+        // dicoba ulang di bawah PIC lain itu sebelum benar-benar menyerah.
+        const fallbackPicIds = await entitiesLib.getOtherLinkedPicIds(s.client, s.orgId, entity.entity_id, entity.pic_id);
         runOpts = {
             client: s.client, orgId: s.orgId,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
             picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot,
-            restricted, allowedEbupotSections, passphrase
+            restricted, allowedEbupotSections, passphrase, fallbackPicIds
         };
     }
 
