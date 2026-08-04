@@ -451,13 +451,19 @@ async function runSptDownload(opts) {
     // Some entities have more than one PIC linked on Coretax's side (e.g. Dion Farma Abadi -
     // Fredi Setyawan AND Ronald Tony) - an SPT can only ever be fetched by whichever PIC actually
     // signed it, so a row failing under the requested PIC doesn't necessarily mean it's stuck; it
-    // may just need the OTHER PIC's session. Track which masa had at least one row genuinely fail
-    // (not "still generating", not session-expiry - those already retry/pause on their own) so a
-    // fallback-PIC pass further down can retry ONLY those, once the first PIC's pass is done.
-    const failedMmYY = new Set();
+    // may just need the OTHER PIC's session. Track PER (jenisKey, masa) - NOT masa alone - which
+    // rows genuinely fail (not "still generating", not session-expiry - those already retry/pause
+    // on their own) so a fallback-PIC pass further down can retry only the masa that still have a
+    // failure. CONFIRMED LIVE 2026-08-04: one masa combo covers several tax types at once (PPh21,
+    // Unifikasi, PPN all share the same mmYY) - tracking failure keyed by mmYY alone meant a LATER
+    // row's success for the same masa (e.g. Unifikasi) cleared an EARLIER row's genuine failure
+    // (PPN) for that same masa, so the fallback never triggered even though a row had truly failed.
+    const failedPairs = new Set(); // "jenisKey|mmYY"
+    const failedMmYYSet = () => new Set(Array.from(failedPairs, (p) => p.slice(p.indexOf('|') + 1)));
     const baseOnRowDone = opts.onRowDone;
     const trackingOnRowDone = (jk, m, ok) => {
-        if (!ok) failedMmYY.add(m); else failedMmYY.delete(m);
+        const key = jk + '|' + m;
+        if (ok) failedPairs.delete(key); else failedPairs.add(key);
         if (baseOnRowDone) baseOnRowDone(jk, m, ok);
     };
 
@@ -528,8 +534,8 @@ async function runSptDownload(opts) {
         const fallbackPicIds = (opts.fallbackPicIds || []).filter((id) => id && id !== picId);
         if (!manual && !stopped && fallbackPicIds.length) {
             for (const fbPicId of fallbackPicIds) {
-                if (!failedMmYY.size) break;
-                const retryMmYY = new Set(failedMmYY);
+                const retryMmYY = failedMmYYSet();
+                if (!retryMmYY.size) break;
                 log('Beberapa SPT gagal terunduh sebagai PIC sebelumnya (mungkin bukan penandatangannya) - mencoba ulang ' + retryMmYY.size + ' masa sebagai PIC lain yang tertaut ke entitas ini...');
                 try {
                     cred = await entitiesLib.getCredential(client, orgId, fbPicId);
@@ -559,7 +565,8 @@ async function runSptDownload(opts) {
                     else j++;
                 }
             }
-            if (failedMmYY.size) log('Masih ada ' + failedMmYY.size + ' masa yang gagal setelah dicoba di semua PIC tertaut - kemungkinan memang belum digenerate di Coretax.');
+            const stillFailing = failedMmYYSet();
+            if (stillFailing.size) log('Masih ada ' + stillFailing.size + ' masa yang gagal setelah dicoba di semua PIC tertaut - kemungkinan memang belum digenerate di Coretax.');
         }
     } catch (e) {
         if (!(e && e.isStop)) throw e;
