@@ -47,6 +47,7 @@ const { _sleep, sanitizeFilenamePart } = require('../lib/datatable');
 
 const SPT_URL = 'https://coretaxdjp.pajak.go.id/returnsheets-portal/id-ID/submitted-returnsheets';
 const API_BASE = 'https://coretaxdjp.pajak.go.id/returnsheetportal/api';
+const DOC_MGMT_API_BASE = 'https://coretaxdjp.pajak.go.id/documentmanagementportal/api';
 const ZERO_DOC_ID = '00000000-0000-0000-0000-000000000000'; // sentinel meaning "never generated yet"
 
 // CONFIRMED LIVE 2026-07-27 (see header comment) - do not "correct" WIT/WT without re-verifying.
@@ -205,12 +206,40 @@ async function fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, emit
     return all;
 }
 
+/** CONFIRMED LIVE 2026-08-05 (real user report - generate suddenly failing with HTTP 400 on
+ *  every row, reproduced by watching a live manual click-through with network capture): Coretax
+ *  added a REQUIRED e-signing step to download-returnsheet-document at some point after this
+ *  file's original 2026-07-27 rewrite (which correctly found `SignParameter:null` worked fine
+ *  back then - not a mistake, a genuine platform change). The captured working sequence for one
+ *  manual click was: check-signing-info (already called elsewhere) -> THIS validate-sign call
+ *  (Nik + Passphrase, confirms the PIC's own signing passphrase before attempting anything) ->
+ *  download-returnsheet-document, now requiring a populated SignParameter
+ *  {Type:"02",Provider:"00",SignerID:<NIK>,SignerPassword:<passphrase>} in the body instead of
+ *  null - omitting it is exactly what produces the HTTP 400. NIK here is the PIC's OWN Coretax
+ *  login username (cred.username in chrome.js's loginAndImpersonate) - the passphrase is the
+ *  same one already stored per-PIC and used for the copy-passphrase widget elsewhere
+ *  (entitiesLib.getPassphrase). Called once per PIC session (not per row) as a fail-fast check -
+ *  a wrong/missing passphrase surfaces here with a clear message instead of a confusing 400
+ *  later on every single row. */
+async function validateSign(page, authState, nik, passphrase) {
+    if (!nik || !passphrase) throw new Error('PIC ini belum punya passphrase tanda tangan tersimpan di Taxio - isi dulu lewat "Manage Coretax PIC" sebelum download SPT.');
+    const body = { Nik: nik, Passphrase: passphrase, TaxpayerAggregateIdentifier: authState.taxpayerId };
+    const { status, json } = await apiPost(page, authState, DOC_MGMT_API_BASE + '/documentOutbound/validate-sign', body);
+    if (status === 401) { const e = new Error('Sesi berakhir (401) saat validasi passphrase tanda tangan.'); e.isSessionExpired = true; throw e; }
+    const ok = status === 200 && json && json.IsSuccessful !== false && json.Payload && json.Payload.IsSuccessful;
+    if (!ok) {
+        const msg = (json && json.Payload && json.Payload.ErrMessage) || (json && json.Message) || ('HTTP ' + status);
+        throw new Error('Passphrase tanda tangan ditolak Coretax: ' + msg);
+    }
+    return { Type: '02', Provider: '00', SignerID: nik, SignerPassword: passphrase };
+}
+
 /** One attempt at generating-or-downloading a row's SPT PDF. Returns {ready:true, buffer} once
  *  the PDF is available, or {ready:false} if Coretax is still generating it (CONFIRMED LIVE
  *  response shape: `Payload.IsError:true, ErrorMessage:"Generate Document is In Progress"`) -
  *  callers wait + re-fetch the row's listing state before retrying, same as the old click-based
  *  version's generate-then-refresh loop. */
-async function tryFetchPdf(page, authState, row) {
+async function tryFetchPdf(page, authState, row, signParam) {
     const body = {
         ReturnSheetRecordIdentifier: row.RecordId,
         ReturnSheetAggregateIdentifier: row.AggregateIdentifier,
@@ -219,7 +248,7 @@ async function tryFetchPdf(page, authState, row) {
         LetterNumber: row.ReturnSheetNumber,
         DocumentDate: String(row.LastUpdatedDate || '').slice(0, 19),
         IsReceipt: false,
-        SignParameter: null
+        SignParameter: signParam || null
     };
     const { status, json } = await apiPost(page, authState, API_BASE + '/downloadreturnsheet/download-returnsheet-document', body);
     if (status === 401) { const e = new Error('Sesi berakhir (401) saat mengambil PDF SPT.'); e.isSessionExpired = true; throw e; }
@@ -255,7 +284,7 @@ const GENERATE_POLL_WAIT_MS = 5000;
  *  Coretax is still rendering it) and BPE, skipping anything already on disk. A session-expiry
  *  mid-fetch bubbles up (`.isSessionExpired`) for the caller to re-login and re-run this combo. */
 async function processSptCombo(ctx) {
-    const { page, authState, saveDir, entityCode, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, log: emit } = ctx;
+    const { page, authState, saveDir, entityCode, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, signParam, log: emit } = ctx;
     let downloadedAny = false;
     const rows = await fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, emit);
     if (!rows.length) { emit('Tidak ada data untuk filter ini.'); return { downloadedAny: false, foundAny: false }; }
@@ -306,7 +335,7 @@ async function processSptCombo(ctx) {
             let result = { ready: false };
             let caughtError = null;
             try {
-                result = await tryFetchPdf(page, authState, row);
+                result = await tryFetchPdf(page, authState, row, signParam);
                 let attempt = 0;
                 while (!result.ready && attempt < GENERATE_POLL_ATTEMPTS) {
                     await runcontrol.checkpoint();
@@ -318,7 +347,7 @@ async function processSptCombo(ctx) {
                     const refreshed = await fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, () => {});
                     const match = refreshed.find((r) => r.RecordId === row.RecordId) || row;
                     row = match;
-                    result = await tryFetchPdf(page, authState, row);
+                    result = await tryFetchPdf(page, authState, row, signParam);
                     attempt++;
                 }
             } catch (e) {
@@ -440,6 +469,26 @@ async function runSptDownload(opts) {
     }
     await openSptAndPrep();
 
+    // Coretax now requires a signed SignParameter on every download-returnsheet-document call
+    // (see validateSign()'s header comment) - resolve it once per PIC session, right after
+    // openSptAndPrep() so authState is definitely populated (waitForAuthCaptured already ran
+    // inside it). manual mode has no `cred` of its own - opts.nik lets a caller that already
+    // knows the PIC's credential (deeplink.js does its own getCredential/getPassphrase) supply
+    // it; a caller with neither (a genuinely hands-off manual session) just gets signParam=null,
+    // same as before this fix - individual rows will surface the real Coretax error if signing
+    // truly is required. A validate-sign failure warns and continues rather than aborting the
+    // whole run, so a stale/misconfigured passphrase degrades to the old per-row failure mode
+    // instead of blocking everything up front.
+    let signParam = null;
+    const signerNik = manual ? opts.nik : (cred && cred.username);
+    if (signerNik && passphrase) {
+        try { signParam = await validateSign(page, authState, signerNik, passphrase); }
+        catch (e) {
+            if (e.isSessionExpired) throw e;
+            log('Peringatan: ' + e.message + ' - lanjut tanpa tanda tangan (baris mungkin gagal digenerate).');
+        }
+    }
+
     const stats = { downloaded: 0, combosDone: 0, combosSkipped: 0 };
     let stopped = false;
 
@@ -476,7 +525,7 @@ async function runSptDownload(opts) {
                 try {
                     const result = await processSptCombo({
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
-                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone,
+                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam,
                         log: emit
                     });
                     if (result.downloadedAny) stats.downloaded++;
@@ -552,6 +601,14 @@ async function runSptDownload(opts) {
                     runcontrol.setCoretaxAs((entity.npwp ? entity.npwp + ' · ' : '') + entity.entity_name + ' (PIC lain)');
                     loginStatus.set(picId, entity);
                     await openSptAndPrep();
+                    signParam = null;
+                    if (cred.username && passphrase) {
+                        try { signParam = await validateSign(page, authState, cred.username, passphrase); }
+                        catch (e) {
+                            if (e.isSessionExpired) throw e;
+                            log('Peringatan: ' + e.message + ' - lanjut tanpa tanda tangan (baris mungkin gagal digenerate).');
+                        }
+                    }
                 } catch (e) {
                     log('Gagal masuk sebagai PIC lain (' + fbPicId + '): ' + e.message + ' - dilewati.');
                     continue;
