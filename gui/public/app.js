@@ -279,6 +279,18 @@
     $('login-only-btn').style.display = selectedEntity.project === 'manual' ? 'none' : 'block';
     updateFormForBupot();
     updateMyBupotForEntity();
+    updateSptForEntity();
+  }
+  // SPT Orang Pribadi (annual) only ever works for a genuinely Individual entity - Coretax
+  // disables that menu entirely while impersonating a Badan entity (live-confirmed 2026-08-05) -
+  // same "personal-only" guard pattern as updateMyBupotForEntity() above.
+  function updateSptForEntity() {
+    if (!selectedEntity) return;
+    const allow = selectedEntity.project === 'manual' || !!selectedEntity.individual;
+    const cb = $('spt-op-checkbox');
+    if (!cb) return;
+    cb.disabled = !allow;
+    if (!allow && cb.checked) { cb.checked = false; updateSptMasaLabel(); }
   }
   // BPMP/BP21/BPA1/BPA2 only ever have data under the PIC's own personal identity (confirmed
   // live - see automation/mybupot.js's header comment), never under an impersonated company, so
@@ -330,7 +342,30 @@
   }
   wireSelectAll('ebupot-select-all-btn', '.bupot-jenis', updateFormForBupot);
   const syncMyBupotSelectAll = wireSelectAll('mybupot-select-all-btn', '.mybupot-jenis');
-  wireSelectAll('spt-select-all-btn', '.spt-jenis');
+  // SPT Badan/Orang Pribadi (annual, data-annual="1") use a whole-year TaxPeriodCode - Coretax
+  // has no way to combine them with the monthly types above in one run (automation/spt.js's
+  // runSptDownload rejects a mixed selection outright), so "select all" only ever targets the
+  // monthly group; the two annual boxes get their own mutual-exclusivity handling below instead.
+  wireSelectAll('spt-select-all-btn', '.spt-jenis:not([data-annual])');
+  function updateSptMasaLabel() {
+    const isAnnual = !!document.querySelector('.spt-jenis[data-annual]:checked');
+    $('spt-masa-label').firstChild.textContent = isAnnual ? 'Tahun Pajak ' : 'Masa Pajak ';
+    $('spt-masa-hint').title = isAnnual ? 'mis. 2025 atau 2024-2025' : 'mis. 0126;0226 atau 0125-1225';
+  }
+  document.querySelectorAll('.spt-jenis').forEach((cb) => cb.addEventListener('change', () => {
+    if (cb.checked) {
+      const isAnnualBox = !!cb.dataset.annual;
+      document.querySelectorAll('.spt-jenis').forEach((other) => {
+        if (other === cb) return;
+        const otherIsAnnual = !!other.dataset.annual;
+        // Annual boxes are mutually exclusive with EVERYTHING else (each other included - only
+        // one annual return type makes sense per run); monthly boxes just exclude annual ones.
+        if (isAnnualBox || otherIsAnnual) other.checked = false;
+      });
+    }
+    updateSptMasaLabel();
+  }));
+  updateSptMasaLabel();
 
   document.querySelectorAll('.bupot-jenis').forEach((cb) => cb.addEventListener('change', updateFormForBupot));
   const KODE_OBJEK_TYPES = ['bp21', 'bppu']; // only these two ever filter by Kode Objek Pajak

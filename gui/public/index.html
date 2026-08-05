@@ -276,10 +276,20 @@
               <span class="checkbox-indicator"></span>
               <span class="checkbox-text">PPN</span>
             </label>
+            <label class="custom-checkbox-card">
+              <input type="checkbox" class="spt-jenis" value="badan" data-annual="1">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">PPh Badan (Tahunan)</span>
+            </label>
+            <label class="custom-checkbox-card" id="spt-op-checkbox-card">
+              <input type="checkbox" class="spt-jenis" value="spt_op" data-annual="1" id="spt-op-checkbox">
+              <span class="checkbox-indicator"></span>
+              <span class="checkbox-text">PPh Orang Pribadi (Tahunan)</span>
+            </label>
           </div>
 
           <div class="form-group">
-            <label class="field-label" for="spt-masa-input">Masa Pajak <i class="hint-icon" title="mis. 0126;0226 atau 0125-1225">?</i></label>
+            <label class="field-label" for="spt-masa-input" id="spt-masa-label">Masa Pajak <i class="hint-icon" id="spt-masa-hint" title="mis. 0126;0226 atau 0125-1225">?</i></label>
             <input type="text" id="spt-masa-input" class="styled-input">
           </div>
         </div>
