@@ -40,7 +40,7 @@ const { log, showPopup } = require('../lib/log');
 const chrome = require('../lib/chrome');
 const loginStatus = require('../lib/login-status');
 const entitiesLib = require('../lib/entities');
-const { masaToIndoLabel, parseMasaListInput } = require('../lib/masa');
+const { masaToIndoLabel, parseMasaListInput, parseAnnualYearListInput, annualYearToTaxPeriodCode, annualYearToIndoLabel } = require('../lib/masa');
 const runcontrol = require('../lib/runcontrol');
 const htmlToPdf = require('../lib/html-to-pdf');
 const { _sleep, sanitizeFilenamePart } = require('../lib/datatable');
@@ -51,13 +51,24 @@ const DOC_MGMT_API_BASE = 'https://coretaxdjp.pajak.go.id/documentmanagementport
 const ZERO_DOC_ID = '00000000-0000-0000-0000-000000000000'; // sentinel meaning "never generated yet"
 
 // CONFIRMED LIVE 2026-07-27 (see header comment) - do not "correct" WIT/WT without re-verifying.
+// badan/spt_op CONFIRMED LIVE 2026-08-05 (real user manual click-through, network-captured):
+// SPT Badan (annual PPh Badan) and SPT Orang Pribadi (annual individual PPh) use the EXACT same
+// returnsheetssubmitted/download-returnsheet-document/view-receipt endpoints as the masa-based
+// types above - only the TaxTypeCode and the period-code SHAPE differ (see `annual: true` below,
+// which routes these through parseAnnualYearListInput/annualYearToTaxPeriodCode instead of the
+// monthly MMYY parsing). spt_op additionally never goes through impersonation at all - Coretax
+// disables the SPT OP menu entirely while impersonating a Badan entity, and chrome.js's
+// switchToEntity() already special-cases `entity.individual` to skip impersonation, matching
+// exactly how e-Bupot's own Bukti Potong download already works for individual taxpayers.
 const JENIS_PAJAK = {
     pph21: { taxTypeCode: 'ICT_WIT', sptToken: '1721 INDUK', bpeToken: '1721 BPE' },
     unifikasi: { taxTypeCode: 'ICT_WT', sptToken: 'UNIFIKASI INDUK', bpeToken: 'UNIFIKASI BPE' },
-    ppn: { taxTypeCode: 'VAT_VAT', sptToken: 'PPN INDUK', bpeToken: 'PPN BPE' }
+    ppn: { taxTypeCode: 'VAT_VAT', sptToken: 'PPN INDUK', bpeToken: 'PPN BPE' },
+    badan: { taxTypeCode: 'ICT_RCIT', sptToken: '1771 INDUK', bpeToken: '1771 BPE', annual: true },
+    spt_op: { taxTypeCode: 'ICT_PIT', sptToken: '1770 INDUK', bpeToken: '1770 BPE', annual: true, requiresIndividual: true }
 };
-const JENIS_PAJAK_LABELS = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN' };
-const TAXTYPE_TO_JENIS = { ICT_WIT: 'pph21', ICT_WT: 'unifikasi', VAT_VAT: 'ppn' };
+const JENIS_PAJAK_LABELS = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN', badan: 'PPh Badan (Tahunan)', spt_op: 'PPh Orang Pribadi (Tahunan)' };
+const TAXTYPE_TO_JENIS = { ICT_WIT: 'pph21', ICT_WT: 'unifikasi', VAT_VAT: 'ppn', ICT_RCIT: 'badan', ICT_PIT: 'spt_op' };
 
 /** "0326" -> "03032026" - same MM+MM+YYYY period-code convention confirmed for ebupot.js,
  *  confirmed live here too (e.g. Feb 2025 -> "02022025"). */
@@ -179,10 +190,10 @@ const SIZE_STEPS = [10, 25, 50, 100, 250, 500];
  *  `TotalRecords`'s reliability was never checked live for THIS endpoint (only confirmed
  *  UNRELIABLE for ebupot's), so the same defensive stop-condition is used rather than trusting
  *  it. Throws with `.isSessionExpired = true` on a 401. */
-async function fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, emit) {
+async function fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeState, emit) {
     const filters = [
         { PropertyName: 'TaxTypeCode', Value: taxTypeCodes, MatchMode: 'contains', CaseSensitive: true, AsString: false },
-        { PropertyName: 'TaxPeriodCode', Value: mmYYToTaxPeriodCode(mmYY), MatchMode: 'equals', CaseSensitive: true, AsString: false }
+        { PropertyName: 'TaxPeriodCode', Value: taxPeriodCode, MatchMode: 'equals', CaseSensitive: true, AsString: false }
     ];
     const all = [];
     let first = 0;
@@ -284,9 +295,10 @@ const GENERATE_POLL_WAIT_MS = 5000;
  *  Coretax is still rendering it) and BPE, skipping anything already on disk. A session-expiry
  *  mid-fetch bubbles up (`.isSessionExpired`) for the caller to re-login and re-run this combo. */
 async function processSptCombo(ctx) {
-    const { page, authState, saveDir, entityCode, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, signParam, log: emit } = ctx;
+    const { page, authState, saveDir, entityCode, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, signParam, isAnnual, log: emit } = ctx;
+    const taxPeriodCode = isAnnual ? annualYearToTaxPeriodCode(mmYY) : mmYYToTaxPeriodCode(mmYY);
     let downloadedAny = false;
-    const rows = await fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, emit);
+    const rows = await fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeState, emit);
     if (!rows.length) { emit('Tidak ada data untuk filter ini.'); return { downloadedAny: false, foundAny: false }; }
     emit('Total data: ' + rows.length + ' baris.');
 
@@ -344,7 +356,7 @@ async function processSptCombo(ctx) {
                     // Re-fetch this row's own fresh state (DocumentFormAggregateIdentifier only
                     // populates once generation finishes server-side) rather than trusting the
                     // stale copy from the initial listing fetch.
-                    const refreshed = await fetchAllRows(page, authState, taxTypeCodes, mmYY, sizeState, () => {});
+                    const refreshed = await fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeState, () => {});
                     const match = refreshed.find((r) => r.RecordId === row.RecordId) || row;
                     row = match;
                     result = await tryFetchPdf(page, authState, row, signParam);
@@ -392,7 +404,19 @@ async function runSptDownload(opts) {
     let picId = opts.picId;
     const keys = (jenisPajakKeys || []).filter((k) => JENIS_PAJAK[k]);
     if (!keys.length) throw new Error('Jenis pajak belum dipilih.');
-    const masaList = parseMasaListInput(opts.masaInput);
+    // SPT Badan/OP (annual) use a whole-year TaxPeriodCode, incompatible with the monthly masa
+    // types above - reject a mixed selection rather than silently misinterpreting the input.
+    const annualFlags = keys.map((k) => !!JENIS_PAJAK[k].annual);
+    if (annualFlags.some(Boolean) && !annualFlags.every(Boolean)) {
+        throw new Error('Tidak bisa menggabungkan SPT tahunan (Badan/Orang Pribadi) dengan SPT masa bulanan dalam satu proses - pilih salah satu jenis dulu.');
+    }
+    const isAnnual = annualFlags[0];
+    // SPT OP never goes through impersonation (Coretax disables that menu entirely while
+    // impersonating a Badan entity) - see JENIS_PAJAK's header comment.
+    if (keys.some((k) => JENIS_PAJAK[k].requiresIndividual) && !opts.manualPage && !entity.individual) {
+        throw new Error('SPT Orang Pribadi hanya bisa diproses untuk entitas Individual (login langsung, tanpa impersonate).');
+    }
+    const masaList = isAnnual ? parseAnnualYearListInput(opts.masaInput) : parseMasaListInput(opts.masaInput);
     const saveRoot = opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
 
     const manual = !!opts.manualPage;
@@ -494,7 +518,7 @@ async function runSptDownload(opts) {
 
     const taxTypeCodes = keys.map((k) => JENIS_PAJAK[k].taxTypeCode);
     const jenisLabel = keys.map((k) => JENIS_PAJAK_LABELS[k]).join(' + ');
-    const combos = masaList.map((mmYY) => ({ mmYY, comboLabel: jenisLabel + ' / ' + masaToIndoLabel(mmYY) }));
+    const combos = masaList.map((mmYY) => ({ mmYY, comboLabel: jenisLabel + ' / ' + (isAnnual ? annualYearToIndoLabel(mmYY) : masaToIndoLabel(mmYY)) }));
     const sizeState = { current: SIZE_STEPS.includes(Number(opts.pageSize)) ? Number(opts.pageSize) : SIZE_DEFAULT };
 
     // Some entities have more than one PIC linked on Coretax's side (e.g. Dion Farma Abadi -
@@ -525,7 +549,7 @@ async function runSptDownload(opts) {
                 try {
                     const result = await processSptCombo({
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
-                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam,
+                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual,
                         log: emit
                     });
                     if (result.downloadedAny) stats.downloaded++;
