@@ -47,6 +47,8 @@ const deeplink = require('./lib/deeplink');
 const { createGuiServer } = require('./gui/server');
 const { openWindow } = require('./gui/window');
 const tray = require('./lib/tray');
+const updater = require('./lib/updater');
+const runcontrol = require('./lib/runcontrol');
 
 const GUI_PORT = 51733;
 
@@ -141,6 +143,21 @@ async function main(deepLinkUrl) {
     deeplink.registerProtocolHandler();
     openWindow('http://127.0.0.1:' + GUI_PORT + '/');
     if (deepLinkUrl) deeplink.dispatch(deepLinkUrl).catch((e) => log('Deep link gagal: ' + e.message));
+
+    // Auto-update: explicit user request 2026-08-07, checked once per startup - runs in the
+    // background (never awaited here) so a slow/failed GitHub check never delays the dashboard
+    // opening. A short delay first lets normal startup (session restore, window opening) settle
+    // before competing for network/CPU. onBeforeRestart reuses this same app's own /api/quit
+    // endpoint (not a duplicated shutdown sequence) so a self-triggered restart closes
+    // automation windows etc. exactly the same way a manual quit already does.
+    setTimeout(() => {
+        updater.checkAndApply({
+            isRunActive: () => runcontrol.status().active,
+            onBeforeRestart: async () => {
+                try { await fetch('http://127.0.0.1:' + GUI_PORT + '/api/quit', { method: 'POST' }); } catch (e) {}
+            }
+        }).catch((e) => log('Cek update gagal: ' + e.message));
+    }, 4000);
 }
 
 const rawArg = process.argv.find((a) => typeof a === 'string' && a.indexOf('taxio-coretax://') === 0);
