@@ -25,7 +25,7 @@ const { runSptDownload } = require('../automation/spt');
 const { runDividenImport, runDividenCheck, openNewCase } = require('../automation/dividen');
 const deeplink = require('../lib/deeplink');
 const tray = require('../lib/tray');
-const { openWindow, isWindowOpen, bringToFront, closeWindow } = require('./window');
+const { closeWindow, ensureWindowOpenOrFocused } = require('./window');
 // Single source of truth for the version badge in gui/public/index.html - that used to be a
 // hardcoded <span>v1.8.1</span> that nobody remembered to bump across three straight releases
 // (1.9.0/1.9.1/1.9.2 all shipped correctly but kept showing v1.8.1 in the dashboard itself).
@@ -464,9 +464,11 @@ async function handleDeepLink(req, res) {
     // shown, so the user had no way to see what it was doing. Bring the dashboard up so the log
     // is visible, same as a cold start via the same link already does (main.js calls openWindow
     // unconditionally there). `req.headers.host` is this same server's own host:port - no need
-    // to hardcode GUI_PORT here.
-    if (!(await isWindowOpen())) openWindow('http://' + req.headers.host + '/');
-    else bringToFront();
+    // to hardcode GUI_PORT here. Goes through the serializing queue (not a raw isWindowOpen/
+    // openWindow check) - see ensureWindowOpenOrFocused()'s header comment for why: rapid
+    // back-to-back clicks from Taxio each hitting this handler concurrently used to race past
+    // the check and each spawn their own window.
+    await ensureWindowOpenOrFocused('http://' + req.headers.host + '/');
     deeplink.dispatch(body.url).catch((e) => log('Deep link gagal: ' + e.message));
 }
 
@@ -511,8 +513,8 @@ async function handleQuit(req, res) {
 
 async function handleTrayOpen(req, res) {
     sendJson(res, 200, { ok: true });
-    if (!(await isWindowOpen())) openWindow('http://' + req.headers.host + '/');
-    else bringToFront();
+    // Serializing queue, same reason as handleDeepLink above.
+    await ensureWindowOpenOrFocused('http://' + req.headers.host + '/');
 }
 
 function handleClearLog(req, res) {
