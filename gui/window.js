@@ -4,6 +4,8 @@
  * tab too, it just won't look as native. */
 const { spawn, exec } = require('child_process');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { log } = require('../lib/log');
 
 const CHROME_CANDIDATES = [
@@ -50,13 +52,23 @@ function openWindow(url) {
  * Fixed by using the actual Win32 window enumeration APIs (EnumWindows/GetWindowText) instead of
  * .NET's per-process MainWindowTitle shortcut - this walks EVERY top-level window on the desktop
  * regardless of which process owns it or which one currently has focus, so it finds the dashboard
- * window whether or not it's the active one right now. Same underlying flaw applied equally to
- * bringToFront() and closeWindow() below (both also used to key off MainWindowTitle), so both
- * were rewritten the same way - bringToFront() now calls SetForegroundWindow() directly on the
- * found window handle instead of the COM AppActivate() title-search, and closeWindow() posts a
- * real WM_CLOSE to that handle instead of .NET's CloseMainWindow() (same MainWindowHandle
- * limitation as MainWindowTitle - it's the same underlying property). */
-const WIN32_HELPER = `
+ * window whether or not it's the active one right now.
+ *
+ * CONFIRMED LIVE BUG #2 (2026-08-07, real user report - STILL piling up even with the above fix
+ * live): diagnostic logging showed isWindowOpen() was returning false on EVERY single call, no
+ * exceptions - `exec()` reported no error, but stdout was consistently empty (neither "yes" nor
+ * "no"). Root cause: the script was passed as `powershell -Command "<script with every " escaped
+ * to \">"`.replace(/"/g, '\\"')` was applied to the WHOLE script, including the double quotes
+ * INSIDE the Add-Type C# here-string (`[DllImport("user32.dll")]` etc.) - a `@'...'@` here-string
+ * is single-quoted/literal in PowerShell, so those `\"` sequences never got un-escaped back into
+ * plain `"` before reaching the C# compiler, silently breaking Add-Type's compilation. A
+ * standalone `powershell -File script.ps1` invocation of the exact same logic (no quoting to get
+ * wrong at all) worked reliably in isolation, including a 4-concurrent-process stress test - so
+ * every action here is written ONCE to a real .ps1 file on disk and invoked via -File instead of
+ * -Command, avoiding this whole class of escaping bug entirely. */
+const HELPER_SCRIPT_PATH = path.join(os.tmpdir(), 'coretax-agent-winhelper.ps1');
+const HELPER_SCRIPT_CONTENT = `
+param([string]$Action, [string]$Title = 'Coretax Agent')
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -82,18 +94,41 @@ public class CtxWin {
     }
 }
 '@
+$h = [CtxWin]::FindByTitle($Title)
+switch ($Action) {
+    'check' { if ($h -ne [IntPtr]::Zero) { 'yes' } else { 'no' } }
+    'focus' { if ($h -ne [IntPtr]::Zero) { [CtxWin]::ShowWindow($h, 9) | Out-Null; [CtxWin]::SetForegroundWindow($h) | Out-Null } }
+    'close' { if ($h -ne [IntPtr]::Zero) { [CtxWin]::PostMessage($h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null } }
+}
 `;
+let _helperWritten = false;
+function ensureHelperScript() {
+    if (_helperWritten) return;
+    fs.writeFileSync(HELPER_SCRIPT_PATH, HELPER_SCRIPT_CONTENT, 'utf8');
+    _helperWritten = true;
+}
+function runHelper(action, callback) {
+    ensureHelperScript();
+    exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${HELPER_SCRIPT_PATH}" -Action ${action}`, { windowsHide: true, timeout: 8000 }, callback);
+}
 
 /** Whether the dashboard window is genuinely open right now - found by walking every top-level
- *  window on the desktop (see WIN32_HELPER note above), not by tracking the spawned launcher
- *  process's lifetime via `windowProcess` and not via .NET's per-process MainWindowTitle. */
+ *  window on the desktop (see the header comment above), not by tracking the spawned launcher
+ *  process's lifetime via `windowProcess` and not via .NET's per-process MainWindowTitle. Retries
+ *  a couple of times on a genuine `exec` error before giving up, rather than treating one
+ *  transient hiccup as proof nothing's open. */
 function isWindowOpen() {
     return new Promise((resolve) => {
         if (process.platform !== 'win32') { resolve(!!windowProcess); return; }
-        const script = WIN32_HELPER + `if ([CtxWin]::FindByTitle('Coretax Agent') -ne [IntPtr]::Zero) { 'yes' } else { 'no' }`;
-        exec(`powershell -Command "${script.replace(/"/g, '\\"')}"`, { windowsHide: true }, (err, stdout) => {
-            resolve(!err && String(stdout || '').trim() === 'yes');
-        });
+        let attempt = 0;
+        const tryOnce = () => {
+            attempt++;
+            runHelper('check', (err, stdout) => {
+                if (err && attempt < 3) { tryOnce(); return; }
+                resolve(!err && String(stdout || '').trim() === 'yes');
+            });
+        };
+        tryOnce();
     });
 }
 
@@ -105,20 +140,44 @@ function isWindowOpen() {
  *  search, which has the same "only sees one window per process" blind spot as MainWindowTitle. */
 function bringToFront() {
     if (process.platform !== 'win32') return;
-    const script = WIN32_HELPER + `$h = [CtxWin]::FindByTitle('Coretax Agent'); if ($h -ne [IntPtr]::Zero) { [CtxWin]::ShowWindow($h, 9) | Out-Null; [CtxWin]::SetForegroundWindow($h) | Out-Null }`;
-    exec(`powershell -Command "${script.replace(/"/g, '\\"')}"`, { windowsHide: true }, () => {});
+    runHelper('focus', () => {});
 }
 
 /** Closes the dashboard window on app quit. windowProcess is spawned detached+unref'd (so it
  *  survives independently of this backend process) and Chrome's --app mode may hand the actual
  *  window off to a different process tree entirely (single-instance re-exec) - so killing the
- *  tracked PID isn't reliable. Match by visible window title instead (see WIN32_HELPER note
- *  above), and post a real WM_CLOSE (0x0010) to that specific window handle - same graceful
- *  close a user clicking the X would trigger. */
+ *  tracked PID isn't reliable. Match by visible window title instead (see header comment above),
+ *  and post a real WM_CLOSE (0x0010) to that specific window handle - same graceful close a user
+ *  clicking the X would trigger. */
 function closeWindow(callback) {
     if (process.platform !== 'win32') { if (callback) callback(); return; }
-    const script = WIN32_HELPER + `$h = [CtxWin]::FindByTitle('Coretax Agent'); if ($h -ne [IntPtr]::Zero) { [CtxWin]::PostMessage($h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }`;
-    exec(`powershell -Command "${script.replace(/"/g, '\\"')}"`, { windowsHide: true }, () => { if (callback) callback(); });
+    runHelper('close', () => { if (callback) callback(); });
 }
 
-module.exports = { openWindow, isWindowOpen, bringToFront, closeWindow };
+/** CONFIRMED LIVE 2026-08-07 (real user report - dashboard still piling up on rapid Taxio
+ *  clicks): `if (!(await isWindowOpen())) openWindow(...); else bringToFront();` isn't atomic -
+ *  the PowerShell-spawning isWindowOpen() check takes a non-trivial amount of wall-clock time,
+ *  and a SECOND deep link arriving while the FIRST one's check is still in flight (or its
+ *  just-spawned Chrome window hasn't registered its title with the OS yet) sees "no window" too
+ *  and ALSO spawns one. Every caller of the check-then-act sequence (handleDeepLink,
+ *  handleTrayOpen in server.js) must go through this shared queue instead of calling
+ *  isWindowOpen/openWindow/bringToFront directly - it chains each request onto the previous one
+ *  via a single promise, so only one check-then-act runs at a time, and after opening a window it
+ *  actively polls isWindowOpen() until the new window is CONFIRMED detectable (rather than
+ *  guessing a fixed delay) before releasing the queue to the next caller. */
+let _ensureQueue = Promise.resolve();
+function ensureWindowOpenOrFocused(url) {
+    const run = _ensureQueue.then(async () => {
+        if (await isWindowOpen()) { bringToFront(); return; }
+        openWindow(url);
+        const deadline = Date.now() + 10000;
+        while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 400));
+            if (await isWindowOpen()) return;
+        }
+    }).catch(() => {});
+    _ensureQueue = run;
+    return run;
+}
+
+module.exports = { openWindow, isWindowOpen, bringToFront, closeWindow, ensureWindowOpenOrFocused };
