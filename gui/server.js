@@ -25,6 +25,7 @@ const { runSptDownload } = require('../automation/spt');
 const { runDividenImport, runDividenCheck, openNewCase } = require('../automation/dividen');
 const deeplink = require('../lib/deeplink');
 const tray = require('../lib/tray');
+const updater = require('../lib/updater');
 const { closeWindow, ensureWindowOpenOrFocused } = require('./window');
 // Single source of truth for the version badge in gui/public/index.html - that used to be a
 // hardcoded <span>v1.8.1</span> that nobody remembered to bump across three straight releases
@@ -511,6 +512,26 @@ async function handleQuit(req, res) {
     setTimeout(() => process.exit(0), 300);
 }
 
+// Manual "Cek Update" button in Settings - same checkAndApply() the startup check uses, so
+// behavior stays consistent (full-auto: finds it, downloads it, restarts into it - explicit
+// user request 2026-08-07, not a "review then confirm" flow). Responds immediately with
+// whatever checkForUpdate() alone reports (available/current/latest) so the UI has something to
+// show right away, then lets the full check-and-apply cycle run in the background - if an
+// update was found the app will restart itself within a few seconds regardless of what this
+// response said.
+async function handleCheckUpdate(req, res) {
+    const info = await updater.checkForUpdate();
+    sendJson(res, 200, info);
+    if (info.available) {
+        updater.checkAndApply({
+            isRunActive: () => runcontrol.status().active,
+            onBeforeRestart: async () => {
+                try { await fetch('http://' + req.headers.host + '/api/quit', { method: 'POST' }); } catch (e) {}
+            }
+        }).catch((e) => log('Gagal menerapkan update: ' + e.message));
+    }
+}
+
 async function handleTrayOpen(req, res) {
     sendJson(res, 200, { ok: true });
     // Serializing queue, same reason as handleDeepLink above.
@@ -626,6 +647,7 @@ function createGuiServer(port) {
                 return readJsonBody(req).then((b) => { const n = Number(b && b.size); if ([10, 25, 50, 100].includes(n)) runcontrol.setPageSizeOverride(n); return sendJson(res, 200, runcontrol.status()); }).catch(() => sendJson(res, 400, { error: 'Body tidak valid.' }));
             }
             if (pathname === '/api/quit' && req.method === 'POST') return handleQuit(req, res);
+            if (pathname === '/api/check-update' && req.method === 'POST') return handleCheckUpdate(req, res);
             if (pathname === '/api/tray/open' && req.method === 'POST') return handleTrayOpen(req, res);
             if (pathname === '/api/log/clear' && req.method === 'POST') return handleClearLog(req, res);
             return serveStatic(req, res, pathname);

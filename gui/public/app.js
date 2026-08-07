@@ -110,6 +110,28 @@
   $('empty-settings-btn').addEventListener('click', openSettings);
   $('settings-overlay').addEventListener('click', (e) => { if (e.target === $('settings-overlay')) closeSettings(); });
 
+  // Full-auto by explicit request (2026-08-07): finding an update means it downloads and the
+  // app restarts into it on its own - this button just surfaces that it's happening, it doesn't
+  // ask for a separate confirmation step.
+  $('check-update-btn').addEventListener('click', async () => {
+    const btn = $('check-update-btn');
+    const statusEl = $('update-status-text');
+    btn.disabled = true;
+    statusEl.textContent = 'Mengecek update...';
+    try {
+      const info = await api('/api/check-update', { method: 'POST' });
+      if (info.available) {
+        statusEl.textContent = 'Update v' + info.version + ' ditemukan - mengunduh & memasang, aplikasi akan tertutup dan terbuka ulang otomatis...';
+      } else {
+        statusEl.textContent = 'Sudah versi terbaru.';
+        btn.disabled = false;
+      }
+    } catch (e) {
+      statusEl.textContent = 'Gagal cek update: ' + e.message;
+      btn.disabled = false;
+    }
+  });
+
   async function doConnect(projectId) {
     const email = $('conn-email-' + projectId).value.trim();
     const password = $('conn-pass-' + projectId).value;
@@ -666,6 +688,8 @@
       const v = await api('/api/version');
       const badge = document.querySelector('.version-badge');
       if (badge && v && v.version) badge.textContent = 'v' + v.version;
+      const settingsVer = $('settings-current-version');
+      if (settingsVer && v && v.version) settingsVer.textContent = '(v' + v.version + ')';
     } catch (e) {}
     try { sessionSummary = await api('/api/session'); } catch (e) {}
     startManualPolling(); // detect an already-open manual window too
