@@ -148,8 +148,8 @@ async function main(deepLinkUrl) {
     // background (never awaited here) so a slow/failed GitHub check never delays the dashboard
     // opening. A short delay first lets normal startup (session restore, window opening) settle
     // before competing for network/CPU. onBeforeRestart reuses this same app's own /api/quit
-    // endpoint (not a duplicated shutdown sequence) so a self-triggered restart closes
-    // automation windows etc. exactly the same way a manual quit already does.
+    // (safe now - see lib/updater.js's header comment for why the update-installer process no
+    // longer needs this process to avoid process.exit()).
     setTimeout(() => {
         updater.checkAndApply({
             isRunActive: () => runcontrol.status().active,
@@ -160,37 +160,52 @@ async function main(deepLinkUrl) {
     }, 4000);
 }
 
-const rawArg = process.argv.find((a) => typeof a === 'string' && a.indexOf('taxio-coretax://') === 0);
-
-if (rawArg) {
-    // Another Coretax Agent window may already be open (the common case: the user already has
-    // the dashboard running and just clicked another button in Taxio) - forward to it instead
-    // of trying to bind GUI_PORT a second time and failing.
-    forwardDeepLinkToRunningInstance(rawArg).then((forwarded) => {
-        if (forwarded) { log('Diteruskan ke instance Coretax Agent yang sudah berjalan.'); process.exit(0); }
-        main(rawArg).catch((e) => {
-            log('Fatal error saat memulai (deep link): ' + (e.stack || e.message));
-            showErrorPopup('Coretax Agent gagal memulai: ' + e.message);
-            process.exit(1);
-        });
-    });
+// Set only when this process IS the just-downloaded new exe, launched by updater.js's
+// downloadAndPrepareSwap() to complete its own installation - see lib/updater.js's
+// finishUpdateHandoff() header comment for why this replaced the old detached-PowerShell-helper
+// design. Takes priority over everything else below: this process's only job is to wait for the
+// old exe to exit, copy itself over it, relaunch that path fresh, and get out of the way - it
+// never opens its own dashboard or goes through the normal single-instance checks.
+const finishUpdateIdx = process.argv.indexOf('--finish-update');
+if (finishUpdateIdx !== -1) {
+    const oldPid = parseInt(process.argv[finishUpdateIdx + 1], 10);
+    const oldExePath = process.argv[finishUpdateIdx + 2];
+    updater.finishUpdateHandoff(oldPid, oldExePath)
+        .catch((e) => log('Gagal menyelesaikan pemasangan update: ' + (e.stack || e.message)))
+        .finally(() => process.exit(0));
 } else {
-    // Plain double-click (desktop shortcut, Start Menu, etc.) with the app already running in
-    // the background (window minimized/closed but the process itself still alive) used to hit
-    // createGuiServer's "port already in use" error - confusing for a normal user just trying
-    // to bring the dashboard back. Just open another window onto the SAME already-running
-    // server instead (the dashboard is stateless/reconnectable - a fresh tab is all that's
-    // needed) rather than trying to become a second primary instance.
-    isPrimaryRunning().then(async (already) => {
-        if (already) {
-            log('Coretax Agent sudah berjalan - membawa jendela dashboard yang ada ke depan (atau membukanya jika belum ada).');
-            await forwardOpenToRunningInstance();
-            process.exit(0);
-        }
-        main().catch((e) => {
-            log('Fatal error saat memulai: ' + (e.stack || e.message));
-            showErrorPopup('Coretax Agent gagal memulai: ' + e.message);
-            process.exit(1);
+    const rawArg = process.argv.find((a) => typeof a === 'string' && a.indexOf('taxio-coretax://') === 0);
+
+    if (rawArg) {
+        // Another Coretax Agent window may already be open (the common case: the user already
+        // has the dashboard running and just clicked another button in Taxio) - forward to it
+        // instead of trying to bind GUI_PORT a second time and failing.
+        forwardDeepLinkToRunningInstance(rawArg).then((forwarded) => {
+            if (forwarded) { log('Diteruskan ke instance Coretax Agent yang sudah berjalan.'); process.exit(0); }
+            main(rawArg).catch((e) => {
+                log('Fatal error saat memulai (deep link): ' + (e.stack || e.message));
+                showErrorPopup('Coretax Agent gagal memulai: ' + e.message);
+                process.exit(1);
+            });
         });
-    });
+    } else {
+        // Plain double-click (desktop shortcut, Start Menu, etc.) with the app already running
+        // in the background (window minimized/closed but the process itself still alive) used to
+        // hit createGuiServer's "port already in use" error - confusing for a normal user just
+        // trying to bring the dashboard back. Just open another window onto the SAME
+        // already-running server instead (the dashboard is stateless/reconnectable - a fresh tab
+        // is all that's needed) rather than trying to become a second primary instance.
+        isPrimaryRunning().then(async (already) => {
+            if (already) {
+                log('Coretax Agent sudah berjalan - membawa jendela dashboard yang ada ke depan (atau membukanya jika belum ada).');
+                await forwardOpenToRunningInstance();
+                process.exit(0);
+            }
+            main().catch((e) => {
+                log('Fatal error saat memulai: ' + (e.stack || e.message));
+                showErrorPopup('Coretax Agent gagal memulai: ' + e.message);
+                process.exit(1);
+            });
+        });
+    }
 }
