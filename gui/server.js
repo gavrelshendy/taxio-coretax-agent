@@ -98,15 +98,34 @@ function isProjectRestricted(projectId) {
 // naming schemes don't line up 1:1 (e.g. download-type 'bppu' vs config-key 'ebupotbpu'), so
 // this has to be explicit rather than a generic string transform.
 const EBUPOT_TYPE_TO_SECTION = { bp21: 'ebupotbp21', bppu: 'ebupotbpu', bpmp: 'ebupotbpmp', bp26: 'ebupotbp26', bpnr: 'ebupotbpnr' };
+// BPMP/BPA1, in both e-Bupot (entity-issued) and "Bukti Potong Saya" (PIC's own personal
+// received slips) - explicit user request 2026-08-10, absolute for restricted_editor and NOT
+// admin-configurable (unlike the other types below, which stay gated by allowed_ebupot_sections).
+const ABSOLUTELY_BLOCKED_EBUPOT_TYPES = ['bpmp', 'bpa1'];
+const ABSOLUTELY_BLOCKED_MYBUPOT_TYPES = ['bpmp', 'bpa1'];
 function isEbupotTypeAllowed(allowedSections, bupotType) {
+    if (ABSOLUTELY_BLOCKED_EBUPOT_TYPES.includes(bupotType)) return false;
     if (!allowedSections) return true; // not configured yet - matches the admin panel's own "unset = all checked" default
     const section = EBUPOT_TYPE_TO_SECTION[bupotType];
-    if (!section) return true; // no configurable section for this type (e.g. bpa1/bpa2/bpatc) - nothing to gate against
+    if (!section) return true; // no configurable section for this type (e.g. bpa2/bpatc) - nothing to gate against
     return allowedSections.includes(section);
 }
 function isMyBupotAllowed(allowedSections) {
     if (!allowedSections) return true;
     return allowedSections.includes('my-withholding-slips');
+}
+function isMyBupotTypesAllowed(buktiTypeKeys) {
+    return !(buktiTypeKeys || []).some((k) => ABSOLUTELY_BLOCKED_MYBUPOT_TYPES.includes(k));
+}
+
+// Explicit user request 2026-08-10 (real test: a restricted editor could still search for and
+// log into/download from a PIC's own personal Individual account). `entity.individual` is
+// already threaded through every handler below from Taxio Hub's own entity payload - this is
+// the actual execution point (Coretax Agent's own automation), so blocking here holds regardless
+// of what triggered the request (Taxio Hub's UI, a raw deep link, or this app's own picker) -
+// unlike a client-side-only check, which a deep link can simply bypass entirely.
+function isIndividualEntityBlocked(restricted, entity) {
+    return !!(restricted && entity && entity.individual);
 }
 
 function serveStatic(req, res, pathname) {
@@ -215,6 +234,9 @@ async function handleDownloadEbupot(req, res) {
         if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
         await sessionStore.refreshIfNeeded(s.client);
         const restricted = isProjectRestricted(entity.project);
+        if (isIndividualEntityBlocked(restricted, entity)) {
+            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
+        }
         const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
         if (restricted && !isEbupotTypeAllowed(allowedEbupotSections, bupotType)) {
             return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis e-Bupot ini.' });
@@ -265,9 +287,15 @@ async function handleDownloadMyBupot(req, res) {
         if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
         await sessionStore.refreshIfNeeded(s.client);
         const restricted = isProjectRestricted(entity.project);
+        if (isIndividualEntityBlocked(restricted, entity)) {
+            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
+        }
         const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
         if (restricted && !isMyBupotAllowed(allowedEbupotSections)) {
             return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses Bukti Potong Saya.' });
+        }
+        if (restricted && !isMyBupotTypesAllowed(buktiTypeKeys)) {
+            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh BPMP/BPA1 di Bukti Potong Saya.' });
         }
         const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
         runOpts = {
@@ -311,6 +339,9 @@ async function handleDownloadSpt(req, res) {
         if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
         await sessionStore.refreshIfNeeded(s.client);
         const restricted = isProjectRestricted(entity.project);
+        if (isIndividualEntityBlocked(restricted, entity)) {
+            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
+        }
         const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
         const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
         // Entitas dengan >1 PIC tertaut (mis. Dion Farma Abadi - Fredi Setyawan & Ronald Tony):
@@ -429,6 +460,9 @@ async function handleLoginEntity(req, res) {
     if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
     await sessionStore.refreshIfNeeded(s.client);
     const restricted = isProjectRestricted(entity.project);
+    if (isIndividualEntityBlocked(restricted, entity)) {
+        return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan login ke akun Individual.' });
+    }
     const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
     const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
 
