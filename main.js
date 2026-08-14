@@ -150,14 +150,21 @@ async function main(deepLinkUrl) {
     // before competing for network/CPU. onBeforeRestart reuses this same app's own /api/quit
     // (safe now - see lib/updater.js's header comment for why the update-installer process no
     // longer needs this process to avoid process.exit()).
-    setTimeout(() => {
-        updater.checkAndApply({
-            isRunActive: () => runcontrol.status().active,
-            onBeforeRestart: async () => {
-                try { await fetch('http://127.0.0.1:' + GUI_PORT + '/api/quit', { method: 'POST' }); } catch (e) {}
-            }
-        }).catch((e) => log('Cek update gagal: ' + e.message));
-    }, 4000);
+    const runUpdateCheck = () => updater.checkAndApply({
+        isRunActive: () => runcontrol.status().active,
+        onBeforeRestart: async () => {
+            try { await fetch('http://127.0.0.1:' + GUI_PORT + '/api/quit', { method: 'POST' }); } catch (e) {}
+        }
+    }).catch((e) => log('Cek update gagal: ' + e.message));
+    setTimeout(runUpdateCheck, 4000);
+    // Explicit user request 2026-08-13: if the startup check above got deferred because an
+    // automation run was active (or GitHub was briefly unreachable), the "outdated" gate
+    // (gui/server.js's checks against updater.getOutdatedInfo()) would otherwise stay stuck
+    // reporting the version as behind forever, blocking new actions indefinitely even long
+    // after the run that caused the deferral finished. Re-checking periodically (not just once)
+    // means a deferred update actually gets retried once idle, same as it would on a fresh
+    // restart - this only ever repeats the already-safe checkAndApply cycle, never anything new.
+    setInterval(runUpdateCheck, 15 * 60 * 1000);
 }
 
 // Set only when this process IS the just-downloaded new exe, launched by updater.js's

@@ -131,6 +131,21 @@
       btn.disabled = false;
     }
   });
+  $('outdated-banner-check-btn').addEventListener('click', async () => {
+    const btn = $('outdated-banner-check-btn');
+    const text = $('outdated-banner-text');
+    btn.disabled = true;
+    text.textContent = 'Mengecek update...';
+    try {
+      const info = await api('/api/check-update', { method: 'POST' });
+      text.textContent = info.available
+        ? ('Update v' + info.version + ' ditemukan - mengunduh & memasang, aplikasi akan tertutup dan terbuka ulang otomatis...')
+        : 'Sudah versi terbaru - coba lagi sebentar lagi.';
+    } catch (e) {
+      text.textContent = 'Gagal cek update: ' + e.message;
+    }
+    btn.disabled = false;
+  });
 
   async function doConnect(projectId) {
     const email = $('conn-email-' + projectId).value.trim();
@@ -690,6 +705,15 @@
       if (badge && v && v.version) badge.textContent = 'v' + v.version;
       const settingsVer = $('settings-current-version');
       if (settingsVer && v && v.version) settingsVer.textContent = '(v' + v.version + ')';
+      // Explicit user request 2026-08-13: makes the hard version-gate (gui/server.js's
+      // rejectIfOutdated, 426 on new actions) visible instead of just failing silently -
+      // actions still get rejected server-side regardless of whether this banner is seen.
+      const banner = $('outdated-banner');
+      if (banner && v && v.outdated) {
+        banner.style.display = 'block';
+        const text = $('outdated-banner-text');
+        if (text) text.textContent = 'Versi ini (v' + v.version + ') sudah usang - v' + v.latestVersion + ' tersedia. Aksi baru diblokir sampai diperbarui.';
+      }
     } catch (e) {}
     try { sessionSummary = await api('/api/session'); } catch (e) {}
     startManualPolling(); // detect an already-open manual window too
