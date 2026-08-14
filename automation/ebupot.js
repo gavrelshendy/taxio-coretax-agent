@@ -220,6 +220,11 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
     // diagnostic info. Catching it here up front names the actual missing field instead.
     const missing = Object.keys(body).filter((k) => body[k] == null || body[k] === '');
     if (missing.length) {
+        // Full raw row to the persistent log file (not the terminal panel, to keep that
+        // readable) - the missing field's NAME alone doesn't say whether Coretax's listing API
+        // just omitted it, sent it under a different key we're not reading, or the row is
+        // genuinely incomplete server-side; only the complete row can answer that.
+        try { log('[debug] Baris e-Bupot ' + bupotType.toUpperCase() + ' dengan field kosong (' + missing.join(', ') + '): ' + JSON.stringify(row)); } catch (e) {}
         throw new Error('Baris ini tidak lengkap datanya dari Coretax (field kosong: ' + missing.join(', ') + ') - PDF tidak bisa diminta.');
     }
     const { status, json, text } = await apiPost(page, authState, API_BASE + '/DownloadWithholdingSlips/download-pdf-document', body);
