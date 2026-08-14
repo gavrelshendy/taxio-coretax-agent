@@ -212,20 +212,21 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
         DocumentDate: String(row.LastUpdatedDate || '').slice(0, 19),
         TaxIdentificationNumber: row.TaxIdentificationNumber
     };
-    // A row missing one of these (some listing rows come back with a null/absent identifier
-    // field, e.g. a not-yet-finalized or corrected document) would otherwise silently POST with
-    // that key just dropped entirely (JSON.stringify omits `undefined`), and Coretax's own API
-    // rejects the incomplete body with an opaque HTTP 400 that gave no indication of WHICH field
-    // was the problem - confirmed live 2026-08-14, a reproducible per-row 400 with zero other
-    // diagnostic info. Catching it here up front names the actual missing field instead.
+    // CONFIRMED LIVE 2026-08-14: a row with DocumentFormAggregateIdentifier null in the bulk
+    // listing response failed here, but the SAME document downloaded fine through Coretax's own
+    // UI (manual click) moments later - meaning the assumption baked into an earlier version of
+    // this check (that Coretax's backend can't process the request without that field, so don't
+    // even bother sending it) was never actually verified against the server, only asserted.
+    // Manual working proves Coretax's backend CAN produce this PDF even when the bulk listing
+    // doesn't have that field populated - so the earlier version here, which threw before ever
+    // POSTing, was hiding the real answer instead of finding it. Only logging now, then still
+    // sending the request exactly as-is (field simply absent, same as JSON.stringify already did
+    // before that guard existed) so the response-detail capture below can show what Coretax's
+    // server ACTUALLY says - which may reveal the backend doesn't need this field at all, or
+    // surface the real rejection reason if it's something else entirely.
     const missing = Object.keys(body).filter((k) => body[k] == null || body[k] === '');
     if (missing.length) {
-        // Full raw row to the persistent log file (not the terminal panel, to keep that
-        // readable) - the missing field's NAME alone doesn't say whether Coretax's listing API
-        // just omitted it, sent it under a different key we're not reading, or the row is
-        // genuinely incomplete server-side; only the complete row can answer that.
-        try { log('[debug] Baris e-Bupot ' + bupotType.toUpperCase() + ' dengan field kosong (' + missing.join(', ') + '): ' + JSON.stringify(row)); } catch (e) {}
-        throw new Error('Baris ini tidak lengkap datanya dari Coretax (field kosong: ' + missing.join(', ') + ') - PDF tidak bisa diminta.');
+        try { log('[debug] Baris e-Bupot ' + bupotType.toUpperCase() + ' dengan field kosong (' + missing.join(', ') + '), mengirim tetap: ' + JSON.stringify(row)); } catch (e) {}
     }
     const { status, json, text } = await apiPost(page, authState, API_BASE + '/DownloadWithholdingSlips/download-pdf-document', body);
     if (status === 401) { const e = new Error('Sesi berakhir (401) saat mengambil PDF.'); e.isSessionExpired = true; throw e; }
