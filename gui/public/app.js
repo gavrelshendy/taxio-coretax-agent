@@ -19,6 +19,25 @@
     return body;
   }
 
+  // Explicit user request 2026-08-14: rather than let a restricted editor pick BPMP/BPA1 and
+  // only find out it's blocked after clicking download (gui/server.js's server-side block was
+  // already absolute - this is purely about not letting the click happen in the first place),
+  // grey the checkboxes out directly. Covers both e-Bupot's .bupot-jenis and "Bukti Potong
+  // Saya"'s .mybupot-jenis - server-side rejection (isEbupotTypeAllowed/
+  // ABSOLUTELY_BLOCKED_MYBUPOT_TYPES in gui/server.js) stays as the real enforcement either way.
+  function applyRestrictedBupotLock(isRestricted) {
+    document.querySelectorAll('.bupot-jenis, .mybupot-jenis').forEach((el) => {
+      if (el.value !== 'bpmp' && el.value !== 'bpa1') return;
+      el.disabled = isRestricted;
+      el.checked = isRestricted ? false : el.checked;
+      const label = el.closest('label');
+      if (label) {
+        label.style.opacity = isRestricted ? '0.45' : '';
+        label.title = isRestricted ? 'Tidak diizinkan untuk Restricted Editor.' : '';
+      }
+    });
+  }
+
   // ---------- Connections bar ----------
   function renderConnections() {
     const bar = $('connections-bar');
@@ -55,6 +74,7 @@
     const isRestricted = PROJECT_ORDER.some((id) => sessionSummary[id] && sessionSummary[id].connected && (String(sessionSummary[id].role || '').toLowerCase().includes('restricted')));
     const openBtn = $('open-coretax-btn');
     if (openBtn) openBtn.style.display = isRestricted ? 'none' : '';
+    applyRestrictedBupotLock(isRestricted);
     const showApp = anyConnected || manualStatus.loggedIn;
     $('main-layout').style.display = showApp ? 'grid' : 'none';
     $('empty-hint').style.display = showApp ? 'none' : 'flex';
