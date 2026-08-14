@@ -36,14 +36,17 @@
         duplicate guard below. Uses an explicit wide TransactionDate window (last year through
         next year) since Coretax's own default (omitting that filter) silently narrows to the
         last 30 days - confirmed via the Buku Besar UI's own disclaimer text.
-     6) findLikelyExistingBilling() - paymentportal/api/activebillingcode/list. IMPORTANT
-        LIMITATION (confirmed live): a self-billed (not SPT-linked) code's row shape does NOT
-        expose TaxTypeCode/TaxPaymentCode/TaxPeriodCode at all (both null on every self-billed
-        test record) - there is no field on this endpoint to match a listed ACTIVE code back to
-        a specific KAP-KJS+period. Falls back to matching on Nominal alone, which catches the
-        realistic everyday risk (an accidental same-amount re-run) but is NOT a period-exact
-        guarantee - two different months that happen to bill the same amount would collide.
-        Hardening this further would need a billing-detail-by-RecordId endpoint (not found). */
+     6) findLikelyExistingBilling() - paymentportal/api/activebillingcode/list. CORRECTED
+        2026-08-14 (real user bug report - a masa 08 request with the same Nominal as an
+        existing masa 07 code silently matched and returned the WRONG period's PDF under the
+        requested filename): rows DO carry their own PeriodCode (confirmed live, same
+        MM+MM+YYYY format resolveTaxPeriodCode produces) - the earlier "null on every
+        self-billed record" claim here was wrong, or at least not universal; it may have been
+        specific to records also missing LocationCode (see the guard in runBillingPph25) rather
+        than a property of self-billed codes generally. Now matches on Nominal AND PeriodCode
+        together. A record with a null PeriodCode (an incomplete legacy record from before the
+        LocationCode fix) simply never matches as a duplicate of any real request going forward,
+        rather than being trusted. */
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -194,16 +197,27 @@ async function fetchGeneralInfo(page, authState) {
     };
 }
 
-/** Best-effort duplicate guard - see the module header comment for why this can't be an exact
- *  KAP-KJS+period match. Matches on Nominal alone: catches an accidental same-amount re-run,
- *  not a full guarantee against every possible duplicate. */
-async function findLikelyExistingBilling(page, authState, nominal) {
+/** Duplicate guard: an active/unpaid billing code for the SAME period AND nominal already
+ *  exists. See the CONFIRMED LIVE comment below for why this now checks PeriodCode too, not
+ *  just Nominal. */
+async function findLikelyExistingBilling(page, authState, nominal, periodCode) {
     const { status, json } = await apiPost(page, authState, API_PAYMENT + '/activebillingcode/list', {
         TaxpayerAggregateIdentifier: authState.taxpayerId, Currency: 'IDR', First: 0, Rows: 50, SortField: '', SortOrder: 1, Filters: [], LanguageId: 'id-ID'
     });
     if (status !== 200 || !json || json.IsSuccessful === false) return null;
     const rows = (json.Payload && json.Payload.Data) || [];
-    return rows.find((r) => Number(r.Nominal) === Number(nominal)) || null;
+    // CONFIRMED LIVE 2026-08-14: activebillingcode/list rows DO carry their own PeriodCode
+    // (same MM+MM+YYYY format resolveTaxPeriodCode already produces, e.g. "07072026") - the
+    // "Nominal-only, no period match available" limitation described in the module header
+    // comment was never actually verified against a real response. Real bug this caused: a
+    // masa 08 request with the same Nominal as an existing masa 07 code matched and silently
+    // handed back the WRONG period's PDF, reported as if it were the requested one - only
+    // caught because the user opened the file and found masa 07's data under a masa 08 filename.
+    // Still Nominal-first (a genuinely different period will essentially never coincidentally
+    // share both the exact PeriodCode AND Nominal, so this isn't loosening the match, only
+    // correcting it), but now requires the period to actually match too - a same-nominal record
+    // for a DIFFERENT period no longer counts as a duplicate of THIS request.
+    return rows.find((r) => Number(r.Nominal) === Number(nominal) && r.PeriodCode === periodCode) || null;
 }
 
 /** Downloads the PDF of an ALREADY-EXISTING active billing code (the "Lihat" button's action
@@ -343,11 +357,10 @@ async function runBillingPph25(opts) {
         return { created: false, reason: 'already_paid', paidAmount: paid.Amount };
     }
 
-    // Check 2: an active/unpaid code already exists? (best-effort, Nominal-only match - see
-    // module header comment for why period-exact matching isn't available here). Download it
-    // (the "Lihat" button's own action, confirmed live) instead of just warning, so the user
-    // still ends up with the PDF locally even when this run doesn't create anything new.
-    const dup = await findLikelyExistingBilling(page, authState, nominal);
+    // Check 2: an active/unpaid code already exists for THIS period? Download it (the "Lihat"
+    // button's own action, confirmed live) instead of just warning, so the user still ends up
+    // with the PDF locally even when this run doesn't create anything new.
+    const dup = await findLikelyExistingBilling(page, authState, nominal, taxPeriodCode);
     if (dup) {
         log('Kode Billing dengan nominal sama (Rp ' + nominal.toLocaleString('id-ID') + ') sudah aktif: ' + dup.BillingCode + ' (kedaluwarsa ' + dup.BillingCodeExpirationTime + ') - dilewati, mengunduh yang sudah ada.');
         const buffer = await downloadExistingBillingCode(page, authState, dup);
