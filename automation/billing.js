@@ -371,17 +371,19 @@ async function runBillingPph25(opts) {
 
     await runcontrol.checkpoint();
     const info = await fetchGeneralInfo(page, authState);
-    // Explicit user report 2026-08-14: a billing code created for an entity whose Coretax
-    // taxpayer profile has no MainAddress registered came back with a blank ALAMAT on the PDF
-    // AND turned out not payable - createbillingcode itself doesn't validate LocationCode (it
-    // happily returns a "successful" PDF either way), but the actual banking/payment layer that
-    // processes the billing code downstream apparently does require a real one (kode wilayah is
-    // a required MPN routing field). Refusing here rather than silently handing back a billing
-    // code that LOOKS complete but isn't actually usable - the real fix is registering this
-    // entity's address in Coretax's own taxpayer profile first, not something this automation
-    // can supply on its own.
+    // REVERTED 2026-08-14 - the hard block added earlier today assumed an empty locationCode
+    // (from registrationportal/api/generalinformation/view) meant the billing code would be
+    // unpayable. Directly contradicted by the user: creating a billing code for this same
+    // entity manually through Coretax's own front-end works fine with a real address - meaning
+    // this endpoint likely just isn't where Coretax's own UI gets the address from either
+    // (same pattern as the DocumentAggregateIdentifier issue in ebupot.js: a bulk/general API
+    // not having a field some other, more specific lookup does). The original "billing from
+    // automation is always invalid" report is much more plausibly explained by the wrong-period
+    // duplicate-match bug fixed earlier today (findLikelyExistingBilling) than by this. Only
+    // logging now, not blocking - don't want to repeat the earlier mistake of asserting Coretax
+    // will reject something without having actually verified it will.
     if (!info.locationCode) {
-        throw new Error('Alamat wajib pajak belum terdaftar di Coretax (Kode Wilayah kosong) - Kode Billing yang dibuat kemungkinan TIDAK BISA DIBAYAR. Lengkapi alamat entitas ini di profil Coretax terlebih dahulu, baru buat Kode Billing.');
+        log('[peringatan] Kode Wilayah kosong dari generalinformation/view untuk entitas ini - membuat Kode Billing tetap, tapi field ini mungkin tidak lengkap pada hasilnya.');
     }
 
     // Best-effort, mirrors the real UI's own flow before letting you submit - not fatal if it
