@@ -146,11 +146,13 @@ async function apiPost(page, authState, url, bodyObj) {
         + '      signal: ctrl.signal'
         + '    });'
         + '  } finally { clearTimeout(timer); }'
+        + '  let text = "";'
+        + '  try { text = await r.text(); } catch (e) {}'
         + '  let json = null;'
-        + '  try { json = await r.json(); } catch (e) {}'
-        + '  return { status: r.status, json };'
+        + '  try { json = JSON.parse(text); } catch (e) {}'
+        + '  return { status: r.status, json, text: text.slice(0, 500) };'
         + '} catch (e) {'
-        + '  return { status: 0, json: null };'
+        + '  return { status: 0, json: null, text: String(e && e.message || e) };'
         + '}'
         + '})()';
     return page.evaluate(expr);
@@ -210,11 +212,22 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
         DocumentDate: String(row.LastUpdatedDate || '').slice(0, 19),
         TaxIdentificationNumber: row.TaxIdentificationNumber
     };
-    const { status, json } = await apiPost(page, authState, API_BASE + '/DownloadWithholdingSlips/download-pdf-document', body);
+    // A row missing one of these (some listing rows come back with a null/absent identifier
+    // field, e.g. a not-yet-finalized or corrected document) would otherwise silently POST with
+    // that key just dropped entirely (JSON.stringify omits `undefined`), and Coretax's own API
+    // rejects the incomplete body with an opaque HTTP 400 that gave no indication of WHICH field
+    // was the problem - confirmed live 2026-08-14, a reproducible per-row 400 with zero other
+    // diagnostic info. Catching it here up front names the actual missing field instead.
+    const missing = Object.keys(body).filter((k) => body[k] == null || body[k] === '');
+    if (missing.length) {
+        throw new Error('Baris ini tidak lengkap datanya dari Coretax (field kosong: ' + missing.join(', ') + ') - PDF tidak bisa diminta.');
+    }
+    const { status, json, text } = await apiPost(page, authState, API_BASE + '/DownloadWithholdingSlips/download-pdf-document', body);
     if (status === 401) { const e = new Error('Sesi berakhir (401) saat mengambil PDF.'); e.isSessionExpired = true; throw e; }
     const data = json && json.Payload && json.Payload.Message ? json.Payload.Message.Data : null;
     if (status !== 200 || !json || json.IsSuccessful === false || !data) {
-        throw new Error('Gagal mengambil PDF: HTTP ' + status + (json && json.Errors ? ' - ' + JSON.stringify(json.Errors) : ''));
+        const detail = (json && json.Errors) ? JSON.stringify(json.Errors) : (text || '(tidak ada detail dari server)');
+        throw new Error('Gagal mengambil PDF: HTTP ' + status + ' - ' + detail);
     }
     return Buffer.from(data, 'base64');
 }
