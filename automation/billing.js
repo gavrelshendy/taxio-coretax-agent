@@ -1,34 +1,38 @@
 /* Coretax Agent - PPh 25 self-billing (Kode Billing) generation automation.
-   Built API-first from day one (live reverse-engineering session, 2026-07-28, against a real
-   account) - unlike SPT/e-Bupot, which shipped as click-based first and were rewritten to API
-   calls only after the endpoints got discovered later, this one skips straight to direct API
-   calls since the whole flow was captured live before any code was written.
+   Started API-first (live reverse-engineering session, 2026-07-28, against a real account), then
+   the CREATION step was switched to click-based on 2026-08-14 after a real user report ("masa 08
+   downloaded masa 07's PDF") led to fixing the duplicate-guard's period match, followed by the
+   user directly disproving this file's address-block assumption ("kalo buat manual lewat front
+   end bisa kok") - which turned out to be because the real self-billing wizard's step 3 has NO
+   address field at all (confirmed live via a full DOM probe of all 3 steps): Coretax's own
+   frontend resolves TaxpayerAddress/LocationCode itself without ever asking the user, meaning our
+   registrationportal/api/generalinformation/view-based guess was never how the real UI does it
+   and was liable to differ from what Coretax's own JS would have sent. Driving the real wizard
+   sidesteps needing to replicate that resolution ourselves. The TWO idempotency guards (already-
+   paid + duplicate-active-code check) stay API-based - read-only lookups, no address involved,
+   and much faster than opening the wizard just to check.
 
    Confirmed live 2026-07-28 (TaxTypeCode 411125/TaxPaymentCode 100, individual account,
    Rp 10.000 test - real Kode Billing "042297580098657" issued and paid-status confirmed active):
-     1) POST registrationportal/api/generalinformation/view {AggregateIdentifier} ->
-        GeneralInformation.{Name, UniqueIdentificationNumber, MainAddress.FullAddressDetail,
-        MainAddress.AreaCode}. FullAddressDetail is already the fully-resolved human-readable
-        address (subdistrict/district/city/province names, not just codes) - no separate
-        reference-data lookup needed. AreaCode is what the create call calls LocationCode.
-     2) POST paymentportal/api/createbillingcode/get-tax-period
+     1) POST paymentportal/api/createbillingcode/get-tax-period
         {TaxpayerAggregateIdentifier, TaxTypeAndTaxPaymentCode, LanguageId} -> list of periods,
         each with its own Code field (opaque, MM+MM+YYYY-shaped but CONFIRMED not safe to
         hand-construct - always resolved by matching ParameterDataList.StartDate against the
         target month instead, same defensive style as spt.js never trusting derived IDs).
-     3) POST paymentportal/api/createbillingcode/check-accounting
-        {TaxpayerAggregateIdentifier, TaxTypeCode, TaxPaymentCode, TaxPeriodCode} -> pass/fail
-        pre-validation the real UI also does before letting you submit. Best-effort here - not
-        fatal if it errors, mirrors the flow without gating on it.
-     4) POST paymentportal/api/createbillingcode {..., BillingDetails:[{TaxTypeCode,
-        TaxPaymentCode, TaxPeriodCode, Nominal, ...}], LocationCode, ...} -> raw PDF bytes
-        DIRECTLY in the response body (not a JSON-wrapped base64 Content field like SPT/
-        e-Bupot's endpoints) - fetched as base64 from inside the page and decoded back to a
-        Buffer here, see apiPostBinary.
+     2) Click-based creation (confirmed live 2026-08-14 against the real wizard at
+        SELF_BILLING_URL): step 1 is an overview screen (#Next only); step 2 has the
+        #TaxTypeTaxPayment ("Pilih KAP - KJS") and #TaxPeriod ("Pilih Periode") PrimeNG dropdowns,
+        both p-dropdown components opened by clicking the component itself and picking a
+        .p-dropdown-item/[role="option"] by its text; step 3 has Currency (pre-filled "Indonesia
+        Rupiah"), #AmountInput (Nominal), AmountInWords (auto-computed from Amount - a good live
+        signal the fill actually registered with Angular), Remarks (left blank), and the submit
+        button (id="Download Billing Code" - note the literal space in the id, hence the
+        attribute-selector form used below), which triggers a real browser download of the PDF
+        rather than returning JSON. See createBillingCodeByClick.
 
    TWO idempotency guards run before ever creating anything (confirmed live 2026-07-28 against
    DFA's real, already-paid PPh 25 for masa 06/2026, Rp 58.327.235):
-     5) checkAlreadyPaid() - POST accountingportal/api/taxpayeraccounting/list (Buku Besar),
+     3) checkAlreadyPaid() - POST accountingportal/api/taxpayeraccounting/list (Buku Besar),
         matched client-side by RevenueCode+PaymentCode+PeriodCode, AmountLeft<=0 = fully paid.
         This is the DEFINITIVE check: a paid period drops off activebillingcode/list entirely
         (confirmed live - DFA's paid record does not appear there), so without this check a
@@ -36,7 +40,7 @@
         duplicate guard below. Uses an explicit wide TransactionDate window (last year through
         next year) since Coretax's own default (omitting that filter) silently narrows to the
         last 30 days - confirmed via the Buku Besar UI's own disclaimer text.
-     6) findLikelyExistingBilling() - paymentportal/api/activebillingcode/list. CORRECTED
+     4) findLikelyExistingBilling() - paymentportal/api/activebillingcode/list. CORRECTED
         2026-08-14 (real user bug report - a masa 08 request with the same Nominal as an
         existing masa 07 code silently matched and returned the WRONG period's PDF under the
         requested filename): rows DO carry their own PeriodCode (confirmed live, same
@@ -57,7 +61,6 @@ const runcontrol = require('../lib/runcontrol');
 const { _sleep, sanitizeFilenamePart } = require('../lib/datatable');
 
 const API_PAYMENT = 'https://coretaxdjp.pajak.go.id/paymentportal/api';
-const API_REGISTRATION = 'https://coretaxdjp.pajak.go.id/registrationportal/api';
 const API_ACCOUNTING = 'https://coretaxdjp.pajak.go.id/accountingportal/api';
 const SELF_BILLING_URL = 'https://coretaxdjp.pajak.go.id/payment-portal/id-ID/self-billing';
 
@@ -180,21 +183,82 @@ async function resolveTaxPeriodCode(page, authState, taxTypeAndPaymentCode, mmYY
     return match.Code;
 }
 
-async function fetchGeneralInfo(page, authState) {
-    const { status, json } = await apiPost(page, authState, API_REGISTRATION + '/generalinformation/view', {
-        AggregateIdentifier: authState.taxpayerId
-    });
-    if (status !== 200 || !json || json.IsSuccessful === false || !json.Payload || !json.Payload.GeneralInformation) {
-        throw new Error('Gagal mengambil data identitas wajib pajak: HTTP ' + status);
+const ID_MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+/** "0826" -> "Agustus 2026", matching the #TaxPeriod dropdown's exact option text (confirmed
+ *  live 2026-08-14 - full year, no leading zero on the month name obviously, Indonesian names). */
+function mmYYToPeriodLabel(mmYY) {
+    const mm = parseInt(mmYY.slice(0, 2), 10);
+    if (!mm || mm < 1 || mm > 12) throw new Error('Masa pajak tidak valid: ' + mmYY);
+    return ID_MONTHS[mm - 1] + ' 20' + mmYY.slice(2);
+}
+
+function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/** Opens a PrimeNG p-dropdown and clicks the option whose text matches labelRegex. Selectors
+ *  confirmed live 2026-08-14 against the real self-billing wizard. */
+async function selectDropdownOption(page, triggerSelector, labelRegex, label) {
+    await page.locator(triggerSelector).click({ timeout: 8000, force: true });
+    await page.waitForTimeout(700);
+    const option = page.locator('.p-dropdown-item, .p-dropdown-items li, [role="option"]').filter({ hasText: labelRegex }).first();
+    const visible = await option.isVisible({ timeout: 5000 }).catch(() => false);
+    if (!visible) throw new Error('Opsi "' + label + '" tidak ditemukan di dropdown Coretax - mungkin belum dibuka atau formatnya berubah.');
+    await option.click({ timeout: 5000, force: true });
+    await page.waitForTimeout(400);
+}
+
+/** Click-based Kode Billing creation - drives the real 3-step self-billing wizard instead of
+ *  calling paymentportal/api/createbillingcode directly (see the module header comment for why:
+ *  step 3 has no address field at all, so Coretax's own frontend resolves TaxpayerAddress/
+ *  LocationCode itself, something the old direct-API approach could only ever guess at). Uses
+ *  chrome.downloadFlag to keep this run's own download from also being grabbed by the context's
+ *  manual-download listener (same guard chrome.js documents for row-download races elsewhere). */
+async function createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nominal) {
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+    const nextBtn1 = page.locator('#Next');
+    const hasNext1 = await nextBtn1.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
+    if (!hasNext1) throw new Error('Halaman Kode Billing Coretax tidak termuat sebagaimana mestinya (tombol Lanjut tidak ditemukan).');
+    await nextBtn1.click({ timeout: 5000, force: true });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+
+    await selectDropdownOption(page, '#TaxTypeTaxPayment', new RegExp('^' + escapeRegex(taxTypeAndPaymentCode)), taxTypeAndPaymentCode);
+    const periodLabel = mmYYToPeriodLabel(mmYY);
+    await selectDropdownOption(page, '#TaxPeriod', new RegExp('^' + escapeRegex(periodLabel) + '$'), periodLabel);
+
+    const nextBtn2 = page.locator('#Next');
+    const hasNext2 = await nextBtn2.isVisible({ timeout: 5000 }).catch(() => false);
+    if (!hasNext2) throw new Error('Tombol Lanjut step 2 tidak ditemukan setelah memilih KAP-KJS/Periode.');
+    await nextBtn2.click({ timeout: 5000, force: true });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+
+    const amountInput = page.locator('#AmountInput');
+    const hasAmount = await amountInput.isVisible({ timeout: 8000 }).catch(() => false);
+    if (!hasAmount) throw new Error('Field Nominal (step 3) tidak ditemukan - kemungkinan wizard Coretax berubah.');
+    await amountInput.click({ timeout: 5000 });
+    await amountInput.fill(String(nominal), { timeout: 5000 });
+    await amountInput.blur().catch(() => {});
+    await page.waitForTimeout(500);
+
+    const submitBtn = page.locator('[id="Download Billing Code"]');
+    const hasSubmit = await submitBtn.isVisible({ timeout: 5000 }).catch(() => false);
+    if (!hasSubmit) throw new Error('Tombol "Unduh Kode Billing" tidak ditemukan.');
+
+    chrome.downloadFlag.automated = true;
+    try {
+        const [download] = await Promise.all([
+            page.waitForEvent('download', { timeout: 30000 }),
+            submitBtn.click({ timeout: 5000, force: true })
+        ]);
+        const tmpPath = await download.path();
+        if (!tmpPath) throw new Error('Unduhan Kode Billing gagal (Coretax tidak mengirim file).');
+        const buffer = fs.readFileSync(tmpPath);
+        await download.delete().catch(() => {});
+        return buffer;
+    } finally {
+        chrome.downloadFlag.automated = false;
     }
-    const gi = json.Payload.GeneralInformation;
-    const addr = gi.MainAddress || {};
-    return {
-        name: gi.Name || '',
-        tin: gi.UniqueIdentificationNumber || '',
-        address: addr.FullAddressDetail || addr.AddressDetail || '',
-        locationCode: addr.AreaCode || addr.Subdistrict || ''
-    };
 }
 
 /** Duplicate guard: an active/unpaid billing code for the SAME period AND nominal already
@@ -370,52 +434,9 @@ async function runBillingPph25(opts) {
     }
 
     await runcontrol.checkpoint();
-    const info = await fetchGeneralInfo(page, authState);
-    // REVERTED 2026-08-14 - the hard block added earlier today assumed an empty locationCode
-    // (from registrationportal/api/generalinformation/view) meant the billing code would be
-    // unpayable. Directly contradicted by the user: creating a billing code for this same
-    // entity manually through Coretax's own front-end works fine with a real address - meaning
-    // this endpoint likely just isn't where Coretax's own UI gets the address from either
-    // (same pattern as the DocumentAggregateIdentifier issue in ebupot.js: a bulk/general API
-    // not having a field some other, more specific lookup does). The original "billing from
-    // automation is always invalid" report is much more plausibly explained by the wrong-period
-    // duplicate-match bug fixed earlier today (findLikelyExistingBilling) than by this. Only
-    // logging now, not blocking - don't want to repeat the earlier mistake of asserting Coretax
-    // will reject something without having actually verified it will.
-    if (!info.locationCode) {
-        log('[peringatan] Kode Wilayah kosong dari generalinformation/view untuk entitas ini - membuat Kode Billing tetap, tapi field ini mungkin tidak lengkap pada hasilnya.');
-    }
+    const buffer = await createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nominal);
 
-    // Best-effort, mirrors the real UI's own flow before letting you submit - not fatal if it
-    // errors, the create call itself is still the real gate.
-    await apiPost(page, authState, API_PAYMENT + '/createbillingcode/check-accounting', {
-        TaxpayerAggregateIdentifier: authState.taxpayerId, TaxTypeCode: taxTypeCode, TaxPaymentCode: TAX_PAYMENT_CODE, TaxPeriodCode: taxPeriodCode
-    }).catch(() => {});
-
-    await runcontrol.checkpoint();
-    const createBody = {
-        ReturnSheetIdentifier: null,
-        TaxpayerAggregateIdentifier: authState.taxpayerId,
-        TaxpayerTinOrNik: info.tin,
-        TaxpayerName: info.name,
-        TaxpayerAddress: info.address,
-        Currency: 'IDR',
-        BillingDetails: [{
-            RecordId: null, TransactionId: null, DocumentReferenceNumber: null,
-            TaxTypeCode: taxTypeCode, TaxPaymentCode: TAX_PAYMENT_CODE, TaxPeriodCode: taxPeriodCode,
-            TaxObjectNumber: null, TaxObjectAddress: null, Nominal: nominal,
-            TaxObjectAddressSubDistrict: null, TaxObjectAddressDistrict: null, TaxObjectAddressCity: null, TaxObjectAddressProvince: null
-        }],
-        LocationCode: info.locationCode,
-        DepositDesc: null, DepositMonth: null, DepositYear: null, Remark: null
-    };
-    const result = await apiPostBinary(page, authState, API_PAYMENT + '/createbillingcode', createBody);
-    if (result.status !== 200 || !result.base64) {
-        const msg = (result.errJson && (result.errJson.Message || (result.errJson.Errors || []).join(', '))) || ('HTTP ' + result.status);
-        throw new Error('Gagal membuat Kode Billing: ' + msg);
-    }
-
-    const filePath = saveBillingPdf(entity, mmYY, Buffer.from(result.base64, 'base64'), opts.saveRoot, opts.compFolder);
+    const filePath = saveBillingPdf(entity, mmYY, buffer, opts.saveRoot, opts.compFolder);
     log('Kode Billing PPh 25 dibuat: ' + path.basename(filePath));
 
     return { created: true, filePath };
