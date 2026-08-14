@@ -213,17 +213,17 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
         TaxIdentificationNumber: row.TaxIdentificationNumber
     };
     // CONFIRMED LIVE 2026-08-14: a row with DocumentFormAggregateIdentifier null in the bulk
-    // listing response failed here, but the SAME document downloaded fine through Coretax's own
-    // UI (manual click) moments later - meaning the assumption baked into an earlier version of
-    // this check (that Coretax's backend can't process the request without that field, so don't
-    // even bother sending it) was never actually verified against the server, only asserted.
-    // Manual working proves Coretax's backend CAN produce this PDF even when the bulk listing
-    // doesn't have that field populated - so the earlier version here, which threw before ever
-    // POSTing, was hiding the real answer instead of finding it. Only logging now, then still
-    // sending the request exactly as-is (field simply absent, same as JSON.stringify already did
-    // before that guard existed) so the response-detail capture below can show what Coretax's
-    // server ACTUALLY says - which may reveal the backend doesn't need this field at all, or
-    // surface the real rejection reason if it's something else entirely.
+    // listing response gets rejected here with a .NET "could not be converted to System.Guid"
+    // error - Coretax's backend genuinely requires this field, it's not just an unverified
+    // assumption. Yet the SAME document downloads fine through Coretax's own UI, meaning their
+    // frontend gets this field from somewhere other than the bulk listing before calling this
+    // same endpoint. A live probe of 7 plausible per-record detail-lookup URLs (GetWithholdingSlip,
+    // WithholdingSlips/{id}, getebupotbp21issueddetail, etc., both GET and POST) all 404'd -
+    // whatever Coretax's frontend actually calls isn't a guessable REST/detail-endpoint pattern.
+    // Left as a real, currently-unresolved limitation: rows with this field null (freshly
+    // created/signed documents not yet linked to a Document Form, per Coretax's own data) can't
+    // be downloaded by this automation and need a manual download in Coretax's own UI instead -
+    // the log message says as much and the row is skipped rather than crashing the whole run.
     const missing = Object.keys(body).filter((k) => body[k] == null || body[k] === '');
     if (missing.length) {
         try { log('[debug] Baris e-Bupot ' + bupotType.toUpperCase() + ' dengan field kosong (' + missing.join(', ') + '), mengirim tetap: ' + JSON.stringify(row)); } catch (e) {}
@@ -232,6 +232,9 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
     if (status === 401) { const e = new Error('Sesi berakhir (401) saat mengambil PDF.'); e.isSessionExpired = true; throw e; }
     const data = json && json.Payload && json.Payload.Message ? json.Payload.Message.Data : null;
     if (status !== 200 || !json || json.IsSuccessful === false || !data) {
+        if (missing.includes('DocumentAggregateIdentifier') && text && text.includes('System.Guid')) {
+            throw new Error('Dokumen ini belum siap diunduh otomatis (belum terhubung ke Document Form di Coretax - biasanya dokumen yang baru saja dibuat/ditandatangani) - silakan download manual lewat Coretax, atau coba lagi nanti.');
+        }
         const detail = (json && json.Errors) ? JSON.stringify(json.Errors) : (text || '(tidak ada detail dari server)');
         throw new Error('Gagal mengambil PDF: HTTP ' + status + ' - ' + detail);
     }
