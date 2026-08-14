@@ -358,6 +358,18 @@ async function runBillingPph25(opts) {
 
     await runcontrol.checkpoint();
     const info = await fetchGeneralInfo(page, authState);
+    // Explicit user report 2026-08-14: a billing code created for an entity whose Coretax
+    // taxpayer profile has no MainAddress registered came back with a blank ALAMAT on the PDF
+    // AND turned out not payable - createbillingcode itself doesn't validate LocationCode (it
+    // happily returns a "successful" PDF either way), but the actual banking/payment layer that
+    // processes the billing code downstream apparently does require a real one (kode wilayah is
+    // a required MPN routing field). Refusing here rather than silently handing back a billing
+    // code that LOOKS complete but isn't actually usable - the real fix is registering this
+    // entity's address in Coretax's own taxpayer profile first, not something this automation
+    // can supply on its own.
+    if (!info.locationCode) {
+        throw new Error('Alamat wajib pajak belum terdaftar di Coretax (Kode Wilayah kosong) - Kode Billing yang dibuat kemungkinan TIDAK BISA DIBAYAR. Lengkapi alamat entitas ini di profil Coretax terlebih dahulu, baru buat Kode Billing.');
+    }
 
     // Best-effort, mirrors the real UI's own flow before letting you submit - not fatal if it
     // errors, the create call itself is still the real gate.
