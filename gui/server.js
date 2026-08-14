@@ -114,10 +114,6 @@ function isMyBupotAllowed(allowedSections) {
     if (!allowedSections) return true;
     return allowedSections.includes('my-withholding-slips');
 }
-function isMyBupotTypesAllowed(buktiTypeKeys) {
-    return !(buktiTypeKeys || []).some((k) => ABSOLUTELY_BLOCKED_MYBUPOT_TYPES.includes(k));
-}
-
 // Explicit user request 2026-08-10 (real test: a restricted editor could still search for and
 // log into/download from a PIC's own personal Individual account). `entity.individual` is
 // already threaded through every handler below from Taxio Hub's own entity payload - this is
@@ -126,6 +122,20 @@ function isMyBupotTypesAllowed(buktiTypeKeys) {
 // unlike a client-side-only check, which a deep link can simply bypass entirely.
 function isIndividualEntityBlocked(restricted, entity) {
     return !!(restricted && entity && entity.individual);
+}
+
+// Explicit user request 2026-08-13: refuses to START any new automation action while a newer
+// release is confirmed available - the auto-update-on-startup check is the only thing that
+// otherwise keeps this build current, and if it ever gets deferred, fails, or someone's just
+// running an old copy they downloaded before a security fix shipped, nothing else would stop
+// them from continuing to use it indefinitely. Deliberately does NOT touch runcontrol at all -
+// an already-active run is never interrupted (updater.getOutdatedInfo() only ever reports
+// "outdated" from a positively-confirmed GitHub check, so a network hiccup can't trigger this).
+function rejectIfOutdated(res) {
+    const info = updater.getOutdatedInfo();
+    if (!info.outdated) return false;
+    sendJson(res, 426, { error: 'Coretax Agent versi ' + (info.current || '') + ' sudah usang (v' + info.latestVersion + ' tersedia) - update otomatis akan berjalan begitu tidak ada proses aktif. Coba lagi sebentar lagi, atau klik "Cek Update" di Pengaturan.', outdated: true, latestVersion: info.latestVersion });
+    return true;
 }
 
 function serveStatic(req, res, pathname) {
@@ -215,6 +225,7 @@ async function handleManualStatus(req, res) {
 function sanitizeFolder(s) { return String(s || '').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 60) || 'Manual'; }
 
 async function handleDownloadEbupot(req, res) {
+    if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     const { entity, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode } = body || {};
@@ -268,9 +279,11 @@ async function handleDownloadEbupot(req, res) {
 }
 
 async function handleDownloadMyBupot(req, res) {
+    if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode } = body || {};
+    let { buktiTypeKeys } = body || {};
+    const { entity, masaInput, saveRoot, pageSize, outputMode } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!Array.isArray(buktiTypeKeys) || !buktiTypeKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis bukti potong & masa wajib diisi.' });
 
@@ -294,8 +307,20 @@ async function handleDownloadMyBupot(req, res) {
         if (restricted && !isMyBupotAllowed(allowedEbupotSections)) {
             return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses Bukti Potong Saya.' });
         }
-        if (restricted && !isMyBupotTypesAllowed(buktiTypeKeys)) {
-            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh BPMP/BPA1 di Bukti Potong Saya.' });
+        // Filters the blocked types OUT and proceeds with whatever's left, rather than
+        // rejecting the whole (multi-select) request - CONFIRMED LIVE 2026-08-13: a restricted
+        // editor selecting BP21 together with BPMP/BPA1 in one batch had the entire request
+        // (including the legitimately-allowed BP21) rejected outright, since the original
+        // all-or-nothing check only asked "does this selection contain a blocked type at all".
+        if (restricted) {
+            const filtered = buktiTypeKeys.filter((k) => !ABSOLUTELY_BLOCKED_MYBUPOT_TYPES.includes(k));
+            if (filtered.length !== buktiTypeKeys.length) {
+                log('Restricted Editor: BPMP/BPA1 di Bukti Potong Saya dilewati (tidak diizinkan).');
+            }
+            buktiTypeKeys = filtered;
+            if (!buktiTypeKeys.length) {
+                return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis Bukti Potong Saya yang dipilih.' });
+            }
         }
         const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
         runOpts = {
@@ -320,6 +345,7 @@ async function handleDownloadMyBupot(req, res) {
 }
 
 async function handleDownloadSpt(req, res) {
+    if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     const { entity, jenisPajakKeys, masaInput, saveRoot } = body || {};
@@ -450,6 +476,7 @@ async function handleCreateDividenCase(req, res) {
 }
 
 async function handleLoginEntity(req, res) {
+    if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     const { entity } = body || {};
@@ -508,6 +535,7 @@ async function handleDeepLink(req, res) {
 }
 
 async function handleOpenCoretaxManual(req, res) {
+    if (rejectIfOutdated(res)) return;
     const connectedIds = state.connectedProjectIds();
     if (!connectedIds.length) return sendJson(res, 401, { error: 'Harus terhubung ke setidaknya satu akun Taxio/Taxio.me sebelum membuka Coretax manual.' });
     
@@ -653,7 +681,7 @@ function createGuiServer(port) {
             }
             if (pathname === '/events' && req.method === 'GET') return handleEvents(req, res);
             if (pathname === '/api/session' && req.method === 'GET') return sendJson(res, 200, sessionSummary());
-            if (pathname === '/api/version' && req.method === 'GET') return sendJson(res, 200, { version: pkg.version });
+            if (pathname === '/api/version' && req.method === 'GET') return sendJson(res, 200, Object.assign({ version: pkg.version }, updater.getOutdatedInfo()));
             if (pathname === '/api/connect' && req.method === 'POST') return handleConnect(req, res);
             if (pathname === '/api/disconnect' && req.method === 'POST') return handleDisconnect(req, res);
             if (pathname === '/api/entities' && req.method === 'GET') return handleEntities(req, res, url.searchParams.get('mode'));
