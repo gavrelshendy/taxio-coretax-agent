@@ -1,10 +1,13 @@
 node_modules/
 dist/
 *.exe
-coretax-agent.log
+*.log
 .dev-inspect/
+.pm-inspect/
+_scratch/
+scratch/
+test/
 Test Impor Dividen*.xlsx
 Control Hasil Impor*.xlsx
 Cek Hasil Dividen*.xlsx
 *.pdf
-.pm-inspect/
