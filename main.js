@@ -7,6 +7,16 @@
  * automation feature (e-Bupot PDF downloads).
  */
 
+// Every Chrome launch in this app uses channel:'chrome' (the machine's own installed Chrome -
+// see lib/chrome.js) - Playwright's own bundled/downloaded browsers are NEVER used. Without
+// this, require('playwright') still runs its own browsers-cache validation on a machine that
+// never ran `npx playwright install`, and prints a "Looks like Playwright was just installed or
+// updated... npx playwright install" banner (confirmed live on a machine other than the dev
+// one, 2026-08-18) - harmless since it's never actually needed, but noisy. Setting this to '0'
+// tells Playwright to skip that whole browser-management/validation path entirely. MUST be set
+// before the first require('playwright'|'playwright-core') anywhere in the process.
+process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+
 // Playwright spawns this executable as a node wrapper to run its own driver subprocess. This
 // guard MUST run before anything else (GUI server, session restore, etc.) - a driver
 // re-invocation must do nothing but delegate to playwright-core's CLI, never try to bind the

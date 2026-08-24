@@ -442,4 +442,8 @@ async function runBillingPph25(opts) {
     return { created: true, filePath };
 }
 
-module.exports = { runBillingPph25 };
+// checkAlreadyPaid/TAX_TYPE_CODE/TAX_PAYMENT_CODE dipakai ulang oleh spt.js untuk cross-check
+// status pembayaran PPh 25 saat download SPT (masa yang sama) - lihat spt.js untuk alasan
+// kenapa periodCode-nya TIDAK lewat resolveTaxPeriodCode (itu khusus periode yang masih bisa
+// dibuatkan billing baru, akan menolak periode lama yang justru sudah lunas).
+module.exports = { runBillingPph25, checkAlreadyPaid, TAX_TYPE_CODE, TAX_PAYMENT_CODE };

@@ -23,6 +23,8 @@ const { runMyBuktiPotongDownload } = require('../automation/mybupot');
 const { runLoginOnly } = require('../automation/login');
 const { runSptDownload } = require('../automation/spt');
 const { runDividenImport, runDividenCheck, openNewCase } = require('../automation/dividen');
+const pajakMasukan = require('../automation/pajakmasukan');
+const masaLib = require('../lib/masa');
 const deeplink = require('../lib/deeplink');
 const tray = require('../lib/tray');
 const updater = require('../lib/updater');
@@ -348,7 +350,7 @@ async function handleDownloadSpt(req, res) {
     if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, jenisPajakKeys, masaInput, saveRoot } = body || {};
+    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25 } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!Array.isArray(jenisPajakKeys) || !jenisPajakKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis pajak & masa wajib diisi.' });
 
@@ -358,7 +360,7 @@ async function handleDownloadSpt(req, res) {
         const manualPage = chrome.getManualPage();
         if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Manual" dan login dulu.' });
         const folder = sanitizeFolder(entity.entity_name || 'Manual');
-        runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, jenisPajakKeys, masaInput, saveRoot };
+        runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, jenisPajakKeys, masaInput, saveRoot, checkPph25, onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
     } else {
         if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
         const s = state.get(entity.project);
@@ -378,13 +380,15 @@ async function handleDownloadSpt(req, res) {
         runOpts = {
             client: s.client, orgId: s.orgId,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot,
-            restricted, allowedEbupotSections, passphrase, fallbackPicIds
+            picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot, checkPph25,
+            restricted, allowedEbupotSections, passphrase, fallbackPicIds,
+            onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok)
         };
     }
 
     try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + (isManual ? 'Sesi Manual' : entity.entity_name)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
+    runcontrol.setJenisRequested(jenisPajakKeys);
     sendJson(res, 202, { started: true });
     try {
         await runSptDownload(runOpts);
@@ -406,6 +410,91 @@ function readLargeJsonBody(req, maxBytes) {
         req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
         req.on('error', reject);
     });
+}
+
+/** Pajak Masukan - entitas+PIC (bukan sesi manual, beda dari Dividen): login otomatis lewat
+ *  kredensial PIC tersimpan (sama seperti SPT/e-Bupot), lalu jalankan impor Excel per baris. */
+/** Pajak Masukan - unduh Excel (entitas+PIC, sama seperti SPT). Bukan tiruan tombol "Ekspor ke
+ *  Excel" Coretax sendiri (terbukti murni client-side) - generate sendiri dari /inputinvoice/list. */
+async function handleDownloadPajakMasukan(req, res) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity, masaInput, saveRoot } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (!masaInput) return sendJson(res, 400, { error: 'Masa wajib diisi.' });
+    if (entity.project === 'manual') return sendJson(res, 400, { error: 'Pajak Masukan butuh entitas dengan PIC Coretax terhubung, bukan sesi manual.' });
+    if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
+
+    let masaList;
+    try { masaList = masaLib.parseMasaListInput(masaInput); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+
+    const s = state.get(entity.project);
+    if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
+    await sessionStore.refreshIfNeeded(s.client);
+    const restricted = isProjectRestricted(entity.project);
+    if (isIndividualEntityBlocked(restricted, entity)) {
+        return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
+    }
+
+    const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
+    const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
+
+    try { runcontrol.start('Download Pajak Masukan · ' + entity.entity_name); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true });
+    try {
+        const page = await runLoginOnly({
+            client: s.client, orgId: s.orgId,
+            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
+            picId: entity.pic_id, restricted, passphrase, allowedEbupotSections
+        });
+        await pajakMasukan.runDownloadExcel({ page, masaList, saveRoot, entityFolder: entity.entity_id, emit: (m) => log(m) });
+    } catch (e) {
+        log('Gagal download Pajak Masukan: ' + e.message);
+    } finally {
+        runcontrol.finish();
+    }
+}
+
+async function handleImportPajakMasukan(req, res) {
+    let body;
+    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
+    const { entity, fileBase64 } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (!fileBase64) return sendJson(res, 400, { error: 'File template belum dipilih.' });
+    if (entity.project === 'manual') return sendJson(res, 400, { error: 'Pajak Masukan butuh entitas dengan PIC Coretax terhubung, bukan sesi manual.' });
+    if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
+
+    const s = state.get(entity.project);
+    if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
+    await sessionStore.refreshIfNeeded(s.client);
+    const restricted = isProjectRestricted(entity.project);
+    if (isIndividualEntityBlocked(restricted, entity)) {
+        return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
+    }
+
+    let fileBuffer;
+    try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
+
+    const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
+    const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
+
+    try { runcontrol.start('Impor Pajak Masukan · ' + entity.entity_name); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true });
+    try {
+        const page = await runLoginOnly({
+            client: s.client, orgId: s.orgId,
+            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
+            picId: entity.pic_id, restricted, passphrase, allowedEbupotSections
+        });
+        await pajakMasukan.runImportFromExcel({ page, fileBuffer, dryRun: false, emit: (m) => log(m) });
+    } catch (e) {
+        log('Gagal impor Pajak Masukan: ' + e.message);
+    } finally {
+        runcontrol.finish();
+    }
 }
 
 async function handleImportDividen(req, res) {
@@ -688,6 +777,8 @@ function createGuiServer(port) {
             if (pathname === '/api/actions/download-ebupot' && req.method === 'POST') return handleDownloadEbupot(req, res);
             if (pathname === '/api/actions/download-mybupot' && req.method === 'POST') return handleDownloadMyBupot(req, res);
             if (pathname === '/api/actions/download-spt' && req.method === 'POST') return handleDownloadSpt(req, res);
+            if (pathname === '/api/actions/import-pajak-masukan' && req.method === 'POST') return handleImportPajakMasukan(req, res);
+            if (pathname === '/api/actions/download-pajak-masukan' && req.method === 'POST') return handleDownloadPajakMasukan(req, res);
             if (pathname === '/api/actions/import-dividen' && req.method === 'POST') return handleImportDividen(req, res);
             if (pathname === '/api/actions/check-dividen' && req.method === 'POST') return handleCheckDividen(req, res);
             if (pathname === '/api/actions/create-dividen-case' && req.method === 'POST') return handleCreateDividenCase(req, res);

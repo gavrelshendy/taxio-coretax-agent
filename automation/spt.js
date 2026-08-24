@@ -44,6 +44,8 @@ const { masaToIndoLabel, parseMasaListInput, parseAnnualYearListInput, annualYea
 const runcontrol = require('../lib/runcontrol');
 const htmlToPdf = require('../lib/html-to-pdf');
 const { _sleep, sanitizeFilenamePart } = require('../lib/datatable');
+const billing = require('./billing');
+const lampiran = require('./lampiran');
 
 const SPT_URL = 'https://coretaxdjp.pajak.go.id/returnsheets-portal/id-ID/submitted-returnsheets';
 const API_BASE = 'https://coretaxdjp.pajak.go.id/returnsheetportal/api';
@@ -75,6 +77,38 @@ const TAXTYPE_TO_JENIS = { ICT_WIT: 'pph21', ICT_WT: 'unifikasi', VAT_VAT: 'ppn'
 function mmYYToTaxPeriodCode(mmYY) {
     const mm = mmYY.slice(0, 2);
     return mm + mm + '20' + mmYY.slice(2);
+}
+
+/** Cross-check (opt-in) - dipakai automation/billing.js's Buku Besar lookup terhadap masa yang
+ *  SAMA dengan SPT yang sedang di-download, sekadar informasi tambahan di log (tidak mengubah
+ *  apa pun, tidak menghentikan proses SPT-nya sendiri).
+ *
+ *  DENGAN SENGAJA memakai mmYYToTaxPeriodCode (hand-constructed) di atas, BUKAN
+ *  billing.js's resolveTaxPeriodCode - resolveTaxPeriodCode mengambil daftar periode yang
+ *  MASIH BISA dibuatkan Kode Billing baru, dan MENOLAK (throw) masa yang sudah lewat/ditutup -
+ *  persis masa yang justru paling relevan dicek di sini (sudah lunas = biasanya sudah tidak
+ *  muncul di daftar "bisa dibuat baru" itu). checkAlreadyPaid sendiri cuma butuh PeriodCode
+ *  untuk dicocokkan APA ADANYA terhadap data ledger Coretax, bukan untuk membuat apa pun - jadi
+ *  aman pakai bentuk hand-constructed. Diverifikasi live 2026-08-20 terhadap referensi yang
+ *  sudah didokumentasikan billing.js sendiri (DION FARMA ABADI masa 06/2026, Rp 58.327.235,
+ *  lunas): PeriodCode "06062026" hasil mmYYToTaxPeriodCode cocok PERSIS dengan PeriodCode yang
+ *  dikembalikan Coretax pada baris ledger yang sama. */
+async function checkPph25ForMasa(page, authState, entity, mmYY, emit) {
+    try {
+        const taxTypeCode = billing.TAX_TYPE_CODE[entity.individual ? 'individual' : 'badan'];
+        const periodCode = mmYYToTaxPeriodCode(mmYY);
+        const paid = await billing.checkAlreadyPaid(page, authState, taxTypeCode, billing.TAX_PAYMENT_CODE, periodCode);
+        if (paid) {
+            const tgl = String(paid.TransactionDate || '').slice(0, 10);
+            emit('PPh 25 masa ' + mmYY + ': SUDAH DIBAYAR (Rp ' + Math.abs(Number(paid.Amount) || 0).toLocaleString('id-ID') + ', lunas di Buku Besar' + (tgl ? ', ' + tgl : '') + ').');
+        } else {
+            emit('PPh 25 masa ' + mmYY + ': BELUM/TIDAK ditemukan lunas di Buku Besar.');
+        }
+        return paid;
+    } catch (e) {
+        emit('Cek PPh 25 masa ' + mmYY + ' gagal: ' + e.message + ' - dilewati, tidak memengaruhi download SPT.');
+        return null;
+    }
 }
 
 /** Pulls the `taxpayer_id` claim out of a captured Bearer JWT - the impersonated entity's own
@@ -311,7 +345,14 @@ async function processSptCombo(ctx) {
         const pbSuffix = parseModelSptSuffix(row.ReturnSheetModel);
         const sptPath = path.join(saveDir, buildSptFilename(entityCode, meta.sptToken, mmYY, pbSuffix));
         const bpePath = path.join(saveDir, buildSptFilename(entityCode, meta.bpeToken, mmYY, pbSuffix));
-        if (fs.existsSync(sptPath) && fs.existsSync(bpePath)) continue; // already have both artifacts
+        if (fs.existsSync(sptPath) && fs.existsSync(bpePath)) {
+            // Sudah ada dari sebelumnya - baris ini genuinely sukses (filenya nyata di disk),
+            // tapi tanpa ini onRowDone tidak pernah dipanggil untuk baris ini sama sekali, jadi
+            // checkbox Jenis Pajak di GUI tidak pernah ditandai selesai walau downloadnya
+            // (dulu atau sekarang) benar-benar berhasil. Ditemukan live 2026-08-20.
+            if (onRowDone) { try { onRowDone(jenisKey, mmYY, true); } catch (e) {} }
+            continue;
+        }
 
         let rowOk = true;
 
@@ -397,6 +438,7 @@ const SIZE_DEFAULT = 10;
  *   compFolder (optional), onRowDone (optional (jenisKey, mmYY, ok) => void). */
 async function runSptDownload(opts) {
     const { client, orgId, entity, jenisPajakKeys } = opts;
+    const checkPph25 = !!opts.checkPph25;
     // Reassignable (not const) - the automatic fallback-PIC retry pass further down needs to
     // point login/cred at a DIFFERENT linked PIC after the first pass finishes, and
     // loginAndImpersonate()/openSptAndPrep() below close over this as a free variable so
@@ -513,7 +555,14 @@ async function runSptDownload(opts) {
         }
     }
 
-    const stats = { downloaded: 0, combosDone: 0, combosSkipped: 0 };
+    // Widget "Unduh Lampiran Lengkap" (lihat automation/lampiran.js) - dipasang di sini (bukan
+    // cuma untuk jenis SPT Badan) supaya tersedia begitu saja kalau user membuka halaman "view"
+    // SPT mana pun secara manual di jendela yang sama setelah run ini - fitur mendeteksi sendiri
+    // via URL apakah halaman yang sedang dibuka didukung, jadi aman dipasang tanpa syarat di sini.
+    await lampiran.installLampiranWidget(page, { saveRoot, entityCode: entity.entity_id, compFolder: opts.compFolder })
+        .catch((e) => log('Peringatan: widget Lampiran gagal dipasang: ' + e.message));
+
+    const stats = { downloaded: 0, combosDone: 0, combosSkipped: 0, combosEmpty: 0 };
     let stopped = false;
 
     const taxTypeCodes = keys.map((k) => JENIS_PAJAK[k].taxTypeCode);
@@ -553,6 +602,10 @@ async function runSptDownload(opts) {
                         log: emit
                     });
                     if (result.downloadedAny) stats.downloaded++;
+                    // foundAny:false ("Tidak ada data untuk filter ini.") sebelumnya cuma
+                    // sebaris log yang gampang terlewat - dihitung terpisah di sini supaya
+                    // ringkasan akhir bisa membedakan "memang tidak ada data" dari kegagalan.
+                    else if (!result.foundAny) stats.combosEmpty++;
                     break;
                 } catch (e) {
                     if (e.isSessionExpired && sessionRetries < 3) {
@@ -563,6 +616,10 @@ async function runSptDownload(opts) {
                     throw e;
                 }
             }
+            // Opt-in, sekali per masa (bukan per jenis pajak - PPh 25 tidak terkait jenis SPT
+            // yang dipilih). Cuma untuk SPT bulanan - PPh 25 adalah angsuran bulanan, tidak
+            // relevan untuk kombinasi tahunan (Badan/OP).
+            if (checkPph25 && !isAnnual) await checkPph25ForMasa(page, authState, entity, mmYY, emit);
             stats.combosDone++;
             return 'next';
         } catch (e) {
@@ -655,8 +712,15 @@ async function runSptDownload(opts) {
         await htmlToPdf.closeRenderer().catch(() => {});
     }
 
-    const doneMsg = (stopped ? 'DIHENTIKAN' : 'SELESAI') + ': SPT "' + entity.entity_name + '" - '
-        + stats.combosDone + ' kombinasi selesai' + (stats.combosSkipped ? (', ' + stats.combosSkipped + ' dilewati/gagal') : '') + '.';
+    // Rincian eksplisit, bukan cuma "N kombinasi selesai" - angka itu sendirian ambigu karena
+    // naik sama saja baik kombinasinya benar-benar mengunduh dokumen maupun cuma menemukan 0
+    // data (SPT belum di-generate Coretax untuk masa itu) - keduanya dulu terlihat identik di
+    // ringkasan akhir.
+    const parts = [stats.combosDone + ' kombinasi diproses'];
+    parts.push((stats.downloaded) + ' ada dokumen terunduh');
+    if (stats.combosEmpty) parts.push(stats.combosEmpty + ' tidak ada data di Coretax');
+    if (stats.combosSkipped) parts.push(stats.combosSkipped + ' dilewati/gagal');
+    const doneMsg = (stopped ? 'DIHENTIKAN' : 'SELESAI') + ': SPT "' + entity.entity_name + '" - ' + parts.join(', ') + '.';
     log(doneMsg + ' Jendela dibiarkan terbuka.');
     showPopup(doneMsg, 'Coretax Agent', stopped ? 'Warning' : 'Information');
 }
