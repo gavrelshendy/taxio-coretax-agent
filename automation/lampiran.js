@@ -87,7 +87,9 @@ async function detectYear(page) {
 async function detectActiveTaxpayerName(page) {
     const value = await page.evaluate(`(() => {
       const clean=s=>(s||'').replace(/\\s+/g,' ').trim();
-      const tidy=s=>clean(s).replace(/\\bIMPERSONATE\\b/ig,'').replace(/\\b\\d{15,16}\\b/g,'').replace(/[·|]+/g,' ').trim();
+      // Header Coretax merender NPWP + nama + label tanpa separator pada textContent
+      // (contoh: 0769...4000RWES DREAM SOCIETYImpersonate), jadi jangan gunakan \b.
+      const tidy=s=>clean(s).replace(/IMPERSONATE/ig,'').replace(/\\d{15,16}/g,'').replace(/[·|]+/g,' ').trim();
       const visible=e=>{const r=e.getBoundingClientRect(),c=getComputedStyle(e);return r.width>0&&r.height>0&&r.top<150&&c.display!=='none'&&c.visibility!=='hidden'};
       const score=s=>{s=tidy(s);if(!s||s.length<3||s.length>100)return-1;return(/[A-Za-z]{3}/.test(s)?10:0)+s.split(' ').length};
       const pools=[];

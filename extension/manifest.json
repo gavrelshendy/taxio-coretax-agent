@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Coretax - Unduh Lampiran SPT",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Mengunduh SELURUH lampiran SPT Tahunan PPh Badan (1771) dan Orang Pribadi (1770) dari Coretax DJP sebagai PDF - per lampiran maupun gabungan.",
   "permissions": [
     "debugger",
