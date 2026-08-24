@@ -1,0 +1,33 @@
+{
+  "blacklistPatterns": [
+    "case-management-portal/forms/online/",
+    "case-management-portal/case-list",
+    "case-management-portal/my-due-cases",
+    "case-management-portal",
+    "user-management-portal/user/password-change",
+    "user/password-change",
+    "password-change",
+    "article-21-26-tax-return",
+    "ebupotbpmp",
+    "ebupotmp",
+    "ebupot-mp",
+    "Bukti Pemotongan Bulanan Pegawai Tetap",
+    "ebupotbpa1",
+    "ebupotbpa2",
+    "bpa1",
+    "bpa2",
+    "Bukti Pemotongan A1",
+    "Bukti Pemotongan A2",
+    "Pemotongan A1",
+    "Pemotongan A2",
+    "notifikasi",
+    "notification",
+    "pengukuhan-pkp",
+    "pbb-p5l",
+    "penghapusan-pencabutan",
+    "my-representatives",
+    "my-taxpayers",
+    "two-fa-configuration"
+  ],
+  "zones": {}
+}
