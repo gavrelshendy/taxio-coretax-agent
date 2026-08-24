@@ -291,7 +291,7 @@
       const initial = (e.entity_name || 'E').trim().charAt(0).toUpperCase();
       return '<div class="entity-row' + (isSelected ? ' selected' : '') + '" data-idx="' + idx + '">'
         + '<div style="display:flex;align-items:center;gap:10px;">'
-        + '<div style="width:30px;height:30px;border-radius:8px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--cyan);flex-shrink:0;">' + initial + '</div>'
+        + '<div style="width:30px;height:30px;border-radius:8px;background:rgba(13,148,136,0.12);border:1px solid rgba(13,148,136,0.3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--cyan);flex-shrink:0;">' + initial + '</div>'
         + '<div style="flex:1;min-width:0;">'
         + '<div class="entity-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(e.entity_name) + tagHtml + '</div>'
         + '<div class="entity-meta">' + escapeHtml(e.entity_id) + (e.pic_name ? (' · PIC Coretax: ' + escapeHtml(e.pic_name)) : '') + '</div>'
@@ -441,20 +441,45 @@
     else { outPdf.disabled = false; }
   }
 
-  // ---------- Feature tabs (e-Bupot / SPT / Dividen) ----------
+  // ---------- Mode tabs (Download / Import & Otomasi) + feature tabs within each ----------
+  // Two-tier nav: 5 feature tabs no longer share one crowded row - Download (e-Bupot/Bukti
+  // Potong Saya/SPT) and Import & Otomasi (Dividen/Pajak Masukan) are separate groups, and the
+  // shared Download fields (folder simpan + Mulai Otomasi) are scoped to MODE, not to an
+  // ever-growing per-feature exception list.
+  let activeMode = 'download';
   let activeFeature = 'ebupot';
-  $('feature-tabs').querySelectorAll('.feature-tab').forEach((btn) => {
+
+  function applyFeaturePanels() {
+    $('feature-ebupot').style.display = activeFeature === 'ebupot' ? 'block' : 'none';
+    $('feature-mybupot').style.display = activeFeature === 'mybupot' ? 'block' : 'none';
+    $('feature-spt').style.display = activeFeature === 'spt' ? 'block' : 'none';
+    $('feature-pm-download').style.display = activeFeature === 'pm-download' ? 'block' : 'none';
+    $('feature-dividen').style.display = activeFeature === 'dividen' ? 'block' : 'none';
+    $('feature-pajakmasukan').style.display = activeFeature === 'pajakmasukan' ? 'block' : 'none';
+    $('dl-fields').style.display = activeMode === 'download' ? 'block' : 'none';
+  }
+
+  function selectFeatureTab(btn) {
+    activeFeature = btn.dataset.feature;
+    document.querySelectorAll('.feature-tab').forEach((b) => b.classList.toggle('active', b === btn));
+    applyFeaturePanels();
+  }
+
+  $('mode-tabs').querySelectorAll('.mode-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
-      activeFeature = btn.dataset.feature;
-      $('feature-tabs').querySelectorAll('.feature-tab').forEach((b) => b.classList.toggle('active', b === btn));
-      $('feature-ebupot').style.display = activeFeature === 'ebupot' ? 'block' : 'none';
-      $('feature-mybupot').style.display = activeFeature === 'mybupot' ? 'block' : 'none';
-      $('feature-spt').style.display = activeFeature === 'spt' ? 'block' : 'none';
-      $('feature-dividen').style.display = activeFeature === 'dividen' ? 'block' : 'none';
-      // Dividen has its own Import button + reads the live Coretax window (not a saved-to-disk
-      // download), so the shared Download fields/button are irrelevant for it.
-      $('dl-fields').style.display = activeFeature === 'dividen' ? 'none' : 'block';
+      activeMode = btn.dataset.mode;
+      $('mode-tabs').querySelectorAll('.mode-tab').forEach((b) => b.classList.toggle('active', b === btn));
+      $('feature-tabs-download').style.display = activeMode === 'download' ? 'flex' : 'none';
+      $('feature-tabs-import').style.display = activeMode === 'import' ? 'flex' : 'none';
+      // Pindah mode selalu jatuh ke tab pertama dalam grup itu, supaya tidak pernah nyangkut di
+      // panel yang tersembunyi karena mode-nya sendiri sudah tidak aktif.
+      const group = activeMode === 'download' ? $('feature-tabs-download') : $('feature-tabs-import');
+      selectFeatureTab(group.querySelector('.feature-tab'));
     });
+  });
+
+  document.querySelectorAll('.feature-tab').forEach((btn) => {
+    btn.addEventListener('click', () => selectFeatureTab(btn));
   });
 
   // ---------- Dividen import (reads the .xlsx locally, posts it as base64) ----------
@@ -563,6 +588,54 @@
     }
   });
 
+  // ---------- Pajak Masukan import (entitas+PIC seperti SPT, file .xlsx seperti Dividen) ----------
+  let selectedPmFile = null;
+
+  $('pick-pm-file-btn').addEventListener('click', async () => {
+    try {
+      const data = await api('/api/actions/pick-file', { method: 'POST', body: JSON.stringify({ title: 'Pilih File Excel Pajak Masukan (.xlsx)', filter: 'File Excel (*.xlsx)|*.xlsx|Semua File (*.*)|*.*' }) });
+      if (data && !data.canceled && data.fileBase64) {
+        selectedPmFile = { fileName: data.fileName, fileBase64: data.fileBase64 };
+        $('pm-file-label').textContent = '✓ ' + data.fileName;
+        return;
+      }
+    } catch (e) {}
+    $('pm-file').click();
+  });
+
+  $('pm-file').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      try {
+        const fileBase64 = await readFileAsBase64(file);
+        selectedPmFile = { fileName: file.name, fileBase64 };
+        $('pm-file-label').textContent = '✓ ' + file.name;
+      } catch (err) { alert('Gagal membaca file: ' + err.message); }
+    }
+  });
+
+  $('import-pm-btn').addEventListener('click', async () => {
+    if (!selectedEntity) { alert('Pilih entitas dulu di atas.'); return; }
+    if (selectedEntity.project === 'manual') { alert('Pajak Masukan butuh entitas dengan PIC Coretax terhubung, bukan sesi manual.'); return; }
+    let fileBase64 = selectedPmFile ? selectedPmFile.fileBase64 : null;
+    if (!fileBase64) {
+      const fileInput = $('pm-file');
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) { alert('Pilih file Excel yang sudah terisi dulu.'); return; }
+      fileBase64 = await readFileAsBase64(file);
+    }
+    const btn = $('import-pm-btn');
+    btn.disabled = true; btn.textContent = 'Mengimpor...';
+    try {
+      await api('/api/actions/import-pajak-masukan', { method: 'POST', body: JSON.stringify({ entity: selectedEntity, fileBase64 }) });
+      pollRunStatus();
+    } catch (e) {
+      alert('Gagal memulai impor: ' + e.message);
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Impor ke Coretax'; }, 1500);
+    }
+  });
+
   // Bupot types run one at a time (the underlying automation/ebupot.js run is built around a
   // single type's endpoint/combo loop, with its own retry+run-control machinery already proven
   // in production - reusing it unchanged per type here rather than teaching it a second type
@@ -613,11 +686,20 @@
       } else if (activeFeature === 'spt') {
         const masaInput = $('spt-masa-input').value.trim();
         const jenisPajakKeys = [...document.querySelectorAll('.spt-jenis:checked')].map((c) => c.value);
+        const checkPph25 = $('spt-check-pph25').checked;
         if (!masaInput) { alert('Masa wajib diisi.'); return; }
         if (!jenisPajakKeys.length) { alert('Pilih minimal satu Jenis Pajak.'); return; }
         await api('/api/actions/download-spt', {
           method: 'POST',
-          body: JSON.stringify({ entity: selectedEntity, jenisPajakKeys, masaInput, saveRoot: saveRoot || undefined })
+          body: JSON.stringify({ entity: selectedEntity, jenisPajakKeys, masaInput, saveRoot: saveRoot || undefined, checkPph25 })
+        });
+        pollRunStatus();
+      } else if (activeFeature === 'pm-download') {
+        const masaInput = $('pm-download-masa-input').value.trim();
+        if (!masaInput) { alert('Masa wajib diisi.'); return; }
+        await api('/api/actions/download-pajak-masukan', {
+          method: 'POST',
+          body: JSON.stringify({ entity: selectedEntity, masaInput, saveRoot: saveRoot || undefined })
         });
         pollRunStatus();
       } else {
@@ -650,6 +732,28 @@
 
   // ---------- Run control (pause / skip / stop) ----------
   let runStatusTimer = null;
+  // SPT: tandai tiap checkbox Jenis Pajak dengan hasil run TERAKHIR yang menyertakannya -
+  // ✓ teal kalau ada dokumen benar-benar terunduh, ⚠ kalau diminta tapi Coretax memang tidak
+  // punya data (bukan gagal), ✕ merah kalau semuanya gagal. Status "kosong" (⚠) baru
+  // ditampilkan setelah run SELESAI (bukan saat masih berjalan) - selama masih jalan, tally
+  // yang belum terisi untuk suatu jenis cuma berarti "belum diproses", bukan "sudah dicek dan
+  // ternyata kosong".
+  function renderJenisTally(st) {
+    const requested = (st && st.jenisRequested) || [];
+    const tally = (st && st.jenisTally) || {};
+    const finished = !(st && st.active);
+    document.querySelectorAll('.spt-jenis').forEach((cb) => {
+      const card = cb.closest('.custom-checkbox-card');
+      if (!card) return;
+      card.classList.remove('jenis-done-ok', 'jenis-done-empty', 'jenis-done-fail');
+      if (requested.indexOf(cb.value) === -1) return;
+      const t = tally[cb.value];
+      if (t && t.ok > 0) card.classList.add('jenis-done-ok');
+      else if (t && t.fail > 0) card.classList.add('jenis-done-fail');
+      else if (finished) card.classList.add('jenis-done-empty');
+    });
+  }
+
   function renderRunStatus(st) {
     lastRunStatus = st || { active: false };
     renderSessionBar(); // keep "Login as" showing the currently-impersonated Coretax entity
@@ -665,6 +769,7 @@
         b.classList.toggle('active', Number(b.dataset.size) === st.currentPageSize);
       });
     }
+    renderJenisTally(st);
   }
   async function pollRunStatus() {
     try { renderRunStatus(await api('/api/run/status')); } catch (e) {}

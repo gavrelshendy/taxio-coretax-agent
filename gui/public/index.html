@@ -106,11 +106,20 @@
 
         <button id="login-only-btn" class="btn btn-outline btn-block btn-glow-indigo" title="Login &amp; impersonate entitas ini saja, tanpa mengisi form download">Login Coretax</button>
 
-        <div class="feature-tabs" id="feature-tabs">
+        <div class="mode-tabs" id="mode-tabs">
+          <button type="button" class="mode-tab active" data-mode="download">Download</button>
+          <button type="button" class="mode-tab" data-mode="import">Import &amp; Otomasi</button>
+        </div>
+
+        <div class="feature-tabs" id="feature-tabs-download">
           <button type="button" class="feature-tab active" data-feature="ebupot">e-Bupot</button>
           <button type="button" class="feature-tab" data-feature="mybupot">Bukti Potong Saya</button>
           <button type="button" class="feature-tab" data-feature="spt">SPT</button>
-          <button type="button" class="feature-tab" data-feature="dividen">Dividen</button>
+          <button type="button" class="feature-tab" data-feature="pm-download">Pajak Masukan</button>
+        </div>
+        <div class="feature-tabs" id="feature-tabs-import" style="display:none;">
+          <button type="button" class="feature-tab active" data-feature="dividen">Dividen</button>
+          <button type="button" class="feature-tab" data-feature="pajakmasukan">Pajak Masukan</button>
         </div>
 
         <!-- e-Bupot Tab -->
@@ -306,6 +315,28 @@
             <label class="field-label" for="spt-masa-input" id="spt-masa-label">Masa Pajak <i class="hint-icon" id="spt-masa-hint" title="mis. 0126;0226 atau 0125-1225">?</i></label>
             <input type="text" id="spt-masa-input" class="styled-input">
           </div>
+
+          <label class="custom-checkbox-card" style="margin-top:4px;">
+            <input type="checkbox" id="spt-check-pph25">
+            <span class="checkbox-indicator"></span>
+            <span class="checkbox-text">Cek juga status PPh 25 (Buku Besar) untuk masa yang sama</span>
+          </label>
+        </div>
+
+        <!-- Pajak Masukan (Download) Tab -->
+        <div id="feature-pm-download" class="feature-panel" style="display:none;">
+          <div class="info-callout">
+            <div class="callout-content">
+              <strong>Unduh Data Pajak Masukan</strong>
+              <span>Ekspor seluruh faktur pajak masukan pada masa yang dipilih ke Excel - diambil langsung dari Coretax, tidak dibatasi paginasi tampilan.</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="field-label" for="pm-download-masa-input" id="pm-download-masa-label">Masa Pajak <i class="hint-icon" title="mis. 0126;0226 atau 0125-1225">?</i></label>
+            <input type="text" id="pm-download-masa-input" class="styled-input">
+          </div>
+          <p class="muted-note">PDF per faktur belum tersedia di menu ini.</p>
         </div>
 
         <!-- Dividen Tab -->
@@ -334,6 +365,33 @@
           <button id="import-dividen-btn" class="btn btn-primary btn-block btn-gradient" style="margin-top:14px;">Impor ke Coretax</button>
           <button id="check-dividen-btn" class="btn btn-outline btn-block" style="margin-top:8px;" title="Baca tabel yang sedang tampil di Coretax dan bandingkan dengan file ini">Cek Hasil (Bandingkan Tabel)</button>
           <p class="muted-note">Data masuk ke <em>draft</em> — tidak dikirim ke DJP sampai Anda menandatangani sendiri.</p>
+        </div>
+
+        <!-- Pajak Masukan Tab -->
+        <div id="feature-pajakmasukan" class="feature-panel" style="display:none;">
+          <div class="info-callout">
+            <div class="callout-content">
+              <strong>Pengkreditan Pajak Masukan (per baris Excel)</strong>
+              <span>Tiap baris dicari lewat No Faktur, dicocokkan dengan data Coretax, lalu dikreditkan ke masa sesuai kolom MASA PENGKREDITAN.</span>
+            </div>
+          </div>
+
+          <ol class="hint-list">
+            <li>Pilih entitas di atas (harus PIC Coretax bertaut, bukan sesi manual).</li>
+            <li>Unduh template bila belum punya, isi kolom A–J, lalu unggah di bawah ini.</li>
+            <li>Klik <strong>Impor ke Coretax</strong>. Hasil per baris (SUKSES/GAGAL/DILEWATI + alasan) ditulis balik ke file dan disimpan di folder Downloads.</li>
+          </ol>
+
+          <a id="download-pm-template-link" class="btn btn-outline btn-block" style="margin-bottom:12px;" href="/assets/template-pajak-masukan.xlsx" download>Unduh Template Excel</a>
+
+          <label class="field-label">File Excel Terisi (.xlsx)</label>
+          <div class="file-picker-group">
+            <button id="pick-pm-file-btn" type="button" class="btn btn-outline file-btn"><span id="pm-file-label">Pilih File Excel (.xlsx)...</span></button>
+            <input type="file" id="pm-file" accept=".xlsx" style="display:none;">
+          </div>
+
+          <button id="import-pm-btn" class="btn btn-primary btn-block btn-gradient" style="margin-top:14px;">Impor ke Coretax</button>
+          <p class="muted-note">Faktur yang sudah dilaporkan di SPT, dibatalkan, dibetulkan, atau melebihi batas 3 bulan TIDAK diubah — otomatis dilewati dengan alasan tercatat di kolom KETERANGAN.</p>
         </div>
 
         <!-- Common Download Controls -->
