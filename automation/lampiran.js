@@ -14,6 +14,7 @@ const TAB_ROW_CAP = { L9: 10 };
 const COMPACT_ROWS = 50;
 const PRINT_SCALE = 0.8;
 const PRINT_STYLE_ID = '__ca_print_style';
+const watchedContexts = new WeakSet();
 
 async function waitForTabLabels(page) {
     const deadline = Date.now() + 25000;
@@ -143,10 +144,36 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
 
 async function installLampiranWidget(page, { saveRoot, entityCode, compFolder }) {
     const ctx = { saveRoot: saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), entityCode, compFolder };
-    try { await page.context().exposeFunction('__ca_downloadLampiran', (taxpayerId, recordId, taxTypeCode, mode) => downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mode)); } catch (e) {}
+    const browserContext = page.context();
+    try { await browserContext.exposeFunction('__ca_downloadLampiran', (taxpayerId, recordId, taxTypeCode, mode) => {
+        // Cari tab yang benar saat tombol diklik. `page` awal dapat berbeda karena Coretax bisa
+        // membuka form SPT pada tab baru setelah widget pertama kali dipasang.
+        const active = browserContext.pages().find(p => !p.isClosed() && p.url().includes(String(taxpayerId)) && p.url().includes(String(recordId)))
+            || browserContext.pages().find(p => !p.isClosed() && /\/(corporate|personal)-income-tax-return\//i.test(p.url())) || page;
+        return downloadLampiran(active, ctx, taxpayerId, recordId, taxTypeCode, mode);
+    }); } catch (e) {}
     const script = lampiranWidget.buildLampiranWidgetScript();
-    try { await page.context().addInitScript({ content: script }); await page.evaluate(script); }
-    catch (e) { log('[Lampiran] Gagal memasang widget: ' + e.message); }
+    try { await browserContext.addInitScript({ content: script }); }
+    catch (e) { log('[Lampiran] Gagal memasang init script: ' + e.message); }
+
+    const applyToPage = async (targetPage) => {
+        if (!targetPage || targetPage.isClosed()) return;
+        try { await targetPage.evaluate(script); }
+        catch (e) { log('[Lampiran] Gagal memasang widget pada tab ' + targetPage.url() + ': ' + e.message); }
+    };
+    // Pasang pada SEMUA tab yang sudah ada, bukan hanya tab yang dipakai saat login.
+    await Promise.all(browserContext.pages().map(applyToPage));
+    if (!watchedContexts.has(browserContext)) {
+        watchedContexts.add(browserContext);
+        // Coretax dapat membuka view SPT di tab baru. addInitScript adalah lapisan pertama;
+        // evaluasi eksplisit setelah DOM siap menjadi lapisan pemulihan jika init script pernah
+        // terlewat pada context hasil reconnect/reuse.
+        browserContext.on('page', (newPage) => {
+            newPage.once('domcontentloaded', () => applyToPage(newPage));
+            setTimeout(() => applyToPage(newPage), 1500);
+        });
+    }
+    log('[Lampiran] Widget siap pada ' + browserContext.pages().length + ' tab Coretax.');
 }
 
 module.exports = { installLampiranWidget, downloadLampiran, TAXTYPE_CONFIG, detectActiveTaxpayerName };
