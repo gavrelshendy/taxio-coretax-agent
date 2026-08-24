@@ -170,9 +170,36 @@
         return t ? t[1] : String(new Date().getFullYear());
     }
     function detectEntity() {
+        // Nama file mengikuti WP AKTIF pada pill akun Coretax, bukan field nama pada SPT.
+        // Ini penting saat PIC sedang impersonate: field form dapat tetap memuat nama pihak
+        // lain, sedangkan pill header adalah sumber sesi yang benar.
+        const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+        const tidy = (s) => clean(s).replace(/\bIMPERSONATE\b/ig, '')
+            .replace(/\b\d{15,16}\b/g, '').replace(/[·|]+/g, ' ').trim();
+        const topVisible = (e) => {
+            const r = e.getBoundingClientRect(), c = getComputedStyle(e);
+            return r.width > 0 && r.height > 0 && r.top < 150 && c.display !== 'none' && c.visibility !== 'hidden';
+        };
+        const pools = [];
+        const imp = Array.from(document.querySelectorAll('body *')).find(
+            (e) => topVisible(e) && /IMPERSONATE/i.test(clean(e.textContent)) && clean(e.textContent).length < 40);
+        if (imp) {
+            let p = imp;
+            for (let i = 0; i < 6 && p; i++, p = p.parentElement) {
+                if (topVisible(p)) pools.push(p.title, p.getAttribute('aria-label'), p.textContent);
+            }
+        }
+        Array.from(document.querySelectorAll('header [title],header [aria-label],header button,header [role="button"],nav [role="button"]'))
+            .filter(topVisible).forEach((e) => pools.push(e.title, e.getAttribute('aria-label'), e.textContent));
+        let best = '';
+        const score = (s) => { s = tidy(s); return (!s || s.length < 3 || s.length > 100) ? -1 : (/[A-Za-z]{3}/.test(s) ? 10 : 0) + s.split(' ').length; };
+        for (const raw of pools) {
+            const s = tidy(raw);
+            if (score(s) > score(best) && !/portal|beranda|profil|logout|bahasa|notifikasi/i.test(s)) best = s;
+        }
         const name = readFieldValue('Name');
         const tin = readFieldValue('Tin') || readFieldValue('CollectorTin');
-        return sanitize(name || tin) || 'SPT';
+        return sanitize(best || name || tin) || 'SPT';
     }
 
     // ---------- Alur utama ----------
