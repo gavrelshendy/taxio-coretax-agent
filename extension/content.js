@@ -174,8 +174,10 @@
         // Ini penting saat PIC sedang impersonate: field form dapat tetap memuat nama pihak
         // lain, sedangkan pill header adalah sumber sesi yang benar.
         const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
-        const tidy = (s) => clean(s).replace(/\bIMPERSONATE\b/ig, '')
-            .replace(/\b\d{15,16}\b/g, '').replace(/[·|]+/g, ' ').trim();
+        // textContent pill Coretax tidak selalu memiliki spasi pemisah antara NPWP, nama, dan
+        // label Impersonate. Hapus berdasarkan bentuknya tanpa bergantung pada batas kata.
+        const tidy = (s) => clean(s).replace(/IMPERSONATE/ig, '')
+            .replace(/\d{15,16}/g, '').replace(/[·|]+/g, ' ').trim();
         const topVisible = (e) => {
             const r = e.getBoundingClientRect(), c = getComputedStyle(e);
             return r.width > 0 && r.height > 0 && r.top < 150 && c.display !== 'none' && c.visibility !== 'hidden';
