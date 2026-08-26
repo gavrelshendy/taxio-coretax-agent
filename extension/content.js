@@ -23,11 +23,19 @@
 (() => {
     'use strict';
 
-    const KIND_TO_TAXTYPE = {
-        'corporate-income-tax-return': 'ICT_RCIT',  // SPT Badan 1771
-        'personal-income-tax-return': 'ICT_PIT'     // SPT Orang Pribadi 1770
+    const SPT_CONFIG = {
+        ICT_RCIT: { formCode: '1771', annual: true, kind: 'corporate-income-tax-return',
+            root: 'rshshr-corporate-income-tax-return', title: 'SPT TAHUNAN PAJAK PENGHASILAN (PPh) WAJIB PAJAK BADAN' },
+        ICT_PIT: { formCode: '1770', annual: true, kind: 'personal-income-tax-return',
+            root: 'rshshr-personal-income-tax-return', title: 'SPT TAHUNAN PAJAK PENGHASILAN (PPh) WAJIB PAJAK ORANG PRIBADI' },
+        ICT_WIT: { formCode: 'SPT MASA PPH 21-26', kind: 'article-21-26-tax-return',
+            root: 'rshshr-article-twentyone-twentysix-tax-return', title: 'PEMOTONGAN PPH PASAL 21 DAN/ATAU PASAL 26' },
+        ICT_WT: { formCode: 'SPT MASA PPH UNIFIKASI', kind: 'withholding-tax-return',
+            root: 'rshshr-withholding-return', title: 'SPT MASA PPH UNIFIKASI' },
+        VAT_VAT: { formCode: 'SPT MASA PPN', kind: 'value-added-tax-return',
+            root: 'rshshr-normal-value-add-tax-return', title: 'SURAT PEMBERITAHUAN MASA PAJAK PERTAMBAHAN NILAI (SPT MASA PPN)' }
     };
-    const FORM_CODE = { ICT_RCIT: '1771', ICT_PIT: '1770' };
+    const KIND_TO_TAXTYPE = Object.fromEntries(Object.entries(SPT_CONFIG).map(([code, config]) => [config.kind, code]));
     // Cocok untuk halaman SPT terlapor (…?view=true) MAUPUN konsep/draft (…/01122025) - keduanya
     // sudah diverifikasi live.
     const URL_RE = new RegExp('/(' + Object.keys(KIND_TO_TAXTYPE).join('|') +
@@ -48,7 +56,7 @@
 
     function parseTarget() {
         const m = URL_RE.exec(window.location.pathname);
-        return m ? { kind: m[1], taxTypeCode: KIND_TO_TAXTYPE[m[1]] } : null;
+        return m ? { kind: m[1], taxTypeCode: KIND_TO_TAXTYPE[m[1]], config: SPT_CONFIG[KIND_TO_TAXTYPE[m[1]]] } : null;
     }
 
     function isVisible(el) {
@@ -59,29 +67,258 @@
     }
 
     // ---------- Persiapan cetak ----------
-    function preparePageForPrint() {
+    function preparePageForPrint(tabLabel, metadata) {
         const css = `
+            table.__ca_layout > colgroup[data-ca-layout] { display: none; }
+            #__ca_print_header { display: none; }
             @page { size: A3 landscape; margin: 8mm; }
             @media print {
-                html, body { background: #ffffff !important; }
-                nav, aside, footer, [class*="sidebar" i], [class*="side-nav" i], [class*="footer" i],
-                #${BTN_ID} { display: none !important; }
+                html, body, nui-shell-twostep { background: #ffffff !important;
+                    background-image: none !important; }
+                main.tw-content-wrap { margin-top: 0 !important; padding-top: 0 !important; }
+                nav, aside, footer, .p-tabview-nav-container, .p-tabview-nav-content, .p-tabview-nav,
+                [class*="sidebar" i], [class*="side-nav" i], [class*="footer" i],
+                #${BTN_ID}, button, .p-button { display: none !important; }
+                .__ca_source_title { display: none !important; }
+                #__ca_print_header { display: grid !important; grid-template-columns: 180px 1fr 300px;
+                    align-items: center; gap: 16px; border-bottom: 2px solid #172554;
+                    padding: 0 4px 10px; margin: 0 0 12px; break-inside: avoid;
+                    page-break-inside: avoid; }
+                #__ca_print_header img { width: 160px; height: auto; object-fit: contain; }
+                #__ca_print_header .ca-ph-title { text-align: center; color: #172554;
+                    font-size: 14pt; font-weight: 700; line-height: 1.2; }
+                #__ca_print_header .ca-ph-sub { text-align: center; color: #475569;
+                    font-size: 11pt; font-weight: 700; letter-spacing: .3px;
+                    margin-top: 5px; text-transform: uppercase; }
+                #__ca_print_header .ca-ph-wp { text-align: right; color: #172554;
+                    font-size: 10.5pt; line-height: 1.45; font-variant-numeric: tabular-nums; }
+                #__ca_print_header .ca-ph-wp span { display: block; }
+                #__ca_print_header .ca-ph-wp .ca-ph-name { font-weight: 700; }
+                h1, h2 { text-align: left !important; font-size: 13pt !important;
+                    line-height: 1.25 !important; margin: 8px 0 10px !important; }
                 .p-datatable-wrapper, [class*="datatable" i], [class*="table-wrap" i],
                 [class*="scroll" i] { overflow: visible !important; }
                 table { width: 100% !important; max-width: 100% !important;
-                        table-layout: auto !important; font-size: 7.5pt !important; }
-                th, td { padding: 2px 3px !important; white-space: normal !important;
-                         word-break: break-word !important; min-width: 0 !important; }
-                col, colgroup { width: auto !important; }
+                        table-layout: fixed !important; font-size: 10pt !important; }
+                table.__ca_table_wide { font-size: 9.5pt !important; }
+                table.__ca_layout thead, table.__ca_layout thead tr,
+                table.__ca_layout thead th, table.__ca_layout thead th * {
+                    background: #eaf0f4 !important; color: #172554 !important; }
+                table.__ca_layout thead tr, table.__ca_layout thead th {
+                    height: auto !important; min-height: 0 !important; }
+                table.__ca_layout thead th { font-size: 9.5pt !important; font-weight: 600 !important;
+                    text-align: center !important; vertical-align: middle !important;
+                    white-space: normal !important; overflow: visible !important;
+                    text-overflow: clip !important; }
+                table.__ca_layout thead th * { white-space: normal !important; overflow: visible !important;
+                    text-overflow: clip !important; height: auto !important; min-height: 0 !important; }
+                .p-datatable-header, .p-paginator, tr.__ca_filter_row,
+                table.__ca_filter_table, .p-sortable-column-icon,
+                .p-sortable-column-badge { display: none !important; }
+                th, td { padding: 3px 4px !important; white-space: normal !important;
+                         word-break: normal !important; overflow-wrap: anywhere !important;
+                         min-width: 0 !important; line-height: 1.25 !important; }
+                table.__ca_layout tbody td * { white-space: inherit !important;
+                    overflow: visible !important; text-overflow: clip !important;
+                    max-width: 100% !important; }
+                th.__ca_col_action, td.__ca_col_action { visibility: hidden !important;
+                    padding: 0 !important; border: 0 !important; width: 0 !important;
+                    max-width: 0 !important; font-size: 0 !important; overflow: hidden !important; }
+                th.__ca_col_no, td.__ca_col_no { text-align: center !important; }
+                th.__ca_col_no { white-space: nowrap !important; overflow-wrap: normal !important;
+                    word-break: normal !important; }
+                th.__ca_col_date, td.__ca_col_date { text-align: center !important;
+                    white-space: nowrap !important; font-variant-numeric: tabular-nums !important; }
+                th.__ca_col_id, td.__ca_col_id { white-space: nowrap !important;
+                    font-variant-numeric: tabular-nums !important; }
+                td.__ca_col_account { white-space: nowrap !important; overflow: visible !important; }
+                th.__ca_numeric, td.__ca_numeric { text-align: right !important;
+                    white-space: nowrap !important; padding-left: 1px !important;
+                    padding-right: 2px !important; font-variant-numeric: tabular-nums !important; }
+                table.__ca_layout > colgroup[data-ca-layout] { display: table-column-group !important; }
+                table.__ca_layout > colgroup:not([data-ca-layout]) { display: none !important; }
+                table.__ca_layout > colgroup[data-ca-layout] > col { width: var(--ca-width) !important;
+                    min-width: 0 !important; }
             }`;
+        const profileForHeader = (text) => {
+            const h = String(text || '').replace(/\s+/g, ' ')
+                .replace(/(?:SILAKAN )?PILIH [^>]+/g, '').trim().toUpperCase();
+            if (/^TINDAKAN$/.test(h)) return ['action', 0];
+            if (/^(NO\.?|NOMOR|NO\. URUT)$/.test(h)) return ['no', 4];
+            if (/NITKU|ID TEMPAT KEGIATAN USAHA|IDENTITAS SUBUNIT ORGANISASI/.test(h)) return ['id', 22];
+            if (/NPWP|NIK|(?:^|\/)TIN(?:$|\s)|NOMOR IDENTITAS|IDENTITAS PENERIMA/.test(h)) return ['id', 17];
+            if (/FILENAME|NAMA FILE/.test(h)) return ['filename', 32];
+            if (/NAMA AKUN/.test(h)) return ['account', 32];
+            if (/KODE DAN NOMOR SERI|KODE.*FAKTUR|NOMOR SERI FAKTUR/.test(h)) return ['code', 18];
+            if (/KODE PENYESUAIAN/.test(h)) return ['code', 15];
+            if (/KODE OBJEK/.test(h)) return ['code', 10];
+            if (/KODE AKUN|KODE HARTA|^KODE$/.test(h)) return ['code', 5];
+            if (/NOMOR BUKTI POTONG|BUKTI POTONG.*NOMOR|NOMOR DOKUMEN|DOKUMEN.*NOMOR/.test(h)) return ['code', 17];
+            if (/BULAN\/TAHUN|TANGGAL|TAHUN PEROLEHAN/.test(h)) return ['date', 11];
+            if (/NEGARA/.test(h)) return ['short', 10];
+            if (/JENIS PAJAK/.test(h)) return ['short', 13];
+            if (/METODE.*(?:KOMERSIAL|FISKAL)|^(?:KOMERSIAL|FISKAL)$/.test(h)) return ['short', 12];
+            if (/TINGKAT|PERSENTASE|(?:^|>)\s*%/.test(h)) return ['numeric', 8];
+            if (/NILAI|JUMLAH|DPP|^PPN(?:BM)?(?:\s|$)|PAJAK PENGHASILAN|PAJAK TERUTANG|BIAYA|AMOUNT|RUPIAH|KOMPENSASI|HARGA|PEROLEHAN|PENYUSUTAN|PENGHASILAN BRUTO|SALDO|PIUTANG|UTANG|LUAS|MODAL DISETOR|DIVIDEN/.test(h)) return ['numeric', 12];
+            if (/NAMA/.test(h)) return ['name', 16];
+            if (/DESKRIPSI|KETERANGAN|ALAMAT|KELOMPOK|JENIS|METODE|ALASAN|PEKERJAAN|KEGIATAN USAHA|OBJEK PAJAK|BENTUK HUBUNGAN/.test(h)) return ['long', 22];
+            if (/LOKASI|UKURAN|SUMBER KEPEMILIKAN|KEPEMILIKAN|NOMOR AKUN|NOMOR POLISI|NOMOR SERTIFIKAT|REGISTRASI|MATA UANG|HUBUNGAN|KATEGORI|TIPE|MERK|JABATAN|STATUS|KAP-KJS/.test(h)) return ['short', 11];
+            return ['default', 12];
+        };
+        const classForKind = (kind) => kind === 'action' ? '__ca_col_action' :
+            kind === 'no' ? '__ca_col_no' : kind === 'date' ? '__ca_col_date' : kind === 'id' ? '__ca_col_id' :
+                kind === 'account' ? '__ca_col_account' : kind === 'numeric' ? '__ca_numeric' : '';
+        Array.from(document.querySelectorAll('table')).filter(isVisible).forEach((table) => {
+            table.classList.remove('__ca_table_wide', '__ca_filter_table', '__ca_layout');
+            table.querySelectorAll('colgroup[data-ca-layout]').forEach((el) => el.remove());
+            table.querySelectorAll('th,td').forEach((cell) => cell.classList.remove(
+                '__ca_col_action', '__ca_col_no', '__ca_col_date', '__ca_col_id', '__ca_col_account', '__ca_numeric'));
+            const rows = Array.from(table.tHead ? table.tHead.rows : []);
+            const grid = [], meta = [];
+            let cols = 0;
+            rows.forEach((row, rowIndex) => {
+                grid[rowIndex] = grid[rowIndex] || [];
+                let position = 0;
+                Array.from(row.cells).forEach((th) => {
+                    while (grid[rowIndex][position]) position++;
+                    const colSpan = th.colSpan || 1, rowSpan = th.rowSpan || 1;
+                    const text = (th.textContent || '').replace(/\s+/g, ' ').trim();
+                    for (let r = rowIndex; r < rowIndex + rowSpan; r++) {
+                        grid[r] = grid[r] || [];
+                        for (let c = position; c < position + colSpan; c++) grid[r][c] = true;
+                    }
+                    for (let c = position; c < position + colSpan; c++) {
+                        meta[c] = meta[c] || { texts: [], controls: false, cells: [] };
+                        if (text) meta[c].texts.push(text);
+                        meta[c].controls = meta[c].controls || !!th.querySelector(
+                            'input,select,.p-dropdown,.p-calendar,.p-column-filter');
+                        meta[c].cells.push(th);
+                    }
+                    position += colSpan;
+                    cols = Math.max(cols, position);
+                });
+            });
+            if (!cols) return;
+            for (let i = 0; i < cols; i++) meta[i] = meta[i] || { texts: [], controls: false, cells: [] };
+            rows.forEach((row) => {
+                row.classList.toggle('__ca_filter_row', !!row.querySelector(
+                    'input,select,.p-column-filter,.p-dropdown,.p-calendar'));
+                Array.from(row.cells).forEach((th) => {
+                    const walker = document.createTreeWalker(th, NodeFilter.SHOW_TEXT);
+                    let node;
+                    while ((node = walker.nextNode())) node.nodeValue = node.nodeValue
+                        .replace(/NPWPW/g, 'NPWP').replace(/\(Rp\.\)Rp\.\)/g, '(Rp.)');
+                    th.style.setProperty('background-color', '#eaf0f4', 'important');
+                    th.style.setProperty('color', '#172554', 'important');
+                    th.querySelectorAll('*').forEach((element) => {
+                        element.style.setProperty('background-color', 'transparent', 'important');
+                        element.style.setProperty('color', '#172554', 'important');
+                    });
+                });
+            });
+            const meaningful = meta.some((item) => item.texts.some((text) =>
+                !/^SILAKAN PILIH|^PILIH /i.test(text)));
+            if (!meaningful && meta.some((item) => item.controls)) {
+                table.classList.add('__ca_filter_table');
+                return;
+            }
+            const bodyRows = Array.from(table.tBodies).flatMap((body) => Array.from(body.rows)).slice(0, 60);
+            meta.forEach((item, col) => {
+                let seen = 0, numeric = 0, identity = 0, date = 0, checks = 0, maxLength = 0;
+                const leafHeader = item.texts[item.texts.length - 1] || '';
+                const fullHeader = item.texts.join(' > ');
+                bodyRows.forEach((tr) => {
+                    const cell = tr.cells[col]; if (!cell) return;
+                    if (cell.querySelector('input[type="checkbox"],button,.p-button')) checks++;
+                    const clone = cell.cloneNode(true);
+                    clone.querySelectorAll('.p-column-title,[class*="column-title" i]').forEach((el) => el.remove());
+                    const value = (clone.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!value || /^(?:TIDAK ADA DATA|NO RECORDS?)/i.test(value)) return;
+                    seen++; maxLength = Math.max(maxLength, value.length);
+                    if (/^(Rp\.?\s*)?[-(]?[0-9.,]+[)]?$/.test(value)) numeric++;
+                    if (/^\d{15,22}$/.test(value.replace(/\D/g, ''))) identity++;
+                    if (/^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(value)) date++;
+                });
+                let profile = profileForHeader(fullHeader || leafHeader);
+                if (!leafHeader && !seen && !item.controls) profile = ['action', 0];
+                else if (checks && checks >= Math.max(1, bodyRows.length * 0.5)) profile = ['action', 0];
+                else if (seen && identity / seen >= 0.7) profile = ['id', Math.max(17, Math.min(23, maxLength + 1))];
+                else if (seen && date / seen >= 0.7) profile = ['date', 11];
+                else if (seen >= 1 && numeric / seen >= 0.7 && profile[0] === 'default') profile = ['numeric', 12];
+                if (profile[0] === 'id') profile[1] = Math.max(profile[1], Math.min(23, maxLength + 1));
+                if (profile[0] === 'numeric') profile[1] = Math.max(6, Math.min(17, maxLength + 2));
+                if (profile[0] === 'name') profile[1] = Math.max(14, Math.min(24, 8 + maxLength * 0.45));
+                if (profile[0] === 'account') profile[1] = Math.max(26, Math.min(36, 10 + maxLength * 0.5));
+                if (profile[0] === 'long') profile[1] = Math.max(16, Math.min(30, 10 + maxLength * 0.35));
+                if (profile[0] === 'filename') profile[1] = Math.max(28, Math.min(42, 12 + maxLength * 0.5));
+                if (item.controls && profile[0] === 'default') profile = ['dropdown', 14];
+                item.kind = profile[0]; item.weight = profile[1];
+                const cls = classForKind(item.kind);
+                if (cls) {
+                    item.cells.filter((cell) => cell.colSpan === 1).forEach((cell) => cell.classList.add(cls));
+                    bodyRows.forEach((tr) => { if (tr.cells[col]) tr.cells[col].classList.add(cls); });
+                }
+            });
+            const total = meta.reduce((sum, item) => sum + item.weight, 0) || 1;
+            const colgroup = document.createElement('colgroup');
+            colgroup.dataset.caLayout = '1';
+            meta.forEach((item) => {
+                const col = document.createElement('col');
+                col.style.setProperty('--ca-width', item.weight ?
+                    ((item.weight / total) * 100).toFixed(3) + '%' : '0%');
+                colgroup.appendChild(col);
+            });
+            table.insertBefore(colgroup, table.firstChild);
+            table.classList.add('__ca_layout');
+            if (cols >= 11) table.classList.add('__ca_table_wide');
+        });
         let el = document.getElementById(PRINT_STYLE_ID);
         if (!el) {
             el = document.createElement('style');
             el.id = PRINT_STYLE_ID;
-            el.textContent = css;
         }
+        el.textContent = css;
         // appendChild memindahkan ke posisi terakhir supaya selalu menang atas style Coretax.
         document.head.appendChild(el);
+
+        const root = document.querySelector(metadata && metadata.rootSelector) || document.querySelector(
+            'rshshr-corporate-income-tax-return,rshshr-personal-income-tax-return,' +
+            'rshshr-article-twentyone-twentysix-tax-return,rshshr-withholding-return,' +
+            'rshshr-normal-value-add-tax-return');
+        if (root) {
+            const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+            let header = document.getElementById('__ca_print_header');
+            if (!header) {
+                header = document.createElement('div'); header.id = '__ca_print_header';
+                header.innerHTML = '<div class="ca-ph-logo"></div><div><div class="ca-ph-title"></div>' +
+                    '<div class="ca-ph-sub"></div></div><div class="ca-ph-wp"></div>';
+                root.prepend(header);
+            }
+            const logo = Array.from(document.images).find((img) =>
+                /Logo-Coretax-DJP-Kemenkeu/i.test(img.src));
+            const logoBox = header.querySelector('.ca-ph-logo'); logoBox.replaceChildren();
+            if (logo) { const copy = logo.cloneNode(); copy.removeAttribute('style'); logoBox.appendChild(copy); }
+            const formTitle = clean(metadata && metadata.formTitle) || 'SURAT PEMBERITAHUAN (SPT)';
+            Array.from(root.querySelectorAll('h1,h2,h3')).find((heading) =>
+                clean(heading.textContent).toUpperCase() === formTitle.toUpperCase())?.classList.add('__ca_source_title');
+            header.querySelector('.ca-ph-title').textContent = formTitle;
+            header.querySelector('.ca-ph-sub').textContent =
+                ('LAMPIRAN ' + clean(tabLabel || 'SPT')).toUpperCase();
+            const year = (metadata && metadata.year) || detectYear();
+            const tinField = document.querySelector('[formcontrolname="Tin"],[formcontrolname="CollectorTin"]');
+            let tin = clean(tinField && (tinField.value || tinField.textContent));
+            const candidates = Array.from(document.querySelectorAll('header *,nav *'))
+                .map((node) => clean(node.textContent));
+            if (!tin) tin = (candidates.join(' ').match(/\d{15,16}/) || [''])[0];
+            const name = clean(metadata && metadata.entity) || 'WAJIB PAJAK';
+            const wp = header.querySelector('.ca-ph-wp'); wp.replaceChildren();
+            const npwpLine = document.createElement('span');
+            npwpLine.textContent = tin ? 'NPWP: ' + tin : 'NPWP: -'; wp.appendChild(npwpLine);
+            const nameLine = document.createElement('span'); nameLine.className = 'ca-ph-name';
+            const periodLabel = clean(metadata && metadata.periodLabel) || (year && 'Tahun ' + year);
+            nameLine.textContent = [name, periodLabel].filter(Boolean).join(' · ');
+            wp.appendChild(nameLine);
+        }
     }
 
     // ---------- Tab ----------
@@ -154,6 +391,55 @@
         return done;
     }
 
+    async function resetPaginators() {
+        let clicked = 0;
+        Array.from(document.querySelectorAll('.p-paginator')).filter(isVisible).forEach((paginator) => {
+            const first = paginator.querySelector('.p-paginator-first');
+            if (first && !first.disabled && !first.classList.contains('p-disabled')) { first.click(); clicked++; }
+        });
+        if (clicked) await sleep(700);
+    }
+
+    function paginatorStates() {
+        let index = 0;
+        return Array.from(document.querySelectorAll('.p-paginator')).filter(isVisible).map((paginator) => {
+            paginator.dataset.caPaginatorId = String(index++);
+            const text = (paginator.textContent || '').replace(/\s+/g, ' ').trim();
+            const match = text.match(/(?:of|dari)\s+([\d.,]+)\s+(?:entries|entri)/i);
+            return { id: paginator.dataset.caPaginatorId, total: match ? parseInt(match[1].replace(/[.,]/g, ''), 10) : 0 };
+        }).filter((state) => state.total > 0);
+    }
+
+    async function capturePagedPdfs(mode) {
+        await resetPaginators();
+        const states = paginatorStates();
+        const first = await chrome.runtime.sendMessage({ type: 'captureTab' });
+        if (!first || !first.ok || !first.b64) throw new Error((first && first.error) || 'Gagal mencetak halaman pertama.');
+        const list = [first.b64];
+        if (mode !== 'full') return list;
+        for (const state of states) {
+            const paginator = document.querySelector('.p-paginator[data-ca-paginator-id="' + state.id + '"]');
+            if (!paginator) continue;
+            let guard = 0;
+            while (guard++ < 10000) {
+                const next = paginator.querySelector('.p-paginator-next');
+                if (!next || next.disabled || next.classList.contains('p-disabled')) break;
+                const before = (paginator.textContent || '').replace(/\s+/g, ' ').trim();
+                next.click(); await sleep(650);
+                const after = (paginator.textContent || '').replace(/\s+/g, ' ').trim();
+                if (after === before) break;
+                const captured = await chrome.runtime.sendMessage({ type: 'captureTab' });
+                if (!captured || !captured.ok || !captured.b64) throw new Error((captured && captured.error) || 'Gagal mencetak lanjutan paginator.');
+                list.push(captured.b64);
+            }
+            const firstButton = paginator.querySelector('.p-paginator-first');
+            if (firstButton && !firstButton.disabled && !firstButton.classList.contains('p-disabled')) {
+                firstButton.click(); await sleep(650);
+            }
+        }
+        return list;
+    }
+
     // ---------- Identitas untuk nama file ----------
     function readFieldValue(name) {
         const el = document.querySelector('[formcontrolname="' + name + '"]');
@@ -168,6 +454,35 @@
         if (v) return v[0];
         const t = (document.body.innerText || '').match(/(?:Tahun Pajak|Tax Year)[^\d]*(\d{4})/i);
         return t ? t[1] : String(new Date().getFullYear());
+    }
+    function detectPeriod(config) {
+        const year = detectYear();
+        if (config.annual) return { year, fileLabel: year, headerLabel: 'Tahun ' + year };
+        const names = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+        const compact = readFieldValue('Period') || readFieldValue('TaxPeriodYear');
+        const compactMatch = compact.match(/^(0?[1-9]|1[0-2])(\d{4})$/);
+        if (compactMatch) {
+            const month = names[Number(compactMatch[1]) - 1];
+            return { year: compactMatch[2], fileLabel: month + ' ' + compactMatch[2], headerLabel: 'Masa Pajak ' + month + ' ' + compactMatch[2] };
+        }
+        const monthValue = readFieldValue('TaxPeriodMonth');
+        const yearValue = readFieldValue('TaxPeriodYear');
+        if (/^(?:[1-9]|1[0-2])$/.test(monthValue) && /^\d{4}$/.test(yearValue)) {
+            const month = names[Number(monthValue) - 1];
+            return { year: yearValue, fileLabel: month + ' ' + yearValue, headerLabel: 'Masa Pajak ' + month + ' ' + yearValue };
+        }
+        const months = 'Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember';
+        const match = (document.body.innerText || '').match(new RegExp('Masa Pajak\\s*(' + months + ')\\s*(\\d{4})', 'i'));
+        if (match) {
+            const month = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+            return { year: match[2], fileLabel: month + ' ' + match[2], headerLabel: 'Masa Pajak ' + month + ' ' + match[2] };
+        }
+        const urlDate = location.pathname.match(/\/(\d{2})(\d{2})(\d{4})\//);
+        if (urlDate) {
+            const month = names[Math.max(0, Math.min(11, Number(urlDate[2]) - 1))];
+            return { year: urlDate[3], fileLabel: month + ' ' + urlDate[3], headerLabel: 'Masa Pajak ' + month + ' ' + urlDate[3] };
+        }
+        return { year, fileLabel: year, headerLabel: 'Tahun ' + year };
     }
     function detectEntity() {
         // Nama file mengikuti WP AKTIF pada pill akun Coretax, bukan field nama pada SPT.
@@ -227,8 +542,10 @@
         if (!labels.length) { setLabel('❌ Tab lampiran belum muncul - coba lagi'); return; }
 
         const entity = detectEntity();
-        const year = detectYear();
-        const formCode = FORM_CODE[target.taxTypeCode] || target.taxTypeCode;
+        const config = target.config;
+        const period = detectPeriod(config);
+        const year = period.year;
+        const formCode = config.formCode;
 
         const begin = await chrome.runtime.sendMessage({
             type: 'beginPrintSession', entity, year, formCode,
@@ -260,26 +577,36 @@
                 // Hanya SATU versi per tab, sesuai mode yang dipilih user di awal. Sufiks nama
                 // dipakai hanya untuk lampiran yang memang punya dua versi, supaya hasil mode
                 // Print dan Lengkap tidak saling menimpa kalau dijalankan dua kali.
-                const twoVersion = TWO_VERSION_TABS.indexOf(label) !== -1;
+                const twoVersion = !config.annual || TWO_VERSION_TABS.indexOf(label) !== -1;
                 const suffix = twoVersion ? (mode === 'print' ? ' (Print)' : ' (Lengkap)') : '';
                 const tableMode = mode === 'print' ? 'compact' : 'all';
 
                 setLabel('⏳ ' + label + ' (' + (i + 1) + '/' + labels.length + ')');
                 await setUpTables(label, tableMode);
-                preparePageForPrint();
+                preparePageForPrint(label, { entity, year, periodLabel: period.headerLabel,
+                    rootSelector: config.root, formTitle: config.title });
                 await sleep(300);
 
+                const prefix = config.annual ? formCode + ' LAMPIRAN' : formCode;
                 const filename = 'CoretaxLampiran/' + entity + '/' + year + '/' +
-                    entity + ' - ' + formCode + ' LAMPIRAN ' + sanitize(label + suffix) + ' ' + year + '.pdf';
-                const res = await chrome.runtime.sendMessage({ type: 'printTab', filename });
+                    entity + ' - ' + prefix + ' ' + sanitize(label + suffix) + ' ' + period.fileLabel + '.pdf';
+                const captures = await capturePagedPdfs(mode);
+                let res;
+                if (captures.length === 1) {
+                    res = await chrome.runtime.sendMessage({ type: 'saveBase64', base64: captures[0], filename });
+                    if (res && res.ok) res.b64 = captures[0];
+                } else {
+                    res = await chrome.runtime.sendMessage({ type: 'mergeAndSave', list: captures, filename, returnBase64: true });
+                }
                 if (res && res.ok) { saved++; if (res.b64) pages.push(res.b64); } else failed++;
             }
         } finally {
             if (pages.length) {
                 setLabel('⏳ Menggabungkan ' + pages.length + ' lampiran...');
                 const mergeName = mode === 'print' ? 'GABUNGAN (Print)' : 'GABUNGAN (Lengkap)';
+                const prefix = config.annual ? formCode + ' LAMPIRAN' : formCode;
                 const mf = 'CoretaxLampiran/' + entity + '/' + year + '/' +
-                    entity + ' - ' + formCode + ' LAMPIRAN ' + mergeName + ' ' + year + '.pdf';
+                    entity + ' - ' + prefix + ' ' + mergeName + ' ' + period.fileLabel + '.pdf';
                 const mres = await chrome.runtime.sendMessage({ type: 'mergeAndSave', list: pages, filename: mf });
                 if (mres && mres.ok) saved++; else failed++;
             }

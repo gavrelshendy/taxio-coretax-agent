@@ -13,7 +13,7 @@
    landscape sebagai stylesheet terakhir; opsi ini yang membuat Chrome memakainya. Karena ukuran
    & margin datang dari CSS, JANGAN kirim paperWidth/paperHeight/landscape di sini. */
 
-const PRINT_SCALE = 0.8;
+const PRINT_SCALE = 0.9;
 const attached = new Set();
 // Halaman terkumpul per sesi, untuk dua berkas GABUNGAN di akhir.
 const bucket = new Map(); // tabId -> { entity, year, formCode } (halaman PDF disimpan di content script, bukan di sini)
@@ -107,6 +107,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 return { ok: true, b64 };
             }
 
+            if (msg.type === 'captureTab') {
+                return { ok: true, b64: await printTab(tabId) };
+            }
+
+            if (msg.type === 'saveBase64') {
+                await saveBase64(msg.base64, msg.filename);
+                return { ok: true };
+            }
+
             if (msg.type === 'endPrintSession') {
                 bucket.delete(tabId);
                 if (attached.has(tabId)) { attached.delete(tabId); await detach({ tabId }); }
@@ -114,6 +123,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
 
             if (msg.type === 'mergeAndSave') {
+                if (msg.returnBase64) {
+                    const merged = await offscreen({ type: 'mergeToBase64', list: msg.list });
+                    await saveBase64(merged.base64, msg.filename);
+                    return { ok: true, b64: merged.base64 };
+                }
                 const { url } = await offscreen({ type: 'mergeToBlobUrl', list: msg.list });
                 await download({ url, filename: msg.filename, saveAs: false, conflictAction: 'uniquify' });
                 setTimeout(() => { offscreen({ type: 'revoke', url }).catch(() => {}); }, 60000);
