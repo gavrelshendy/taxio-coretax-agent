@@ -29,6 +29,9 @@ Tombol hanya muncul di halaman formulir SPT. Di halaman daftar SPT, tombol meman
 |---|---|---|
 | PPh Badan | 1771 | ✅ diverifikasi live |
 | PPh Orang Pribadi | 1770 | ✅ diverifikasi live |
+| PPh Pasal 21/26 | SPT Masa PPh 21/26 | ✅ struktur tab diverifikasi live |
+| PPh Unifikasi | SPT Masa PPh Unifikasi | ✅ struktur tab diverifikasi live |
+| PPN | SPT Masa PPN | ✅ struktur tab dan paginator diverifikasi live |
 
 Berlaku untuk SPT yang **sudah dilaporkan** maupun yang masih **konsep/draft**.
 
@@ -37,11 +40,11 @@ Berlaku untuk SPT yang **sudah dilaporkan** maupun yang masih **konsep/draft**.
 - **A3 landscape** - supaya tabel lebar (neraca, daftar 12 bulan, kolom DPP/PPh) tidak terpotong.
   Coretax sendiri mendeklarasikan `@page { size: a3 }`, jadi ukuran ini memang sesuai desain
   formulirnya.
-- **Semua baris tabel ikut tercetak.** Bawaan Coretax hanya menampilkan 10 baris pertama; tanpa
-  ini sisanya hilang dari PDF.
-- **Tabel besar dibatasi** (di atas 300 baris → 50 baris) supaya PDF tidak membengkak.
-- **L3, L4, dan L9 menghasilkan 2 file**: `(Print)` yang dibatasi agar enak dicetak, dan
-  `(Lengkap)` berisi seluruh baris untuk arsip.
+- Pilih **Versi Print** untuk halaman pertama setiap tabel: cepat dan ringkas.
+- Pilih **Versi Lengkap** untuk menelusuri seluruh paginator Coretax sampai halaman terakhir.
+  Jika 120 baris ditampilkan 10 per halaman, extension mengambil 12 batch lalu menggabungkannya.
+- Keduanya menghasilkan PDF per lampiran dan satu PDF `GABUNGAN`, dengan suffix `(Print)` atau
+  `(Lengkap)` agar berkas tidak saling menimpa.
 - Menu samping dan footer DJP tidak ikut tercetak.
 
 ## Catatan penting
@@ -53,6 +56,5 @@ begitu proses selesai. Jangan tutup tab selama proses berlangsung.
 
 ## Batasan
 
-- Hanya untuk PPh Badan (1771) dan OP (1770). Jenis SPT lain belum dipetakan.
 - Tidak menyalin hasil ke folder compliance seperti aplikasi desktop - extension hanya bisa
   menulis ke dalam folder Downloads.

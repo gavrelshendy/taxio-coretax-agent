@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const { preparePageForPrint } = require('../automation/lampiran');
 
 (async () => {
-    const browser = await chromium.connectOverCDP('http://127.0.0.1:9741');
+    const browser = await chromium.connectOverCDP('http://127.0.0.1:' + (process.env.CA_CDP_PORT || '10070'));
     const page = browser.contexts().flatMap((context) => context.pages())
         .find((candidate) => /corporate-income-tax-return/i.test(candidate.url()));
     if (!page) throw new Error('Halaman SPT Badan tidak ditemukan.');
@@ -18,7 +18,7 @@ const { preparePageForPrint } = require('../automation/lampiran');
         }
     }
     await page.waitForTimeout(1200);
-    await preparePageForPrint(page, 'L1-B', { entity: 'DION FARMA ABADI', year: '2025' });
+    await preparePageForPrint(page, 'L1-B', { entity: 'BAROQUE BENANG HARAPAN', year: '2025' });
     const session = await page.context().newCDPSession(page);
     const result = await session.send('Page.printToPDF', {
         printBackground: true, preferCSSPageSize: true, scale: 0.9

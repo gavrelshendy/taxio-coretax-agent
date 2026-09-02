@@ -7,6 +7,8 @@ dist/
 _scratch/
 scratch/
 test/
+fixtures/
+output/
 Test Impor Dividen*.xlsx
 Control Hasil Impor*.xlsx
 Cek Hasil Dividen*.xlsx
