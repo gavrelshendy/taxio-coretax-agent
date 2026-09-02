@@ -311,6 +311,30 @@
             </label>
           </div>
 
+          <label class="custom-checkbox-card" style="margin-top:12px;">
+            <input type="checkbox" id="spt-download-lampiran">
+            <span class="checkbox-indicator"></span>
+            <span class="checkbox-text">Unduh Lampiran</span>
+          </label>
+
+          <div id="spt-lampiran-options" style="display:none;margin-top:10px;">
+            <div class="form-group">
+              <label class="field-label" for="spt-lampiran-mode">Mode Lampiran</label>
+              <select id="spt-lampiran-mode" class="styled-select">
+                <option value="print">Print - cepat, data dibatasi</option>
+                <option value="full">Lengkap - seluruh data</option>
+                <option value="confidential">Confidential - ringkasan PPh 21</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="spt-output-layout">Hasil PDF</label>
+              <select id="spt-output-layout" class="styled-select">
+                <option value="combined">Gabungan - BPE, Induk, lalu Lampiran</option>
+                <option value="separate">Terpisah - setiap dokumen sendiri</option>
+              </select>
+            </div>
+          </div>
+
           <div class="form-group">
             <label class="field-label" for="spt-masa-input" id="spt-masa-label">Masa Pajak <i class="hint-icon" id="spt-masa-hint" title="mis. 0126;0226 atau 0125-1225">?</i></label>
             <input type="text" id="spt-masa-input" class="styled-input">

@@ -409,6 +409,15 @@
     $('spt-masa-label').firstChild.textContent = isAnnual ? 'Tahun Pajak ' : 'Masa Pajak ';
     $('spt-masa-hint').title = isAnnual ? 'mis. 2025 atau 2024-2025' : 'mis. 0126;0226 atau 0125-1225';
   }
+  function updateSptLampiranOptions() {
+    const enabled = $('spt-download-lampiran').checked;
+    $('spt-lampiran-options').style.display = enabled ? 'block' : 'none';
+    const keys = [...document.querySelectorAll('.spt-jenis:checked')].map((item) => item.value);
+    const confidential = $('spt-lampiran-mode').querySelector('option[value="confidential"]');
+    const confidentialAllowed = keys.length === 1 && keys[0] === 'pph21';
+    confidential.disabled = !confidentialAllowed;
+    if (!confidentialAllowed && $('spt-lampiran-mode').value === 'confidential') $('spt-lampiran-mode').value = 'print';
+  }
   document.querySelectorAll('.spt-jenis').forEach((cb) => cb.addEventListener('change', () => {
     if (cb.checked) {
       const isAnnualBox = !!cb.dataset.annual;
@@ -421,8 +430,11 @@
       });
     }
     updateSptMasaLabel();
+    updateSptLampiranOptions();
   }));
+  $('spt-download-lampiran').addEventListener('change', updateSptLampiranOptions);
   updateSptMasaLabel();
+  updateSptLampiranOptions();
 
   document.querySelectorAll('.bupot-jenis').forEach((cb) => cb.addEventListener('change', updateFormForBupot));
   const KODE_OBJEK_TYPES = ['bp21', 'bppu']; // only these two ever filter by Kode Objek Pajak
@@ -687,11 +699,15 @@
         const masaInput = $('spt-masa-input').value.trim();
         const jenisPajakKeys = [...document.querySelectorAll('.spt-jenis:checked')].map((c) => c.value);
         const checkPph25 = $('spt-check-pph25').checked;
+        const includeLampiran = $('spt-download-lampiran').checked;
+        const lampiranMode = $('spt-lampiran-mode').value;
+        const outputLayout = $('spt-output-layout').value;
         if (!masaInput) { alert('Masa wajib diisi.'); return; }
         if (!jenisPajakKeys.length) { alert('Pilih minimal satu Jenis Pajak.'); return; }
         await api('/api/actions/download-spt', {
           method: 'POST',
-          body: JSON.stringify({ entity: selectedEntity, jenisPajakKeys, masaInput, saveRoot: saveRoot || undefined, checkPph25 })
+          body: JSON.stringify({ entity: selectedEntity, jenisPajakKeys, masaInput, saveRoot: saveRoot || undefined, checkPph25,
+            includeLampiran, lampiranMode, outputLayout })
         });
         pollRunStatus();
       } else if (activeFeature === 'pm-download') {

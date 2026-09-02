@@ -350,7 +350,7 @@ async function handleDownloadSpt(req, res) {
     if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25 } = body || {};
+    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran, lampiranMode, outputLayout } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!Array.isArray(jenisPajakKeys) || !jenisPajakKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis pajak & masa wajib diisi.' });
 
@@ -360,7 +360,9 @@ async function handleDownloadSpt(req, res) {
         const manualPage = chrome.getManualPage();
         if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Manual" dan login dulu.' });
         const folder = sanitizeFolder(entity.entity_name || 'Manual');
-        runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, jenisPajakKeys, masaInput, saveRoot, checkPph25, onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
+        runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, jenisPajakKeys, masaInput, saveRoot, checkPph25,
+            includeLampiran: !!includeLampiran, lampiranMode, outputLayout,
+            onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
     } else {
         if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
         const s = state.get(entity.project);
@@ -381,6 +383,7 @@ async function handleDownloadSpt(req, res) {
             client: s.client, orgId: s.orgId,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
             picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot, checkPph25,
+            includeLampiran: !!includeLampiran, lampiranMode, outputLayout,
             restricted, allowedEbupotSections, passphrase, fallbackPicIds,
             onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok)
         };

@@ -63,11 +63,11 @@ const ZERO_DOC_ID = '00000000-0000-0000-0000-000000000000'; // sentinel meaning 
 // switchToEntity() already special-cases `entity.individual` to skip impersonation, matching
 // exactly how e-Bupot's own Bukti Potong download already works for individual taxpayers.
 const JENIS_PAJAK = {
-    pph21: { taxTypeCode: 'ICT_WIT', sptToken: '1721 INDUK', bpeToken: '1721 BPE' },
-    unifikasi: { taxTypeCode: 'ICT_WT', sptToken: 'UNIFIKASI INDUK', bpeToken: 'UNIFIKASI BPE' },
-    ppn: { taxTypeCode: 'VAT_VAT', sptToken: 'PPN INDUK', bpeToken: 'PPN BPE' },
-    badan: { taxTypeCode: 'ICT_RCIT', sptToken: '1771 INDUK', bpeToken: '1771 BPE', annual: true },
-    spt_op: { taxTypeCode: 'ICT_PIT', sptToken: '1770 INDUK', bpeToken: '1770 BPE', annual: true, requiresIndividual: true }
+    pph21: { taxTypeCode: 'ICT_WIT', sptToken: '1721 INDUK', bpeToken: '1721 BPE', packageToken: 'SPT MASA PPH 21' },
+    unifikasi: { taxTypeCode: 'ICT_WT', sptToken: 'UNIFIKASI INDUK', bpeToken: 'UNIFIKASI BPE', packageToken: 'SPT MASA PPH UNIFIKASI' },
+    ppn: { taxTypeCode: 'VAT_VAT', sptToken: 'PPN INDUK', bpeToken: 'PPN BPE', packageToken: 'SPT MASA PPN' },
+    badan: { taxTypeCode: 'ICT_RCIT', sptToken: 'SPT Tahunan PPh Badan Induk', bpeToken: 'SPT Tahunan PPh Badan BPE', packageToken: 'SPT TAHUNAN PPH BADAN', annual: true },
+    spt_op: { taxTypeCode: 'ICT_PIT', sptToken: 'SPT Tahunan PPh Orang Pribadi Induk', bpeToken: 'SPT Tahunan PPh Orang Pribadi BPE', packageToken: 'SPT TAHUNAN PPH ORANG PRIBADI', annual: true, requiresIndividual: true }
 };
 const JENIS_PAJAK_LABELS = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN', badan: 'PPh Badan (Tahunan)', spt_op: 'PPh Orang Pribadi (Tahunan)' };
 const TAXTYPE_TO_JENIS = { ICT_WIT: 'pph21', ICT_WT: 'unifikasi', VAT_VAT: 'ppn', ICT_RCIT: 'badan', ICT_PIT: 'spt_op' };
@@ -193,6 +193,59 @@ function parseModelSptSuffix(modelText) {
 function buildSptFilename(entityCode, token, mmYY, pbSuffix) {
     const suffix = mmYY + (pbSuffix ? ' PB ' + pbSuffix : '');
     return sanitizeFilenamePart(entityCode) + ' - ' + token + ' ' + suffix + '.pdf';
+}
+
+function buildLampiranViewCandidates(row, authState) {
+    const config = lampiran.TAXTYPE_CONFIG[row.TaxTypeCode];
+    if (!config) return [];
+    const unique = (values) => [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+    const taxpayerIds = unique([authState.taxpayerId, row.TaxpayerAggregateIdentifier]);
+    const recordIds = unique([row.RecordId, row.ReturnSheetRecordIdentifier]);
+    const routeCodes = unique([
+        ['ICT_WT', 'VAT_VAT'].includes(row.TaxTypeCode) ? row.TaxPeriodCode : row.TaxTypeCode,
+        row.TaxTypeCode,
+        row.TaxPeriodCode,
+        row.ReturnSheetTypeCode
+    ]);
+    const aggregateIds = unique([
+        row.AggregateIdentifier,
+        row.ReturnSheetAggregateIdentifier,
+        row.FormAggregateIdentifier
+    ]);
+    const urls = [];
+    for (const taxpayerId of taxpayerIds) for (const recordId of recordIds) {
+        for (const routeCode of routeCodes) for (const aggregateId of aggregateIds) {
+            urls.push('https://coretaxdjp.pajak.go.id/returnsheets-portal/id-ID/' + config.pathKind + '/'
+                + taxpayerId + '/' + recordId + '/' + routeCode + '/' + aggregateId + '?view=true');
+        }
+    }
+    return unique(urls);
+}
+
+async function openLampiranView(page, row, authState, emit) {
+    const config = lampiran.TAXTYPE_CONFIG[row.TaxTypeCode];
+    if (!config) throw new Error('Jenis lampiran ' + row.TaxTypeCode + ' belum didukung.');
+    const candidates = buildLampiranViewCandidates(row, authState);
+    for (let index = 0; index < candidates.length; index++) {
+        const url = candidates[index];
+        try {
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await page.waitForSelector(config.rootSelector, { timeout: 20000 });
+            emit('Halaman Lampiran terbuka (' + (index + 1) + '/' + candidates.length + ').');
+            return url;
+        } catch (e) {
+            if (index === candidates.length - 1) throw new Error('Halaman Lampiran tidak dapat dibuka: ' + e.message);
+        }
+    }
+    throw new Error('Alamat halaman Lampiran tidak tersedia pada data SPT.');
+}
+
+function removeIntermediateFiles(paths, keepPath, emit) {
+    for (const candidate of paths) {
+        if (!candidate || candidate === keepPath || !fs.existsSync(candidate)) continue;
+        try { fs.rmSync(candidate, { force: true }); }
+        catch (e) { emit('Peringatan: file sementara tidak dapat dibersihkan - ' + path.basename(candidate) + ': ' + e.message); }
+    }
 }
 
 /** Mirrors coretax-helper/run.js's copyToCompliance() - unchanged from the click-based
@@ -329,7 +382,8 @@ const GENERATE_POLL_WAIT_MS = 5000;
  *  Coretax is still rendering it) and BPE, skipping anything already on disk. A session-expiry
  *  mid-fetch bubbles up (`.isSessionExpired`) for the caller to re-login and re-run this combo. */
 async function processSptCombo(ctx) {
-    const { page, authState, saveDir, entityCode, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, signParam, isAnnual, log: emit } = ctx;
+    const { page, authState, saveDir, entityCode, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, signParam, isAnnual,
+        includeLampiran, lampiranMode, outputLayout, saveRoot, log: emit } = ctx;
     const taxPeriodCode = isAnnual ? annualYearToTaxPeriodCode(mmYY) : mmYYToTaxPeriodCode(mmYY);
     let downloadedAny = false;
     const rows = await fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeState, emit);
@@ -345,7 +399,13 @@ async function processSptCombo(ctx) {
         const pbSuffix = parseModelSptSuffix(row.ReturnSheetModel);
         const sptPath = path.join(saveDir, buildSptFilename(entityCode, meta.sptToken, mmYY, pbSuffix));
         const bpePath = path.join(saveDir, buildSptFilename(entityCode, meta.bpeToken, mmYY, pbSuffix));
-        if (fs.existsSync(sptPath) && fs.existsSync(bpePath)) {
+        const packageModeSuffix = lampiranMode === 'print' ? ' (Print)' : lampiranMode === 'confidential' ? ' (Confidential)' : '';
+        const packagePath = path.join(saveDir, buildSptFilename(entityCode, meta.packageToken + packageModeSuffix, mmYY, pbSuffix));
+        if (includeLampiran && outputLayout === 'combined' && fs.existsSync(packagePath)) {
+            if (onRowDone) { try { onRowDone(jenisKey, mmYY, true); } catch (e) {} }
+            continue;
+        }
+        if (!includeLampiran && fs.existsSync(sptPath) && fs.existsSync(bpePath)) {
             // Sudah ada dari sebelumnya - baris ini genuinely sukses (filenya nyata di disk),
             // tapi tanpa ini onRowDone tidak pernah dipanggil untuk baris ini sama sekali, jadi
             // checkbox Jenis Pajak di GUI tidak pernah ditandai selesai walau downloadnya
@@ -366,13 +426,11 @@ async function processSptCombo(ctx) {
                 await htmlToPdf.renderHtmlToPdf(html, bpePath);
                 downloadedAny = true;
                 emit('Terunduh: ' + path.basename(bpePath));
-                copyToCompliance(bpePath, compFolder, emit);
             } catch (e) {
                 if (e.isSessionExpired) throw e;
-                rowOk = false;
-                emit('Baris ke-' + (i + 1) + ': BPE gagal terunduh - ' + e.message + ' - dilewati, bisa diulang manual.');
+                emit('Baris ke-' + (i + 1) + ': BPE tidak tersedia - ' + e.message + ' - dilewati tanpa menghentikan SPT/Lampiran.');
             }
-        } else copyToCompliance(bpePath, compFolder, emit);
+        }
 
         if (!fs.existsSync(sptPath)) {
             // CONFIRMED LIVE 2026-07-30 (real Coretax platform-side stuck document, reproduced
@@ -410,10 +468,11 @@ async function processSptCombo(ctx) {
             }
             if (result.ready) {
                 fs.mkdirSync(saveDir, { recursive: true });
-                fs.writeFileSync(sptPath, result.buffer);
+                const officialBuffer = jenisKey === 'ppn'
+                    ? await lampiran.compactPpnOfficialIndukPdf(result.buffer) : result.buffer;
+                fs.writeFileSync(sptPath, officialBuffer);
                 downloadedAny = true;
                 emit('Terunduh: ' + path.basename(sptPath));
-                copyToCompliance(sptPath, compFolder, emit);
             } else {
                 rowOk = false;
                 if (caughtError) {
@@ -422,7 +481,53 @@ async function processSptCombo(ctx) {
                     emit('Baris ke-' + (i + 1) + ': SPT PDF gagal terunduh (masih dalam proses pembuatan setelah ' + GENERATE_POLL_ATTEMPTS + ' percobaan) - dilewati, bisa diulang manual.');
                 }
             }
-        } else copyToCompliance(sptPath, compFolder, emit);
+        }
+
+        let lampiranResult = null;
+        if (includeLampiran && rowOk && fs.existsSync(sptPath)) {
+            try {
+                await openLampiranView(page, row, authState, emit);
+                lampiranResult = await lampiran.downloadLampiran(page, {
+                    saveRoot,
+                    outputDir: saveDir,
+                    entityCode,
+                    entityName: entityCode,
+                    compFolder: null
+                }, authState.taxpayerId, row.RecordId, row.TaxTypeCode, lampiranMode,
+                isAnnual ? mmYY : '', outputLayout);
+                if (!lampiranResult || !lampiranResult.ok) {
+                    throw new Error((lampiranResult && lampiranResult.error) || 'Lampiran tidak berhasil dibuat.');
+                }
+                downloadedAny = true;
+                emit('Lampiran selesai: ' + lampiranResult.count + ' file (' + outputLayout + ').');
+            } catch (e) {
+                if (e.isSessionExpired) throw e;
+                rowOk = false;
+                emit('Baris ke-' + (i + 1) + ': Lampiran gagal dibuat - ' + e.message + '.');
+            }
+        }
+
+        const basePaths = [bpePath, sptPath].filter((candidate) => fs.existsSync(candidate));
+        const lampiranPaths = lampiranResult && Array.isArray(lampiranResult.paths) ? lampiranResult.paths : [];
+        if (includeLampiran && outputLayout === 'combined' && rowOk && fs.existsSync(sptPath) && lampiranResult && lampiranResult.combinedPath) {
+            const orderedPaths = [
+                ...(fs.existsSync(bpePath) ? [bpePath] : []),
+                sptPath,
+                lampiranResult.combinedPath
+            ];
+            const merged = await lampiran.mergePdfs(orderedPaths.map((candidate) => fs.readFileSync(candidate)));
+            fs.writeFileSync(packagePath, merged);
+            downloadedAny = true;
+            emit('Tersimpan gabungan (BPE - Induk - Lampiran): ' + path.basename(packagePath));
+            removeIntermediateFiles([...basePaths, ...lampiranPaths], packagePath, emit);
+            copyToCompliance(packagePath, compFolder, emit);
+        } else if (includeLampiran && outputLayout === 'separate' && lampiranResult && lampiranResult.ok) {
+            for (const filePath of [...basePaths, ...lampiranPaths]) copyToCompliance(filePath, compFolder, emit);
+        } else {
+            // Tanpa Lampiran, atau bila pembuatan Lampiran gagal, pertahankan hasil BPE/Induk
+            // yang sudah berhasil agar proses parsial tidak hilang.
+            for (const filePath of basePaths) copyToCompliance(filePath, compFolder, emit);
+        }
 
         if (onRowDone) { try { onRowDone(jenisKey, mmYY, rowOk); } catch (e) {} }
     }
@@ -439,6 +544,9 @@ const SIZE_DEFAULT = 10;
 async function runSptDownload(opts) {
     const { client, orgId, entity, jenisPajakKeys } = opts;
     const checkPph25 = !!opts.checkPph25;
+    const includeLampiran = !!opts.includeLampiran;
+    const lampiranMode = ['print', 'full', 'confidential'].includes(opts.lampiranMode) ? opts.lampiranMode : 'print';
+    const outputLayout = ['combined', 'separate'].includes(opts.outputLayout) ? opts.outputLayout : 'combined';
     // Reassignable (not const) - the automatic fallback-PIC retry pass further down needs to
     // point login/cred at a DIFFERENT linked PIC after the first pass finishes, and
     // loginAndImpersonate()/openSptAndPrep() below close over this as a free variable so
@@ -446,6 +554,9 @@ async function runSptDownload(opts) {
     let picId = opts.picId;
     const keys = (jenisPajakKeys || []).filter((k) => JENIS_PAJAK[k]);
     if (!keys.length) throw new Error('Jenis pajak belum dipilih.');
+    if (includeLampiran && lampiranMode === 'confidential' && !(keys.length === 1 && keys[0] === 'pph21')) {
+        throw new Error('Mode Confidential hanya tersedia bila PPh 21/26 dipilih sendiri.');
+    }
     // SPT Badan/OP (annual) use a whole-year TaxPeriodCode, incompatible with the monthly masa
     // types above - reject a mixed selection rather than silently misinterpreting the input.
     const annualFlags = keys.map((k) => !!JENIS_PAJAK[k].annual);
@@ -599,6 +710,7 @@ async function runSptDownload(opts) {
                     const result = await processSptCombo({
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
                         compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual,
+                        includeLampiran, lampiranMode, outputLayout, saveRoot,
                         log: emit
                     });
                     if (result.downloadedAny) stats.downloaded++;
@@ -725,4 +837,5 @@ async function runSptDownload(opts) {
     showPopup(doneMsg, 'Coretax Agent', stopped ? 'Warning' : 'Information');
 }
 
-module.exports = { runSptDownload, JENIS_PAJAK, JENIS_PAJAK_LABELS, SPT_URL };
+module.exports = { runSptDownload, JENIS_PAJAK, JENIS_PAJAK_LABELS, SPT_URL,
+    __test: { buildSptFilename, buildLampiranViewCandidates, parseModelSptSuffix } };

@@ -401,13 +401,17 @@
     }
 
     function paginatorStates() {
-        let index = 0;
         return Array.from(document.querySelectorAll('.p-paginator')).filter(isVisible).map((paginator) => {
-            paginator.dataset.caPaginatorId = String(index++);
             const text = (paginator.textContent || '').replace(/\s+/g, ' ').trim();
             const match = text.match(/(?:of|dari)\s+([\d.,]+)\s+(?:entries|entri)/i);
-            return { id: paginator.dataset.caPaginatorId, total: match ? parseInt(match[1].replace(/[.,]/g, ''), 10) : 0 };
+            return { index: Array.from(document.querySelectorAll('.p-paginator')).filter(isVisible).indexOf(paginator), total: match ? parseInt(match[1].replace(/[.,]/g, ''), 10) : 0 };
         }).filter((state) => state.total > 0);
+    }
+
+    // Angular mengganti node paginator setelah cetak/pindah halaman. Selalu ambil node saat ini
+    // dari urutan visualnya; data-* yang ditempel pada node lama tidak bertahan setelah re-render.
+    function paginatorAtVisibleIndex(index) {
+        return Array.from(document.querySelectorAll('.p-paginator')).filter(isVisible)[index] || null;
     }
 
     async function capturePagedPdfs(mode) {
@@ -416,12 +420,12 @@
         const first = await chrome.runtime.sendMessage({ type: 'captureTab' });
         if (!first || !first.ok || !first.b64) throw new Error((first && first.error) || 'Gagal mencetak halaman pertama.');
         const list = [first.b64];
-        if (mode !== 'full') return list;
+        if (mode !== 'full') return { list, states };
         for (const state of states) {
-            const paginator = document.querySelector('.p-paginator[data-ca-paginator-id="' + state.id + '"]');
-            if (!paginator) continue;
             let guard = 0;
             while (guard++ < 10000) {
+                const paginator = paginatorAtVisibleIndex(state.index);
+                if (!paginator) break;
                 const next = paginator.querySelector('.p-paginator-next');
                 if (!next || next.disabled || next.classList.contains('p-disabled')) break;
                 const before = (paginator.textContent || '').replace(/\s+/g, ' ').trim();
@@ -432,12 +436,14 @@
                 if (!captured || !captured.ok || !captured.b64) throw new Error((captured && captured.error) || 'Gagal mencetak lanjutan paginator.');
                 list.push(captured.b64);
             }
+            const paginator = paginatorAtVisibleIndex(state.index);
+            if (!paginator) continue;
             const firstButton = paginator.querySelector('.p-paginator-first');
             if (firstButton && !firstButton.disabled && !firstButton.classList.contains('p-disabled')) {
                 firstButton.click(); await sleep(650);
             }
         }
-        return list;
+        return { list, states };
     }
 
     // ---------- Identitas untuk nama file ----------
@@ -590,7 +596,10 @@
                 const prefix = config.annual ? formCode + ' LAMPIRAN' : formCode;
                 const filename = 'CoretaxLampiran/' + entity + '/' + year + '/' +
                     entity + ' - ' + prefix + ' ' + sanitize(label + suffix) + ' ' + period.fileLabel + '.pdf';
-                const captures = await capturePagedPdfs(mode);
+                const capture = await capturePagedPdfs(mode);
+                const captures = capture.list;
+                const totalInfo = capture.states.length ? ' · ' + capture.states.map((state) => state.total.toLocaleString('id-ID')).join(' + ') + ' entri' : '';
+                setLabel('⏳ ' + label + totalInfo + ' (' + (i + 1) + '/' + labels.length + ')');
                 let res;
                 if (captures.length === 1) {
                     res = await chrome.runtime.sendMessage({ type: 'saveBase64', base64: captures[0], filename });
@@ -633,7 +642,7 @@
             '<button id="__ca_m_print" style="width:100%;text-align:left;background:#0D9488;color:#fff;border:none;' +
             'border-radius:7px;padding:9px 11px;cursor:pointer;font-size:12px;font-weight:600;margin-bottom:7px;">' +
             '📄 Versi Print <span style="font-weight:400;">- cepat</span><br>' +
-            '<span style="font-weight:400;font-size:11px;opacity:.9;">Lampiran berdaftar panjang dibatasi 50 baris</span></button>' +
+            '<span style="font-weight:400;font-size:11px;opacity:.9;">Halaman pertama tiap tabel; termasuk PDF gabungan</span></button>' +
             '<button id="__ca_m_full" style="width:100%;text-align:left;background:#fff;color:#1a202c;border:1px solid #cbd5e1;' +
             'border-radius:7px;padding:9px 11px;cursor:pointer;font-size:12px;font-weight:600;">' +
             '📚 Versi Lengkap <span style="font-weight:400;">- seluruh baris</span><br>' +
