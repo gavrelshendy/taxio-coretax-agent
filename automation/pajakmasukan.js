@@ -51,6 +51,17 @@ function periodLabel(code, year) {
     const m = PERIOD_MONTH[code];
     return (m ? MONTH_ID[m] : String(code || '-')) + ' ' + (year || '');
 }
+/** Parse MMYY directly, without routing through a JavaScript Date. This avoids an early-month
+ *  value crossing into the previous month when Excel/ExcelJS applies a timezone conversion. */
+function parseTargetMasaInput(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const match = raw.match(/^(0[1-9]|1[0-2])(\d{2})$/);
+    if (!match) throw new Error('Masa Pengkreditan harus berformat MMYY, misalnya 0726.');
+    const month = Number(match[1]);
+    const year = Number('20' + match[2]);
+    return { raw: raw, month: month, year: year, code: PERIOD_CODE[month] };
+}
 /** Jarak bulan dari masa faktur ke masa pengkreditan. */
 function monthDistance(fromCode, fromYear, toCode, toYear) {
     const a = PERIOD_MONTH[fromCode], b = PERIOD_MONTH[toCode];
@@ -625,29 +636,31 @@ async function processExcelRow(page, ctx, row, colMap, opts) {
     const dpp = colMap.dpp ? cellNumber(row.getCell(colMap.dpp)) : null;
     const ppn = colMap.ppn ? cellNumber(row.getCell(colMap.ppn)) : null;
     const tanggal = colMap.tanggal ? cellDate(row.getCell(colMap.tanggal)) : null;
+    const targetOverride = opts.targetPeriod || null;
     const jenis = (colMap.jenis ? cellText(row.getCell(colMap.jenis)) : '').toUpperCase().trim();
-    const masaKreditDate = colMap.masaKredit ? cellDate(row.getCell(colMap.masaKredit)) : null;
+    const masaKreditDate = !targetOverride && colMap.masaKredit ? cellDate(row.getCell(colMap.masaKredit)) : null;
 
     if (!tanggal) return { hasil: 'GAGAL', keterangan: 'Tanggal Faktur kosong atau bukan tanggal yang valid' };
-    if (jenis !== 'MASA SAMA' && jenis !== 'MASA TIDAK SAMA') {
+    if (!targetOverride && jenis !== 'MASA SAMA' && jenis !== 'MASA TIDAK SAMA') {
         return { hasil: 'GAGAL', keterangan: 'PENGKREDITAN PPN harus diisi "MASA SAMA" atau "MASA TIDAK SAMA" (isi Excel: "' + jenis + '")' };
     }
-    if (!masaKreditDate) return { hasil: 'GAGAL', keterangan: 'MASA PENGKREDITAN kosong atau bukan tanggal yang valid' };
+    if (!targetOverride && !masaKreditDate) return { hasil: 'GAGAL', keterangan: 'MASA PENGKREDITAN kosong atau bukan tanggal yang valid' };
 
     // Validasi konsistensi Excel (brief: Masa PM dibandingkan Masa Pengkreditan menentukan
     // MASA SAMA/TIDAK SAMA). Masa PM dihitung langsung dari Tanggal Faktur, bukan dari kolom F
     // template (formula) - menghindari ketergantungan pada nilai cache formula yang belum tentu
     // ter-hitung ulang oleh Excel.
     const pmMonth = tanggal.getMonth() + 1, pmYear = tanggal.getFullYear();
-    const targetMonth = masaKreditDate.getMonth() + 1, targetYear = masaKreditDate.getFullYear();
+    const targetMonth = targetOverride ? targetOverride.month : masaKreditDate.getMonth() + 1;
+    const targetYear = targetOverride ? targetOverride.year : masaKreditDate.getFullYear();
     const expected = (pmMonth === targetMonth && pmYear === targetYear) ? 'MASA SAMA' : 'MASA TIDAK SAMA';
-    if (jenis !== expected) {
+    if (!targetOverride && jenis !== expected) {
         return { hasil: 'GAGAL',
             keterangan: 'PENGKREDITAN PPN tidak konsisten dengan tanggal: Masa PM ' + MONTH_ID[pmMonth] + ' ' + pmYear +
                 ' vs Masa Pengkreditan ' + MONTH_ID[targetMonth] + ' ' + targetYear + ' seharusnya "' + expected +
                 '", Excel menulis "' + jenis + '" - baris TIDAK diproses' };
     }
-    const targetCode = PERIOD_CODE[targetMonth];
+    const targetCode = targetOverride ? targetOverride.code : PERIOD_CODE[targetMonth];
     if (!targetCode) return { hasil: 'GAGAL', keterangan: 'Bulan pada MASA PENGKREDITAN tidak valid: ' + targetMonth };
 
     const inv = await findByNumber(page, ctx, noFakturRaw);
@@ -689,8 +702,13 @@ async function runImportFromExcel(o) {
         throw new Error('Kolom hasil (HASIL/STATUS CORETAX/MASA KREDIT AKTUAL/KETERANGAN) tidak ditemukan - pastikan memakai Template Impor Pajak Masukan.');
     }
 
+    const targetPeriod = parseTargetMasaInput(o.targetMasaInput);
     const ctx = await getContext(page);
     emit('WP aktif: ' + (ctx.nama || '-') + ' (' + ctx.npwp + '), sesi tersisa ~' + ctx.tokenExpiresInSec + ' detik.');
+    if (targetPeriod) {
+        emit('Masa Pengkreditan dari aplikasi: ' + MONTH_ID[targetPeriod.month] + ' ' + targetPeriod.year
+            + ' (' + targetPeriod.raw + ') - berlaku untuk semua baris dan mengesampingkan kolom masa di Excel.');
+    }
 
     const dataRows = [];
     const lastRow = sheet.lastRow ? sheet.lastRow.number : headerRowNum;
@@ -706,7 +724,7 @@ async function runImportFromExcel(o) {
         const row = toProcess[i];
         let out;
         try {
-            out = await processExcelRow(page, ctx, row, colMap, { dryRun: o.dryRun });
+            out = await processExcelRow(page, ctx, row, colMap, { dryRun: o.dryRun, targetPeriod: targetPeriod });
         } catch (e) {
             emit('Baris ' + row.number + ' gagal diproses: ' + e.message + ' - lanjut ke baris berikutnya.');
             out = { hasil: 'GAGAL', keterangan: 'Error tak terduga: ' + e.message };
@@ -815,7 +833,7 @@ async function runDownloadExcel(o) {
 
 module.exports = {
     runCreditByPeriod, creditOne, runUncreditByPeriod, uncreditOne, runImportFromExcel, runDownloadExcel, findByNumber, listByPeriod, getContext,
-    checkEligibility, checkUncreditEligibility, crossCheck, normalizeFakturNo, normalizeNpwp,
+    checkEligibility, checkUncreditEligibility, crossCheck, normalizeFakturNo, normalizeNpwp, parseTargetMasaInput,
     monthDistance, periodLabel, PERIOD_CODE, PERIOD_MONTH, MONTH_ID, STATUS,
     __test: { buildFetchScript, tally, findHeaderRow, processExcelRow }
 };

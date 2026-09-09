@@ -68,7 +68,10 @@ const BUPOT_PDF_CAPABLE = { bppu: true, bp21: true, bpa1: true, bpmp: false };
 
 // Listing endpoint (under /withholdingslipsportal/api/), the period filter's PropertyName, and
 // the EbupotType code the PDF endpoint expects - each confirmed live per type on 2026-07-19/20.
-const LISTING_ENDPOINT = { bp21: 'getebupotbp21issued', bppu: 'getebupotbpuissued', bpa1: 'getebupotbpa1issued', bpmp: 'getebupotmpissued' };
+const LISTING_ENDPOINT = {
+    issued: { bp21: 'getebupotbp21issued', bppu: 'getebupotbpuissued', bpa1: 'getebupotbpa1issued', bpmp: 'getebupotmpissued' },
+    not_issued: { bp21: 'getebupotbp21notissued', bppu: 'getebupotbpunotissued', bpa1: 'getebupotbpa1notissued', bpmp: 'getebupotmpnotissued' }
+};
 const PERIOD_FILTER_PROPERTY = { bp21: 'TaxPeriodCode', bppu: 'TaxPeriodCode', bpmp: 'TaxPeriodCode', bpa1: 'IncomePeriodCodeEnd' };
 const EBUPOT_TYPE_CODE = { bp21: 'EBUPOTBP21', bppu: 'EBUPOTBPU', bpa1: 'EBUPOTBPA1' }; // bpmp: pdf n/a
 const API_BASE = 'https://coretaxdjp.pajak.go.id/withholdingslipsportal/api';
@@ -173,8 +176,8 @@ function buildTargetFilename(mmYY, kodeObjek, ref, nik, nama) {
  *  used as a stop condition. `sizeState` is shared with the caller so a live GUI page-size
  *  override applies starting the very next fetch. Throws with `.isSessionExpired = true` on a
  *  401 so the caller can re-login and resume this same combo. */
-async function fetchAllRows(page, authState, bupotType, mmYY, kode, sizeState, emit) {
-    const endpoint = LISTING_ENDPOINT[bupotType];
+async function fetchAllRows(page, authState, bupotType, documentStatus, mmYY, kode, sizeState, emit) {
+    const endpoint = LISTING_ENDPOINT[documentStatus][bupotType];
     const periodProp = PERIOD_FILTER_PROPERTY[bupotType];
     const filters = [{ PropertyName: periodProp, Value: mmYYToTaxPeriodCode(mmYY), MatchMode: 'equals', CaseSensitive: true, AsString: false }];
     if (kode && HAS_KODE_OBJEK_FILTER[bupotType]) filters.push({ PropertyName: 'TaxObjectCode', Value: kode, MatchMode: 'contains', CaseSensitive: false, AsString: false });
@@ -247,8 +250,8 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
  *  A session-expiry mid-fetch bubbles straight up (`.isSessionExpired`) for the caller to
  *  re-login and re-run this same combo - already-downloaded files are skipped on the redo. */
 async function downloadComboData(ctx) {
-    const { page, authState, bupotType, saveDir, mmYYForFilename, mmYY, kode, downloadedRefs, pdfEnabled, sizeState, emit } = ctx;
-    const rows = await fetchAllRows(page, authState, bupotType, mmYY, kode, sizeState, emit);
+    const { page, authState, bupotType, documentStatus, saveDir, mmYYForFilename, mmYY, kode, downloadedRefs, pdfEnabled, sizeState, emit } = ctx;
+    const rows = await fetchAllRows(page, authState, bupotType, documentStatus, mmYY, kode, sizeState, emit);
     if (!rows.length) { emit('Tidak ada data untuk filter ini.'); return { downloadedCount: 0, rows: [] }; }
     emit('Total data: ' + rows.length + ' baris.');
     let downloadedCount = 0;
@@ -321,12 +324,15 @@ const SIZE_STEPS = [10, 25, 50, 100, 250, 500];
 async function runEbupotDownload(opts) {
     const { client, orgId, entity, picId, bupotType } = opts;
     if (!BUPOT_URLS[bupotType]) throw new Error('Jenis bupot tidak dikenal: ' + bupotType);
+    const documentStatus = opts.documentStatus || 'issued';
+    if (!LISTING_ENDPOINT[documentStatus]) throw new Error('Status dokumen e-Bupot tidak dikenal: ' + documentStatus);
+    const documentStatusLabel = documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit';
     const bupotLabel = BUPOT_LABELS[bupotType];
     const saveRoot = opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
 
-    const pdfEnabled = !!BUPOT_PDF_CAPABLE[bupotType] && opts.outputMode !== 'excel_only';
+    const pdfEnabled = documentStatus === 'issued' && !!BUPOT_PDF_CAPABLE[bupotType] && opts.outputMode !== 'excel_only';
     const manual = !!opts.manualPage;
-    log('Memulai ' + (pdfEnabled ? 'download PDF + Excel' : 'download Excel saja') + ' e-Bupot ' + bupotLabel
+    log('Memulai ' + (pdfEnabled ? 'download PDF + Excel' : 'download Excel saja') + ' e-Bupot ' + bupotLabel + ' (' + documentStatusLabel + ')'
         + (manual ? ' (sesi manual)' : ' untuk entitas "' + entity.entity_name + '"') + '...');
     const restricted = !!opts.restricted;
     const passphrase = opts.passphrase || null;
@@ -419,7 +425,9 @@ async function runEbupotDownload(opts) {
         const emit = (m) => log('[' + bupotLabel + ' ' + comboLabel + '] ' + m);
 
         try {
-            const saveDir = path.join(saveRoot, entity.entity_id, bupotLabel, saveSubdir);
+            const saveDir = documentStatus === 'not_issued'
+                ? path.join(saveRoot, entity.entity_id, bupotLabel, 'Belum Terbit', saveSubdir)
+                : path.join(saveRoot, entity.entity_id, bupotLabel, saveSubdir);
             const downloadedRefs = new Set();
             let gotCount = 0, rows = [];
             // Mid-run auto-logout recovers transparently here (re-login + resume this same
@@ -427,7 +435,7 @@ async function runEbupotDownload(opts) {
             // failure - matches the click-based version's behavior.
             for (let sessionRetries = 0; ; sessionRetries++) {
                 try {
-                    const result = await downloadComboData({ page, authState, bupotType, saveDir, mmYYForFilename: fileMasa, mmYY, kode, downloadedRefs, pdfEnabled, sizeState, emit });
+                    const result = await downloadComboData({ page, authState, bupotType, documentStatus, saveDir, mmYYForFilename: fileMasa, mmYY, kode, downloadedRefs, pdfEnabled, sizeState, emit });
                     gotCount = result.downloadedCount; rows = result.rows;
                     break;
                 } catch (e) {
@@ -439,7 +447,8 @@ async function runEbupotDownload(opts) {
                     throw e;
                 }
             }
-            const summary = await writeRingkasanExcel(rows, downloadedRefs, saveDir, bupotLabel, ringkasanLabel, pdfEnabled, emit);
+            const excelLabel = documentStatus === 'not_issued' ? bupotLabel + ' Belum Terbit' : bupotLabel;
+            const summary = await writeRingkasanExcel(rows, downloadedRefs, saveDir, excelLabel, ringkasanLabel, pdfEnabled, emit);
             stats.downloaded += gotCount;
             stats.excelTotal += summary.total;
             stats.excelBelum += summary.belum;
@@ -499,7 +508,7 @@ async function runEbupotDownload(opts) {
     } else {
         verdict = 'Tidak ada data.';
     }
-    const doneMsg = (stopped ? 'DIHENTIKAN' : 'SELESAI') + ': e-Bupot ' + bupotLabel + ' "' + entity.entity_name + '" - '
+    const doneMsg = (stopped ? 'DIHENTIKAN' : 'SELESAI') + ': e-Bupot ' + bupotLabel + ' ' + documentStatusLabel + ' "' + entity.entity_name + '" - '
         + (pdfEnabled ? (stats.downloaded + ' PDF terunduh, ') : '') + stats.combosDone + ' kombinasi selesai'
         + (stats.combosSkipped ? (', ' + stats.combosSkipped + ' dilewati/gagal') : '') + '. ' + verdict;
     log(doneMsg + ' Jendela dibiarkan terbuka.');

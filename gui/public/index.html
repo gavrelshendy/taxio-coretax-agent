@@ -154,6 +154,22 @@
           </div>
 
           <div class="form-group">
+            <label class="field-label">Status Dokumen <i class="hint-icon" title="Dokumen Belum Terbit belum memiliki PDF resmi dan akan disimpan sebagai ringkasan Excel saja.">?</i></label>
+            <div class="checkbox-grid">
+              <label class="custom-checkbox-card">
+                <input type="radio" class="ebupot-status" name="ebupot-status" value="issued" checked>
+                <span class="checkbox-indicator"></span>
+                <span class="checkbox-text">Telah Terbit</span>
+              </label>
+              <label class="custom-checkbox-card">
+                <input type="radio" class="ebupot-status" name="ebupot-status" value="not_issued">
+                <span class="checkbox-indicator"></span>
+                <span class="checkbox-text">Belum Terbit</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
             <label class="field-label">Format Output</label>
             <div class="checkbox-grid">
               <label class="custom-checkbox-card">
@@ -407,6 +423,12 @@
           </ol>
 
           <a id="download-pm-template-link" class="btn btn-outline btn-block" style="margin-bottom:12px;" href="/assets/template-pajak-masukan.xlsx" download>Unduh Template Excel</a>
+
+          <div class="form-group">
+            <label class="field-label" for="pm-credit-masa-input">Masa Pengkreditan <i class="hint-icon" title="Opsional. Jika diisi, masa ini dipakai untuk semua baris dan mengesampingkan kolom MASA PENGKREDITAN di Excel.">?</i></label>
+            <input type="text" id="pm-credit-masa-input" class="styled-input" inputmode="numeric" maxlength="4" placeholder="Contoh: 0726">
+            <p class="muted-note">Kosongkan untuk mengikuti masa per baris di Excel. Isi 0726 untuk mengkreditkan tepat ke Juli 2026.</p>
+          </div>
 
           <label class="field-label">File Excel Terisi (.xlsx)</label>
           <div class="file-picker-group">

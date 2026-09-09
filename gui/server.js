@@ -231,8 +231,10 @@ async function handleDownloadEbupot(req, res) {
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     const { entity, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode } = body || {};
+    const documentStatus = body && body.documentStatus ? body.documentStatus : 'issued';
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!bupotType || !masaInput) return sendJson(res, 400, { error: 'Jenis bupot & masa wajib diisi.' });
+    if (!['issued', 'not_issued'].includes(documentStatus)) return sendJson(res, 400, { error: 'Status dokumen e-Bupot tidak valid.' });
 
     const isManual = entity.project === 'manual';
     let runOpts;
@@ -240,7 +242,7 @@ async function handleDownloadEbupot(req, res) {
         const manualPage = chrome.getManualPage();
         if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Manual" dan login dulu.' });
         const folder = sanitizeFolder(entity.entity_name || 'Manual');
-        runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode };
+        runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode };
     } else {
         if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
         const s = state.get(entity.project);
@@ -258,14 +260,14 @@ async function handleDownloadEbupot(req, res) {
         runOpts = {
             client: s.client, orgId: s.orgId, currentUserId: s.user.id,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode,
+            picId: entity.pic_id, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode,
             restricted, allowedEbupotSections, passphrase
         };
     }
 
     // Only one automation run at a time - the run-control (pause/skip/stop) model is built
     // around a single active run, and two runs would fight over the same Chrome window anyway.
-    try { runcontrol.start('e-Bupot ' + bupotType.toUpperCase() + ' · ' + (isManual ? 'Sesi Manual' : entity.entity_name)); }
+    try { runcontrol.start('e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + (isManual ? 'Sesi Manual' : entity.entity_name)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     // Fire-and-forget: the run streams its own progress over /events. Respond immediately so
     // the GUI isn't blocked on a request that can legitimately take many minutes.
@@ -463,9 +465,12 @@ async function handleDownloadPajakMasukan(req, res) {
 async function handleImportPajakMasukan(req, res) {
     let body;
     try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { entity, fileBase64 } = body || {};
+    const { entity, fileBase64, targetMasaInput } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!fileBase64) return sendJson(res, 400, { error: 'File template belum dipilih.' });
+    if (targetMasaInput && !/^(0[1-9]|1[0-2])\d{2}$/.test(String(targetMasaInput).trim())) {
+        return sendJson(res, 400, { error: 'Masa Pengkreditan harus berformat MMYY, misalnya 0726.' });
+    }
     if (entity.project === 'manual') return sendJson(res, 400, { error: 'Pajak Masukan butuh entitas dengan PIC Coretax terhubung, bukan sesi manual.' });
     if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
 
@@ -483,7 +488,7 @@ async function handleImportPajakMasukan(req, res) {
     const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
     const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
 
-    try { runcontrol.start('Impor Pajak Masukan · ' + entity.entity_name); }
+    try { runcontrol.start('Impor Pajak Masukan' + (targetMasaInput ? ' · Masa ' + String(targetMasaInput).trim() : '') + ' · ' + entity.entity_name); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true });
     try {
@@ -492,7 +497,7 @@ async function handleImportPajakMasukan(req, res) {
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
             picId: entity.pic_id, restricted, passphrase, allowedEbupotSections
         });
-        await pajakMasukan.runImportFromExcel({ page, fileBuffer, dryRun: false, emit: (m) => log(m) });
+        await pajakMasukan.runImportFromExcel({ page, fileBuffer, targetMasaInput: targetMasaInput ? String(targetMasaInput).trim() : '', dryRun: false, emit: (m) => log(m) });
     } catch (e) {
         log('Gagal impor Pajak Masukan: ' + e.message);
     } finally {

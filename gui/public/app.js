@@ -437,20 +437,30 @@
   updateSptLampiranOptions();
 
   document.querySelectorAll('.bupot-jenis').forEach((cb) => cb.addEventListener('change', updateFormForBupot));
+  document.querySelectorAll('.ebupot-status').forEach((radio) => radio.addEventListener('change', updateFormForBupot));
   const KODE_OBJEK_TYPES = ['bp21', 'bppu']; // only these two ever filter by Kode Objek Pajak
   function selectedBupotTypes() { return [...document.querySelectorAll('.bupot-jenis:checked')].map((c) => c.value); }
+  function selectedEbupotStatus() { return (document.querySelector('.ebupot-status:checked') || {}).value || 'issued'; }
   function updateFormForBupot() {
     const types = selectedBupotTypes();
     // Kode Objek filter shows if ANY selected type supports it (BP21/BPPU) - irrelevant types
     // in the same batch just ignore it (see the request-building loop below).
     $('kode-objek-row').style.display = types.some((t) => KODE_OBJEK_TYPES.includes(t)) ? 'block' : 'none';
-    // BPMP has no PDF at all. If it's the ONLY thing selected, force Excel-only and lock the
-    // toggle same as before; if it's mixed with PDF-capable types, leave Output as the user's
-    // choice for those - the BPMP leg of the run always requests Excel-only regardless (handled
-    // per-request when the download queue is built), so the global toggle doesn't need to lie.
+    // BPMP has no PDF at all. Likewise, Coretax's Belum Terbit listing has no official PDF, so
+    // every not-issued run is Excel-only. Preserve the user's issued-PDF choice while locked.
     const outPdf = $('output-pdf');
-    if (types.length === 1 && types[0] === 'bpmp') { outPdf.checked = false; outPdf.disabled = true; }
-    else { outPdf.disabled = false; }
+    const forceExcelOnly = selectedEbupotStatus() === 'not_issued' || (types.length === 1 && types[0] === 'bpmp');
+    if (forceExcelOnly) {
+      if (!outPdf.disabled) outPdf.dataset.previousChecked = outPdf.checked ? '1' : '0';
+      outPdf.checked = false;
+      outPdf.disabled = true;
+    } else {
+      outPdf.disabled = false;
+      if (outPdf.dataset.previousChecked != null) {
+        outPdf.checked = outPdf.dataset.previousChecked === '1';
+        delete outPdf.dataset.previousChecked;
+      }
+    }
   }
 
   // ---------- Mode tabs (Download / Import & Otomasi) + feature tabs within each ----------
@@ -629,6 +639,11 @@
   $('import-pm-btn').addEventListener('click', async () => {
     if (!selectedEntity) { alert('Pilih entitas dulu di atas.'); return; }
     if (selectedEntity.project === 'manual') { alert('Pajak Masukan butuh entitas dengan PIC Coretax terhubung, bukan sesi manual.'); return; }
+    const targetMasaInput = $('pm-credit-masa-input').value.trim();
+    if (targetMasaInput && !/^(0[1-9]|1[0-2])\d{2}$/.test(targetMasaInput)) {
+      alert('Masa Pengkreditan harus berformat MMYY, misalnya 0726 untuk Juli 2026.');
+      return;
+    }
     let fileBase64 = selectedPmFile ? selectedPmFile.fileBase64 : null;
     if (!fileBase64) {
       const fileInput = $('pm-file');
@@ -639,7 +654,7 @@
     const btn = $('import-pm-btn');
     btn.disabled = true; btn.textContent = 'Mengimpor...';
     try {
-      await api('/api/actions/import-pajak-masukan', { method: 'POST', body: JSON.stringify({ entity: selectedEntity, fileBase64 }) });
+      await api('/api/actions/import-pajak-masukan', { method: 'POST', body: JSON.stringify({ entity: selectedEntity, fileBase64, targetMasaInput: targetMasaInput || undefined }) });
       pollRunStatus();
     } catch (e) {
       alert('Gagal memulai impor: ' + e.message);
@@ -723,12 +738,14 @@
         const masaInput = $('masa-input').value.trim();
         const kodeInput = $('kode-objek-input').value.trim();
         const pageSize = $('page-size').value;
+        const documentStatus = selectedEbupotStatus();
         const outputMode = $('output-pdf').checked ? 'pdf_excel' : 'excel_only';
         if (!masaInput) { alert('Masa wajib diisi.'); return; }
         if (!bupotTypes.length) { alert('Pilih minimal satu Jenis Bupot.'); return; }
         bupotQueue = bupotTypes.map((bupotType) => ({
           entity: selectedEntity,
           bupotType,
+          documentStatus,
           masaInput,
           // Kode Objek only means anything for BP21/BPPU - sending it for BPA1/BPMP would just
           // be a silently-ignored filter, but omitting it is clearer about what actually applies.
@@ -737,7 +754,7 @@
           pageSize,
           // BPMP has no PDF, period - force Excel-only for that leg of the queue regardless of
           // what the (possibly-disabled, possibly-PDF+Excel-for-other-types) toggle says.
-          outputMode: bupotType === 'bpmp' ? 'excel_only' : outputMode
+          outputMode: documentStatus === 'not_issued' || bupotType === 'bpmp' ? 'excel_only' : outputMode
         }));
         runNextInBupotQueue(); // fire-and-forget: it self-chains via waitForRunToFinish()
       }
