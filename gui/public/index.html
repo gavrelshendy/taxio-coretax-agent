@@ -23,8 +23,8 @@
   </div>
   <div class="topbar-right">
     <div id="user-profile-badge" class="user-profile-badge" style="display:none;"></div>
-    <button id="open-coretax-btn" class="btn btn-outline btn-sm" title="Buka jendela Coretax untuk login sendiri, tanpa otomasi">Login Coretax</button>
-    <button id="check-manual-btn" class="btn btn-ghost btn-sm" title="Cek apakah login manual sudah berhasil" style="display:none;">Cek Login</button>
+    <button id="open-coretax-btn" class="btn btn-outline btn-sm" title="Buka jendela Coretax untuk login sendiri, tanpa otomasi">Masuk Coretax</button>
+    <button id="check-manual-btn" class="btn btn-ghost btn-sm" title="Cek apakah login manual sudah berhasil" style="display:none;">Periksa Sesi</button>
     <button id="settings-btn" class="btn btn-outline btn-sm" title="Kelola akun terhubung">Pengaturan</button>
     <button id="quit-btn" class="btn btn-ghost btn-sm btn-danger">Keluar</button>
   </div>
@@ -32,7 +32,7 @@
 
 <div id="outdated-banner" style="display:none;background:#fef2f2;color:#991b1b;border-bottom:1px solid #fecaca;padding:8px 16px;font-size:12.5px;text-align:center;">
   <span id="outdated-banner-text"></span>
-  <button type="button" id="outdated-banner-check-btn" class="btn btn-outline btn-sm" style="margin-left:10px;padding:2px 10px;">Cek Update</button>
+  <button type="button" id="outdated-banner-check-btn" class="btn btn-outline btn-sm" style="margin-left:10px;padding:2px 10px;">Periksa Pembaruan</button>
 </div>
 
 <div id="session-bar" class="session-bar" style="display:none;"></div>
@@ -56,7 +56,7 @@
           <div style="font-size:13px;font-weight:600;">Versi Aplikasi <span id="settings-current-version" class="muted"></span></div>
           <div id="update-status-text" class="muted" style="font-size:12px;margin-top:2px;"></div>
         </div>
-        <button type="button" id="check-update-btn" class="btn btn-outline btn-sm">Cek Update</button>
+        <button type="button" id="check-update-btn" class="btn btn-outline btn-sm">Periksa Pembaruan</button>
       </div>
     </section>
   </div>
@@ -74,8 +74,8 @@
         <input type="search" id="entity-search" placeholder="Cari entitas...">
       </div>
       <div class="entity-mode-seg" id="entity-mode-seg">
-        <button type="button" id="entity-mode-btn-group" data-mode="group">Group</button>
-        <button type="button" id="entity-mode-btn-personal" data-mode="personal">Me</button>
+        <button type="button" id="entity-mode-btn-group" data-mode="group">Grup</button>
+        <button type="button" id="entity-mode-btn-personal" data-mode="personal">Saya</button>
       </div>
     </div>
     <div id="entity-list" class="entity-list"><div class="muted pad">Memuat entitas...</div></div>
@@ -104,26 +104,27 @@
           <div class="selected-entity" id="selected-entity-label"></div>
         </div>
 
-        <button id="login-only-btn" class="btn btn-outline btn-block btn-glow-indigo" title="Login &amp; impersonate entitas ini saja, tanpa mengisi form download">Login Coretax</button>
+        <button id="login-only-btn" class="btn btn-outline btn-block btn-glow-indigo" title="Login &amp; impersonate entitas ini saja, tanpa mengisi form download">Masuk Coretax</button>
 
         <div class="mode-tabs" id="mode-tabs">
-          <button type="button" class="mode-tab active" data-mode="download">Download</button>
-          <button type="button" class="mode-tab" data-mode="import">Import &amp; Otomasi</button>
+          <button type="button" class="mode-tab active" data-mode="download">Unduh</button>
+          <button type="button" class="mode-tab" data-mode="import">Impor &amp; Otomasi</button>
         </div>
 
         <div class="feature-tabs" id="feature-tabs-download">
-          <button type="button" class="feature-tab active" data-feature="ebupot">e-Bupot</button>
-          <button type="button" class="feature-tab" data-feature="mybupot">Bukti Potong Saya</button>
-          <button type="button" class="feature-tab" data-feature="spt">SPT</button>
+          <button type="button" class="feature-tab active" data-feature="spt">SPT</button>
+          <button type="button" class="feature-tab" data-feature="ebupot">e-Bupot</button>
           <button type="button" class="feature-tab" data-feature="pm-download">Pajak Masukan</button>
+          <button type="button" class="feature-tab" data-feature="mybupot">Bukti Potong Saya</button>
         </div>
         <div class="feature-tabs" id="feature-tabs-import" style="display:none;">
           <button type="button" class="feature-tab active" data-feature="dividen">Dividen</button>
+          <button type="button" class="feature-tab" data-feature="a1">Mode A1</button>
           <button type="button" class="feature-tab" data-feature="pajakmasukan">Pajak Masukan</button>
         </div>
 
         <!-- e-Bupot Tab -->
-        <div id="feature-ebupot" class="feature-panel">
+        <div id="feature-ebupot" class="feature-panel" style="display:none;">
           <div class="field-label-row">
             <label class="field-label">Jenis Bupot <i class="hint-icon" title="Pilih minimal 1">?</i></label>
             <button type="button" class="select-all-icon-btn" id="ebupot-select-all-btn" title="Pilih semua">
@@ -292,7 +293,7 @@
         </div>
 
         <!-- SPT Tab -->
-        <div id="feature-spt" class="feature-panel" style="display:none;">
+        <div id="feature-spt" class="feature-panel">
           <div class="field-label-row">
             <label class="field-label">Jenis Pajak <i class="hint-icon" title="Pilih minimal 1">?</i></label>
             <button type="button" class="select-all-icon-btn" id="spt-select-all-btn" title="Pilih semua">
@@ -327,27 +328,41 @@
             </label>
           </div>
 
-          <label class="custom-checkbox-card" style="margin-top:12px;">
+          <label class="field-label" style="margin-top:12px;display:block">Dokumen yang diunduh</label>
+          <label class="custom-checkbox-card"><input type="checkbox" id="spt-download-bpe" checked><span class="checkbox-indicator"></span><span class="checkbox-text">BPE</span></label>
+          <label class="custom-checkbox-card" style="margin-top:6px"><input type="checkbox" id="spt-download-induk" checked><span class="checkbox-indicator"></span><span class="checkbox-text">Induk</span></label>
+          <label class="custom-checkbox-card" style="margin-top:6px;">
             <input type="checkbox" id="spt-download-lampiran">
             <span class="checkbox-indicator"></span>
-            <span class="checkbox-text">Unduh Lampiran</span>
+            <span class="checkbox-text">Lampiran</span>
           </label>
 
+          <p class="field-help" style="font-size:12px;color:#64748b;margin-top:10px">BPE dan Induk diunduh sebagai PDF asli Coretax.</p>
           <div id="spt-lampiran-options" style="display:none;margin-top:10px;">
             <div class="form-group">
-              <label class="field-label" for="spt-lampiran-mode">Mode Lampiran</label>
+              <label class="field-label" for="spt-lampiran-format">Format lampiran</label>
+              <select id="spt-lampiran-format" class="styled-select">
+                <option value="pdf">PDF</option><option value="excel">Excel</option><option value="both">PDF dan Excel</option>
+              </select>
+              <p style="font-size:12px;color:#64748b">Excel berisi seluruh data. Satu sheet per lampiran, dapat berisi beberapa tabel.</p>
+            </div>
+            <div id="spt-pdf-options">
+            <div class="form-group">
+              <label class="field-label" for="spt-lampiran-mode">Isi PDF lampiran</label>
               <select id="spt-lampiran-mode" class="styled-select">
-                <option value="print">Print - cepat, data dibatasi</option>
-                <option value="full">Lengkap - seluruh data</option>
-                <option value="confidential">Confidential - ringkasan PPh 21</option>
+                <option value="print">PDF ringkas — maks. 50 baris/tabel</option>
+                <option value="full">PDF lengkap — seluruh baris</option>
+                <option value="confidential">Rahasia — tanpa rincian penerima</option>
               </select>
             </div>
             <div class="form-group">
-              <label class="field-label" for="spt-output-layout">Hasil PDF</label>
+              <label class="field-label" for="spt-output-layout">Susunan PDF</label>
               <select id="spt-output-layout" class="styled-select">
-                <option value="combined">Gabungan - BPE, Induk, lalu Lampiran</option>
-                <option value="separate">Terpisah - setiap dokumen sendiri</option>
+                <option value="combined">Gabungkan dokumen PDF</option>
+                <option value="separate">Pisahkan per dokumen</option>
               </select>
+            </div>
+            <p style="font-size:12px;color:#64748b">PDF ringkas menunjukkan jumlah baris yang tidak ditampilkan. Total selalu mencakup seluruh data. Excel tetap memuat rincian lengkap.</p>
             </div>
           </div>
 
@@ -389,7 +404,7 @@
           </div>
           
           <ol class="hint-list">
-            <li>Klik tombol <strong>Login Coretax</strong> di atas, lalu tekan <strong>Buat Kasus Baru</strong>.</li>
+            <li>Klik tombol <strong>Masuk Coretax</strong> di atas, lalu tekan <strong>Buat Kasus Baru</strong>.</li>
             <li>Unggah file template <code>.xlsx</code> yang sudah terisi di bawah ini.</li>
             <li>Klik <strong>Impor ke Coretax</strong> untuk memasukkan data otomatis ke draft.</li>
           </ol>
@@ -440,9 +455,18 @@
           <p class="muted-note">Faktur yang sudah dilaporkan di SPT, dibatalkan, dibetulkan, atau melebihi batas 3 bulan TIDAK diubah — otomatis dilewati dengan alasan tercatat di kolom KETERANGAN.</p>
         </div>
 
+        <div id="feature-a1" class="feature-panel" style="display:none;">
+          <h3>Mode A1 — SPT PPh 21 Setahun</h3>
+          <p>Unduh seluruh SPT PPh 21 dalam tahun yang dipilih: PDF lengkap serta PDF rahasia tanpa rincian penerima, untuk semua versi SPT.</p>
+          <p>Excel tahunan memakai versi terakhir setiap masa. Satu sheet per lampiran, dengan kolom Masa, total per masa, dan total setahun.</p>
+          <label class="field-label" for="a1-year">Tahun Pajak</label>
+          <input id="a1-year" type="number" min="2025" max="2099" class="styled-input" placeholder="2026">
+          <p class="field-hint">Masa tanpa SPT atau yang gagal dibaca dicatat pada sheet Kontrol. Data yang gagal tidak diganti dengan versi lama.</p>
+        </div>
+
         <!-- Common Download Controls -->
         <div id="dl-fields" class="form-group" style="margin-top:16px;">
-          <label class="field-label" for="save-root-input">Folder Simpan <i class="hint-icon" title="Opsional - default: Downloads\CoretaxAgent">?</i></label>
+          <label class="field-label" for="save-root-input">Folder Simpan <i class="hint-icon" title="Opsional - bawaan: Downloads\CoretaxAgent">?</i></label>
           <div class="input-group">
             <input type="text" id="save-root-input" class="styled-input">
             <button id="pick-folder-btn" type="button" class="btn btn-outline btn-sm" title="Pilih folder via File Explorer">Cari</button>
@@ -475,7 +499,7 @@
           <button id="run-back-btn" class="btn btn-ghost btn-sm" title="Kembali ke kombinasi sebelumnya">Mundur</button>
           <button id="run-retry-btn" class="btn btn-ghost btn-sm" title="Ulang kombinasi saat ini">Ulang</button>
           <button id="run-skip-btn" class="btn btn-ghost btn-sm" title="Lewati kombinasi saat ini">Lewati</button>
-          <button id="run-stop-btn" class="btn btn-ghost btn-sm btn-danger" title="Hentikan seluruh proses">Stop</button>
+          <button id="run-stop-btn" class="btn btn-ghost btn-sm btn-danger" title="Hentikan seluruh proses">Hentikan</button>
         </div>
       </div>
     </div>
