@@ -1413,6 +1413,24 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         return { ok: false, error: 'Mode rahasia saat ini hanya tersedia untuk PPh 21/26.' };
     }
     const format = ['pdf', 'excel', 'both'].includes(ctx.lampiranFormat) ? ctx.lampiranFormat : 'pdf';
+    if(mode==='confidential'&&format==='pdf'){
+        try{
+            const config=TAXTYPE_CONFIG[taxTypeCode],period=await detectTaxPeriod(page,config);
+            const entity=sanitizeFilenamePart(ctx.entityName||await detectActiveTaxpayerName(page)||ctx.entityCode||'SPT');
+            const dir=ctx.outputDir||path.join(ctx.saveRoot,entity,'SPT',String(period.year));fs.mkdirSync(dir,{recursive:true});
+            const labels=await waitForTabLabels(page),summaries=[];
+            for(const label of ['L-IA','L-IB','L-II','L-III']){
+                if(!labels.includes(label)||!await clickTab(page,label))throw Error('Lampiran Confidential tidak dapat dibuka: '+label);
+                await waitForTabContentStable(page,config.rootSelector);
+                summaries.push(await collectPph21ConfidentialSummary(page,label));
+            }
+            const stem=require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - Confidential',ctx.fileSuffix,'');
+            const result=await require('../lib/lampiran-confidential').renderConfidential(summaries,{entity,period:period.headerLabel,title:config.title,taxTypeCode},{dir,stem,outputLayout});
+            if(ctx.compFolder){fs.mkdirSync(ctx.compFolder,{recursive:true});for(const file of result.paths)fs.copyFileSync(file,path.join(ctx.compFolder,path.basename(file)));}
+            await clickTab(page,'L-IA');
+            return {ok:true,count:result.paths.length,paths:result.paths,combinedPath:result.combinedPath,dir,entityName:entity,period,mode,outputLayout};
+        }catch(e){return {ok:false,error:e.message};}
+    }
     if (mode !== 'confidential' || format !== 'pdf') {
         try {
             const config = TAXTYPE_CONFIG[taxTypeCode];
