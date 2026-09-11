@@ -60,6 +60,12 @@ const {typed}=require('../lib/lampiran-export');
   const wb=new (require('exceljs').Workbook)();await wb.xlsx.readFile(result.excelPath);
   assert.equal(wb.worksheets.length,1);assert.equal(result.sheets[0].tables[0].rows[0][1],'0012345678901234567890');
  }
+ const secret=require('../lib/lampiran-confidential');
+ const summaries=['L-IA','L-IB','L-II','L-III'].map((code,i)=>({code,title:'Judul lampiran '+code,count:i,grossIncome:239487131,incomeTax:i===1?-101168:44500979,recipientName:'RECIPIENT_PRIVATE_SENTINEL',rows:[{NIK:'1234567890123456'}]}));
+ assert(!secret.summaryTab(summaries).html.includes('RECIPIENT_PRIVATE_SENTINEL'));assert(!secret.summaryTab(summaries).html.includes('1234567890123456'));assert.throws(()=>secret.summaryTab(summaries.slice(1)),/harus mencakup/);assert.equal(secret.format(239487131),'239.487.131');
+ const secretResult=await secret.renderConfidential(summaries,{entity:'ENTITAS UJI',period:'Juli 2026',title:'SPT Masa PPh 21',taxTypeCode:'ICT_WIT'},{dir,stem:'Confidential',outputLayout:'combined'});
+ assert.equal(secretResult.paths.length,1);assert.equal(secretResult.sheets[0].tables[0].rows.length,4);assert.equal((await require('pdf-lib').PDFDocument.load(fs.readFileSync(secretResult.combinedPath))).getPageCount(),1);
+ console.log('PASS: Confidential uses shared PDF renderer; four aggregate rows; no recipient details; negative and large totals.');
  console.log('PASS: actual PDF + Excel files for all five tax types. Packaged runtime: '+!!process.pkg);
  console.log('PASS: 0/50/51/615 rows; full totals; negative cents; text identifiers; dates; pagination completeness; PDF/Excel menu.');
  }finally{await browser.close();}
