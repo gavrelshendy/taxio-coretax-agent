@@ -38,6 +38,21 @@
     });
   }
 
+  function isA1Restricted() {
+    return PROJECT_ORDER.some(id => sessionSummary[id]?.connected && String(sessionSummary[id].role || '').toLowerCase().includes('restricted'));
+  }
+  function applyA1Access() {
+    const blocked = isA1Restricted();
+    const pph21 = document.querySelector('.spt-jenis[value="pph21"]');
+    pph21.disabled=blocked;if(blocked)pph21.checked=false;
+    pph21.closest('label').title=blocked?'SPT PPh 21 tidak tersedia untuk pengguna Restricted.':'';
+    const button = document.querySelector('[data-feature="a1"]');
+    button.hidden = blocked;
+    button.style.display = blocked ? 'none' : '';
+    button.disabled = blocked;
+    if (blocked && activeFeature === 'a1') selectFeatureTab(document.querySelector('[data-feature="dividen"]'));
+  }
+
   // ---------- Connections bar ----------
   function renderConnections() {
     const bar = $('connections-bar');
@@ -75,6 +90,7 @@
     const openBtn = $('open-coretax-btn');
     if (openBtn) openBtn.style.display = isRestricted ? 'none' : '';
     applyRestrictedBupotLock(isRestricted);
+    applyA1Access();
     const showApp = anyConnected || manualStatus.loggedIn;
     $('main-layout').style.display = showApp ? 'grid' : 'none';
     $('empty-hint').style.display = showApp ? 'none' : 'flex';
@@ -403,7 +419,7 @@
   // has no way to combine them with the monthly types above in one run (automation/spt.js's
   // runSptDownload rejects a mixed selection outright), so "select all" only ever targets the
   // monthly group; the two annual boxes get their own mutual-exclusivity handling below instead.
-  wireSelectAll('spt-select-all-btn', '.spt-jenis:not([data-annual])');
+  wireSelectAll('spt-select-all-btn', '.spt-jenis:not([data-annual]):not(:disabled)');
   function updateSptMasaLabel() {
     const isAnnual = !!document.querySelector('.spt-jenis[data-annual]:checked');
     $('spt-masa-label').firstChild.textContent = isAnnual ? 'Tahun Pajak ' : 'Masa Pajak ';
@@ -412,6 +428,7 @@
   function updateSptLampiranOptions() {
     const enabled = $('spt-download-lampiran').checked;
     $('spt-lampiran-options').style.display = enabled ? 'block' : 'none';
+    $('spt-pdf-options').style.display = $('spt-lampiran-format').value === 'excel' ? 'none' : 'block';
     const keys = [...document.querySelectorAll('.spt-jenis:checked')].map((item) => item.value);
     const confidential = $('spt-lampiran-mode').querySelector('option[value="confidential"]');
     const confidentialAllowed = keys.length === 1 && keys[0] === 'pph21';
@@ -433,6 +450,7 @@
     updateSptLampiranOptions();
   }));
   $('spt-download-lampiran').addEventListener('change', updateSptLampiranOptions);
+  $('spt-lampiran-format').addEventListener('change', updateSptLampiranOptions);
   updateSptMasaLabel();
   updateSptLampiranOptions();
 
@@ -469,19 +487,21 @@
   // shared Download fields (folder simpan + Mulai Otomasi) are scoped to MODE, not to an
   // ever-growing per-feature exception list.
   let activeMode = 'download';
-  let activeFeature = 'ebupot';
+  let activeFeature = 'spt';
 
   function applyFeaturePanels() {
+    $('feature-a1').style.display = activeFeature === 'a1' ? 'block' : 'none';
     $('feature-ebupot').style.display = activeFeature === 'ebupot' ? 'block' : 'none';
     $('feature-mybupot').style.display = activeFeature === 'mybupot' ? 'block' : 'none';
     $('feature-spt').style.display = activeFeature === 'spt' ? 'block' : 'none';
     $('feature-pm-download').style.display = activeFeature === 'pm-download' ? 'block' : 'none';
     $('feature-dividen').style.display = activeFeature === 'dividen' ? 'block' : 'none';
     $('feature-pajakmasukan').style.display = activeFeature === 'pajakmasukan' ? 'block' : 'none';
-    $('dl-fields').style.display = activeMode === 'download' ? 'block' : 'none';
+    $('dl-fields').style.display = activeMode === 'download' || activeFeature === 'a1' ? 'block' : 'none';
   }
 
   function selectFeatureTab(btn) {
+    if(btn.dataset.feature === 'a1' && isA1Restricted()) return;
     activeFeature = btn.dataset.feature;
     document.querySelectorAll('.feature-tab').forEach((b) => b.classList.toggle('active', b === btn));
     applyFeaturePanels();
@@ -546,7 +566,7 @@
 
   $('pick-folder-btn').addEventListener('click', async () => {
     try {
-      const data = await api('/api/actions/pick-folder', { method: 'POST', body: JSON.stringify({ title: 'Pilih Folder Tempat Menyimpan Hasil Download' }) });
+      const data = await api('/api/actions/pick-folder', { method: 'POST', body: JSON.stringify({ title: 'Pilih Folder Tempat Menyimpan Hasil Unduhan' }) });
       if (data && !data.canceled && data.folderPath) {
         $('save-root-input').value = data.folderPath;
       }
@@ -698,7 +718,13 @@
     if (!selectedEntity) return;
     const saveRoot = $('save-root-input').value.trim();
     try {
-      if (activeFeature === 'mybupot') {
+      if (activeFeature === 'a1') {
+        if(isA1Restricted())throw new Error('Mode A1 tidak tersedia untuk pengguna Restricted.');
+        const year = $('a1-year').value.trim();
+        if (!/^(20)\d{2}$/.test(year) || Number(year)<2025) throw new Error('Isi tahun pajak mulai 2025, misalnya 2026.');
+        await api('/api/actions/download-spt', {method:'POST', body:JSON.stringify({entity:selectedEntity,a1Year:year,saveRoot:saveRoot||undefined})});
+        pollRunStatus();
+      } else if (activeFeature === 'mybupot') {
         const buktiTypeKeys = [...document.querySelectorAll('.mybupot-jenis:checked')].map((c) => c.value);
         const masaInput = $('mybupot-masa-input').value.trim();
         const pageSize = $('mybupot-page-size').value;
@@ -713,16 +739,21 @@
       } else if (activeFeature === 'spt') {
         const masaInput = $('spt-masa-input').value.trim();
         const jenisPajakKeys = [...document.querySelectorAll('.spt-jenis:checked')].map((c) => c.value);
+        if(isA1Restricted()&&jenisPajakKeys.includes('pph21'))throw new Error('SPT PPh 21 tidak tersedia untuk pengguna Restricted.');
         const checkPph25 = $('spt-check-pph25').checked;
         const includeLampiran = $('spt-download-lampiran').checked;
-        const lampiranMode = $('spt-lampiran-mode').value;
+        const includeBpe = $('spt-download-bpe').checked;
+        const includeInduk = $('spt-download-induk').checked;
+        if (!includeLampiran && !includeBpe && !includeInduk) throw new Error('Pilih minimal satu dokumen untuk diunduh.');
+        const lampiranFormat = $('spt-lampiran-format').value;
+        const lampiranMode = lampiranFormat === 'excel' ? 'full' : $('spt-lampiran-mode').value;
         const outputLayout = $('spt-output-layout').value;
         if (!masaInput) { alert('Masa wajib diisi.'); return; }
         if (!jenisPajakKeys.length) { alert('Pilih minimal satu Jenis Pajak.'); return; }
         await api('/api/actions/download-spt', {
           method: 'POST',
           body: JSON.stringify({ entity: selectedEntity, jenisPajakKeys, masaInput, saveRoot: saveRoot || undefined, checkPph25,
-            includeLampiran, lampiranMode, outputLayout })
+            includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout })
         });
         pollRunStatus();
       } else if (activeFeature === 'pm-download') {
@@ -793,7 +824,7 @@
     const running = st && st.active;
     $('run-controls').style.display = running ? 'flex' : 'none';
     $('start-download-btn').disabled = !!running;
-    $('start-download-btn').textContent = running ? 'Sedang Berjalan...' : 'Mulai Download';
+    $('start-download-btn').textContent = running ? 'Sedang Berjalan...' : 'Mulai Unduh';
     $('login-only-btn').disabled = !!running;
     if (running) {
       $('run-label').textContent = (st.label || '') + (st.currentPageSize ? (' · ' + st.currentPageSize + '/hal') : '');
@@ -828,7 +859,7 @@
     renderRunStatus(await api('/api/run/back', { method: 'POST' }));
   });
   $('run-stop-btn').addEventListener('click', async () => {
-    if (!confirm('Hentikan seluruh proses download?')) return;
+    if (!confirm('Hentikan seluruh proses unduhan?')) return;
     renderRunStatus(await api('/api/run/stop', { method: 'POST' }));
   });
   document.querySelectorAll('.run-size [data-size]').forEach((b) => {

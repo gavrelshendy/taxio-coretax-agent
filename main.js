@@ -37,6 +37,13 @@ if (false) {
     require('playwright-core/cli');
 }
 
+// Run export regression tests inside the shipped executable without starting the GUI,
+// restoring sessions, or touching an active Coretax browser.
+if (process.argv.includes('--test-lampiran-export')) {
+    require('./scripts/test-lampiran-export');
+    return;
+}
+
 // Belt & suspenders: this is a long-running GUI process, not a one-shot script - an unhandled
 // promise rejection anywhere (Node 15+ terminates the whole process on these by default) or a
 // stray uncaught exception must never silently kill the GUI server out from under an open

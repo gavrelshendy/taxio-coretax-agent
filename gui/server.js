@@ -352,7 +352,16 @@ async function handleDownloadSpt(req, res) {
     if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran, lampiranMode, outputLayout } = body || {};
+    if((body?.a1Year !== undefined || body?.jenisPajakKeys?.includes('pph21')) && require('../lib/spt-access').isRestricted())return sendJson(res,403,{error:'Seluruh unduhan SPT PPh 21 diblokir untuk pengguna Restricted.'});
+    if(body?.a1Year !== undefined){
+        // Use trusted session roles, never a role supplied in the request body.
+        // Check every active connection so selecting a manual/other project cannot bypass this.
+        if(state.connectedProjectIds().some(isProjectRestricted))return sendJson(res,403,{error:'Mode A1 tidak tersedia untuk pengguna Restricted.'});
+        if(!/^20\d{2}$/.test(String(body.a1Year))||Number(body.a1Year)<2025)return sendJson(res,400,{error:'Tahun Mode A1 harus mulai 2025.'});
+        const yy=String(body.a1Year).slice(2);
+        body={...body,jenisPajakKeys:['pph21'],masaInput:'01'+yy+'-12'+yy,includeLampiran:true,includeBpe:true,includeInduk:true,lampiranMode:'full',lampiranFormat:'pdf',outputLayout:'combined',checkPph25:false};
+    }
+    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!Array.isArray(jenisPajakKeys) || !jenisPajakKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis pajak & masa wajib diisi.' });
 
@@ -363,7 +372,7 @@ async function handleDownloadSpt(req, res) {
         if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Manual" dan login dulu.' });
         const folder = sanitizeFolder(entity.entity_name || 'Manual');
         runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, jenisPajakKeys, masaInput, saveRoot, checkPph25,
-            includeLampiran: !!includeLampiran, lampiranMode, outputLayout,
+            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout,
             onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
     } else {
         if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
@@ -385,12 +394,13 @@ async function handleDownloadSpt(req, res) {
             client: s.client, orgId: s.orgId,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
             picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot, checkPph25,
-            includeLampiran: !!includeLampiran, lampiranMode, outputLayout,
+            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout,
             restricted, allowedEbupotSections, passphrase, fallbackPicIds,
             onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok)
         };
     }
 
+    runOpts.a1Year=body.a1Year;
     try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + (isManual ? 'Sesi Manual' : entity.entity_name)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     runcontrol.setJenisRequested(jenisPajakKeys);

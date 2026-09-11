@@ -300,6 +300,68 @@ async function preparePageForPrint(page, tabLabel, metadata) {
       #__ca_l1d_snapshot .__ca_l1d_balance_component>form{flex:0 0 auto!important}
       #__ca_l1d_snapshot table.__ca_l1d_total_table{margin-top:auto!important}
       #__ca_l1d_snapshot table.__ca_l1d_total_table td{font-weight:700!important;background:#f1f5f9!important}
+      body.__ca_print_op rshshr-personal-income-tax-return,
+      body.__ca_print_op rshshr-personal-income-tax-return h1,
+      body.__ca_print_op rshshr-personal-income-tax-return h2,
+      body.__ca_print_op rshshr-personal-income-tax-return h3,
+      body.__ca_print_op rshshr-personal-income-tax-return label,
+      body.__ca_print_op rshshr-personal-income-tax-return input,
+      body.__ca_print_op rshshr-personal-income-tax-return select,
+      body.__ca_print_op rshshr-personal-income-tax-return textarea,
+      body.__ca_print_op rshshr-personal-income-tax-return table,
+      body.__ca_print_op rshshr-personal-income-tax-return th,
+      body.__ca_print_op rshshr-personal-income-tax-return td,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-component:not(.pi),
+      body.__ca_print_op rshshr-personal-income-tax-return .p-inputtext,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-dropdown-label,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-accordion-header-text,
+      body.__ca_print_op .__ca_print_header_clone,
+      body.__ca_print_op #__ca_print_header{font-family:"Arial Narrow",Arial,sans-serif!important}
+      body.__ca_print_op rshshr-personal-income-tax-return,
+      body.__ca_print_op rshshr-personal-income-tax-return label,
+      body.__ca_print_op rshshr-personal-income-tax-return input,
+      body.__ca_print_op rshshr-personal-income-tax-return select,
+      body.__ca_print_op rshshr-personal-income-tax-return textarea,
+      body.__ca_print_op rshshr-personal-income-tax-return table,
+      body.__ca_print_op rshshr-personal-income-tax-return td,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-inputtext,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-dropdown-label,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-radiobutton-label{color:#263746!important}
+      body.__ca_print_op #__ca_print_header,body.__ca_print_op .__ca_print_header_clone{border-bottom-color:#17365d!important}
+      body.__ca_print_op #__ca_print_header .ca-ph-title,body.__ca_print_op .__ca_print_header_clone .ca-ph-title,
+      body.__ca_print_op #__ca_print_header .ca-ph-wp,body.__ca_print_op .__ca_print_header_clone .ca-ph-wp{color:#17365d!important}
+      body.__ca_print_op #__ca_print_header .ca-ph-sub,body.__ca_print_op .__ca_print_header_clone .ca-ph-sub{color:#46586a!important}
+      body.__ca_print_op rshshr-personal-income-tax-return .p-accordion-header-link,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-panel-header,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-fieldset-legend{
+        padding:5px 8px!important;background:#e7edf2!important;color:#17365d!important;border-color:#aebbc6!important
+      }
+      body.__ca_print_op rshshr-personal-income-tax-return .p-accordion-header-link *,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-panel-header *,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-fieldset-legend *{background:transparent!important;color:#17365d!important}
+      body.__ca_print_op rshshr-personal-income-tax-return .p-accordion-content,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-panel-content,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-fieldset-content{
+        padding:5px 8px!important;border-color:#aebbc6!important;background:#fff!important;color:#263746!important
+      }
+      body.__ca_print_op rshshr-personal-income-tax-return .form-group.row{margin-top:0!important;margin-bottom:1px!important}
+      body.__ca_print_op rshshr-personal-income-tax-return .col-form-label{padding-top:2px!important;padding-bottom:2px!important}
+      body.__ca_print_op rshshr-personal-income-tax-return input.form-control,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-inputtext,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-dropdown,
+      body.__ca_print_op rshshr-personal-income-tax-return .p-inputgroup-addon{
+        padding-top:1px!important;padding-bottom:1px!important;background:#f3f5f7!important;color:#263746!important;border-color:#b8c3cc!important
+      }
+      body.__ca_print_op rshshr-personal-income-tax-return table.__ca_layout thead,
+      body.__ca_print_op rshshr-personal-income-tax-return table.__ca_layout thead tr,
+      body.__ca_print_op rshshr-personal-income-tax-return table.__ca_layout thead th,
+      body.__ca_print_op rshshr-personal-income-tax-return table.__ca_layout thead th *{background:#e7edf2!important;color:#17365d!important}
+      body.__ca_print_op rshshr-personal-income-tax-return table.__ca_layout th,
+      body.__ca_print_op rshshr-personal-income-tax-return table.__ca_layout td{border-color:#b8c3cc!important}
+      body.__ca_print_op rshshr-personal-income-tax-return table.__ca_layout tbody tr:nth-child(even)>td{background:#f8fafb!important}
+      body.__ca_print_op rshshr-personal-income-tax-return table.__ca_layout tfoot td{background:#edf1f4!important;color:#17365d!important;border-color:#aebbc6!important}
+      body.__ca_print_op rshshr-personal-income-tax-return .p-radiobutton-box{border-color:#aebbc6!important;background:#f3f5f7!important}
+      body.__ca_print_op rshshr-personal-income-tax-return .p-radiobutton-box.p-highlight{border-color:#17365d!important;background:#17365d!important}
       }`;
     await page.evaluate(`(()=>{
       document.getElementById('__ca_l1d_snapshot')?.remove();document.body.classList.remove('__ca_l1d_snapshot_active');document.getElementById('__ca_annual_snapshot')?.remove();document.body.classList.remove('__ca_annual_snapshot_active');
@@ -353,7 +415,7 @@ async function preparePageForPrint(page, tabLabel, metadata) {
         sourceTitle: metadata && metadata.sourceTitle, repeatHeader, annual: !!(metadata && metadata.annual) };
     const packagedHeaderResult = await page.evaluate(`(()=>{
       const p=${JSON.stringify(packagedHeaderPayload)},clean=v=>String(v||'').replace(/\\s+/g,' ').trim();
-       const root=document.querySelector(p.rootSelector)||document.querySelector('rshshr-corporate-income-tax-return,rshshr-personal-income-tax-return,rshshr-article-twentyone-twentysix-tax-return,rshshr-withholding-return,rshshr-normal-value-add-tax-return');if(!root)return{ok:false,reason:'root-not-found'};document.body.classList.toggle('__ca_repeat_header',!!p.repeatHeader);root.classList.toggle('__ca_monthly_induk_compact',!!p.repeatHeader&&clean(p.label).toUpperCase()==='INDUK');root.classList.toggle('__ca_monthly_detail_compact',!!p.repeatHeader&&clean(p.label).toUpperCase()!=='INDUK');root.classList.toggle('__ca_annual_induk_compact',!!p.annual&&clean(p.label).toUpperCase()==='INDUK');root.classList.toggle('__ca_corporate_induk_spacious',root.matches('rshshr-corporate-income-tax-return')&&clean(p.label).toUpperCase()==='INDUK');
+       const root=document.querySelector(p.rootSelector)||document.querySelector('rshshr-corporate-income-tax-return,rshshr-personal-income-tax-return,rshshr-article-twentyone-twentysix-tax-return,rshshr-withholding-return,rshshr-normal-value-add-tax-return');if(!root)return{ok:false,reason:'root-not-found'};document.body.classList.toggle('__ca_repeat_header',!!p.repeatHeader);document.body.classList.toggle('__ca_print_op',root.matches('rshshr-personal-income-tax-return'));root.classList.toggle('__ca_monthly_induk_compact',!!p.repeatHeader&&clean(p.label).toUpperCase()==='INDUK');root.classList.toggle('__ca_monthly_detail_compact',!!p.repeatHeader&&clean(p.label).toUpperCase()!=='INDUK');root.classList.toggle('__ca_annual_induk_compact',!!p.annual&&clean(p.label).toUpperCase()==='INDUK');root.classList.toggle('__ca_corporate_induk_spacious',root.matches('rshshr-corporate-income-tax-return')&&clean(p.label).toUpperCase()==='INDUK');
       let h=document.getElementById('__ca_print_header');if(!h){h=document.createElement('div');h.id='__ca_print_header';h.innerHTML='<div class="ca-ph-logo"></div><div><div class="ca-ph-title"></div><div class="ca-ph-sub"></div></div><div class="ca-ph-wp"></div>';document.body.prepend(h)}else if(h.parentNode!==document.body)document.body.prepend(h);
       const logo=Array.from(document.images).find(i=>/Logo-Coretax-DJP-Kemenkeu/i.test(i.src)),box=h.querySelector('.ca-ph-logo');box.replaceChildren();if(logo){const copy=logo.cloneNode();copy.removeAttribute('style');box.appendChild(copy)}
        const title=clean(p.formTitle)||'SURAT PEMBERITAHUAN (SPT)',sourceTitle=clean(p.sourceTitle)||title,label=clean(p.label||'SPT').toUpperCase();h.querySelector('.ca-ph-title').textContent=title;
@@ -1276,8 +1338,8 @@ async function replacePph21SnapshotWithOverview(page, rootSelector, summaries) {
 
 async function printPph21ConfidentialOverview(page, session, summaries, rootSelector, printScale) {
     const rendered = await replacePph21SnapshotWithOverview(page, rootSelector, summaries);
-    if (!rendered || !rendered.ok) throw new Error('Renderer Confidential L1-L3 gagal: ' + JSON.stringify(rendered));
-    log('[Lampiran Confidential] L1-L3 diringkas dalam satu halaman: ' + summaries.map(item => item.code + '=' + item.count).join(', ') + '.');
+    if (!rendered || !rendered.ok) throw new Error('Pembuatan PDF rahasia L1-L3 gagal: ' + JSON.stringify(rendered));
+    log('[Lampiran Rahasia] L1-L3 diringkas dalam satu halaman: ' + summaries.map(item => item.code + '=' + item.count).join(', ') + '.');
     return [await printPdf(session, printScale)];
 }
 
@@ -1335,17 +1397,55 @@ async function detectActiveTaxpayerName(page) {
     return sanitizeFilenamePart(value || 'SPT');
 }
 
-function filename(entity, config, label, periodLabel) {
-    const prefix = config.annual ? config.formCode + ' LAMPIRAN' : config.formCode;
-    return `${sanitizeFilenamePart(entity)} - ${prefix} ${sanitizeFilenamePart(label)} ${periodLabel}.pdf`;
+function filename(entity, config, label, periodLabel, revision='') {
+    const code=Object.keys(TAXTYPE_CONFIG).find(key=>TAXTYPE_CONFIG[key]===config);
+    const mode=/Rahasia|Confidential/i.test(label)?'Confidential':/Ringkas|Print/i.test(label)?'Ringkas':'Lengkap';
+    const section=label.replace(/GABUNGAN|\((?:Rahasia|Confidential|Ringkas|Print|Lengkap)\)/gi,'').trim();
+    return require('../lib/spt-filenames').filename(code,periodLabel,'Lampiran'+(section?' '+section:'')+' - '+mode,revision);
 }
 
 async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mode, taxYearHint = '', outputLayout = 'combined') {
+    require('../lib/spt-access').assertAllowed(taxTypeCode,ctx,page);
     if (!TAXTYPE_CONFIG[taxTypeCode]) return { ok: false, error: 'Jenis SPT ini belum didukung.' };
     mode = ['full', 'confidential'].includes(mode) ? mode : 'print';
     outputLayout = ['combined', 'separate', 'both'].includes(outputLayout) ? outputLayout : 'combined';
     if (mode === 'confidential' && taxTypeCode !== 'ICT_WIT') {
-        return { ok: false, error: 'Mode Confidential saat ini hanya tersedia untuk PPh 21/26.' };
+        return { ok: false, error: 'Mode rahasia saat ini hanya tersedia untuk PPh 21/26.' };
+    }
+    const format = ['pdf', 'excel', 'both'].includes(ctx.lampiranFormat) ? ctx.lampiranFormat : 'pdf';
+    if (mode !== 'confidential' || format !== 'pdf') {
+        try {
+            const config = TAXTYPE_CONFIG[taxTypeCode];
+            const period = config.annual && /^(19|20)\d{2}$/.test(String(taxYearHint))
+                ? { year: taxYearHint, fileLabel: taxYearHint, headerLabel: 'Tahun ' + taxYearHint }
+                : await detectTaxPeriod(page, config);
+            const entity = sanitizeFilenamePart(ctx.entityName || await detectActiveTaxpayerName(page) || ctx.entityCode || 'SPT');
+            const dir = ctx.outputDir || path.join(ctx.saveRoot, entity, 'SPT', String(period.year));
+            fs.mkdirSync(dir, { recursive: true });
+            const labels = (await waitForTabLabels(page)).filter(label => !/^induk$/i.test(label) && (!ctx.onlyLabels?.length || ctx.onlyLabels.includes(label)));
+            if (!labels.length) throw new Error('Lampiran belum tersedia.');
+            const tabs = [];
+            for (const label of labels) {
+                if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label);
+                await waitForTabContentStable(page, config.rootSelector);
+                await setUpTables(page, label, 'full', taxTypeCode);
+                await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
+                tabs.push(await require('../lib/lampiran-capture').collectTab(page, config.rootSelector, label));
+                log('[Lampiran] ' + label + ': seluruh tabel berhasil dibaca.');
+            }
+            const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'');
+            const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, period: period.headerLabel, title: config.title, taxTypeCode }, {
+                mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout
+            });
+            if (mode === 'confidential' && format === 'both') {
+                const pdf = await downloadLampiran(page, { ...ctx, lampiranFormat: 'pdf' }, taxpayerId, recordId, taxTypeCode, mode, taxYearHint, outputLayout);
+                if (!pdf.ok) throw new Error(pdf.error);
+                result.paths.push(...pdf.paths); result.combinedPath = pdf.combinedPath;
+            }
+            if (ctx.compFolder) { fs.mkdirSync(ctx.compFolder, { recursive: true }); for (const file of result.paths) fs.copyFileSync(file, path.join(ctx.compFolder, path.basename(file))); }
+            await clickTab(page, labels[0]);
+            return { ok: true, count: result.paths.length, paths: result.paths, combinedPath: result.combinedPath, excelPath: result.excelPath, sheets: ctx.returnSheets ? result.sheets : undefined, dir, entityName: entity, period, mode, outputLayout };
+        } catch (e) { return { ok: false, error: e.message }; }
     }
     try {
         const config = TAXTYPE_CONFIG[taxTypeCode];
@@ -1373,7 +1473,7 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
             if (Array.isArray(ctx.onlyLabels) && ctx.onlyLabels.length && !ctx.onlyLabels.includes(label)) continue;
             if (!await clickTab(page, label)) { log('[Lampiran] Tab tidak dapat dibuka: ' + label); continue; }
             if (stableRootSelector) await waitForTabContentStable(page, stableRootSelector);
-            const modeLabel = mode === 'print' ? 'Print' : mode === 'confidential' ? 'Confidential' : 'Lengkap';
+            const modeLabel = mode === 'print' ? 'Ringkas' : mode === 'confidential' ? 'Rahasia' : 'Lengkap';
             const suffix = (!config.annual || TWO_VERSION_TABS.has(label)) ? ' (' + modeLabel + ')' : '';
             await setUpTables(page, label, mode === 'confidential' ? 'print' : mode, taxTypeCode);
             if (stableRootSelector) await waitForTabContentStable(page, stableRootSelector, { minWaitMs: 700, timeoutMs: 8000 });
@@ -1412,10 +1512,10 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
                 } else if (taxTypeCode === 'ICT_WIT' && mode === 'confidential' && PPH21_API_GRIDS[label]) {
                     const summary = await collectPph21ConfidentialSummary(page, label);
                     confidentialSummaries.push(summary);
-                    log('[Lampiran Confidential] ' + label + ': ' + summary.count + ' data, bruto ' + summary.grossIncome + ', PPh ' + summary.incomeTax + '.');
+                    log('[Lampiran Rahasia] ' + label + ': ' + summary.count + ' data, bruto ' + summary.grossIncome + ', PPh ' + summary.incomeTax + '.');
                     if (label !== lastConfidentialLabel) continue;
                     if (confidentialSummaries.length !== confidentialLabels.length) {
-                        throw new Error('Ringkasan Confidential tidak lengkap: ' + confidentialSummaries.length + '/' + confidentialLabels.length + ' lampiran.');
+                        throw new Error('Ringkasan rahasia tidak lengkap: ' + confidentialSummaries.length + '/' + confidentialLabels.length + ' lampiran.');
                     }
                     apiBuffers = await printPph21ConfidentialOverview(page, session, confidentialSummaries, config.rootSelector, printScale);
                     outputLabel = 'L1-L3' + suffix;
@@ -1428,7 +1528,7 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
                 const buf = pageBuffers.length === 1 ? pageBuffers[0] : await mergePdfs(pageBuffers);
                 buffers.push(buf);
                 if (outputLayout !== 'combined') {
-                    const outPath = path.join(dir, filename(entity, config, outputLabel, period.fileLabel));
+                    const outPath = path.join(dir, filename(entity, config, outputLabel, period.fileLabel,ctx.fileSuffix));
                     fs.writeFileSync(outPath, buf); saved.push(outPath);
                     if (ctx.compFolder) { fs.mkdirSync(ctx.compFolder, { recursive: true }); fs.copyFileSync(outPath, path.join(ctx.compFolder, path.basename(outPath))); }
                     log('[Lampiran] Tersimpan: ' + outPath);
@@ -1438,8 +1538,8 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         if (!buffers.length) return { ok: false, error: 'Tidak ada lampiran yang berhasil dicetak.' };
         let mergedPath = null;
         if (outputLayout !== 'separate') {
-            const mergedLabel = mode === 'print' ? 'GABUNGAN (Print)' : mode === 'confidential' ? 'GABUNGAN (Confidential)' : 'GABUNGAN (Lengkap)';
-            mergedPath = path.join(dir, filename(entity, config, mergedLabel, period.fileLabel));
+            const mergedLabel = mode === 'print' ? 'GABUNGAN (Ringkas)' : mode === 'confidential' ? 'GABUNGAN (Rahasia)' : 'GABUNGAN (Lengkap)';
+            mergedPath = path.join(dir, filename(entity, config, mergedLabel, period.fileLabel,ctx.fileSuffix));
             fs.writeFileSync(mergedPath, await mergePdfs(buffers)); saved.push(mergedPath);
             if (ctx.compFolder) fs.copyFileSync(mergedPath, path.join(ctx.compFolder, path.basename(mergedPath)));
             log('[Lampiran] Tersimpan: ' + mergedPath);
@@ -1471,14 +1571,11 @@ function widgetPeriodCode(row, taxTypeCode, taxYearHint) {
 }
 
 function widgetPackageFilename(entityName, taxTypeCode, mode, periodCode) {
-    const token = WIDGET_PACKAGE_TOKENS[taxTypeCode] || TAXTYPE_CONFIG[taxTypeCode]?.formCode || 'SPT';
-    const modeSuffix = mode === 'print' ? ' (Print)' : mode === 'confidential' ? ' (Confidential)' : '';
-    return sanitizeFilenamePart(entityName) + ' - ' + token + modeSuffix + (periodCode ? ' ' + periodCode : '') + '.pdf';
+    return require('../lib/spt-filenames').filename(taxTypeCode,periodCode,mode==='print'?'Ringkas':mode==='confidential'?'Confidential':'Lengkap');
 }
 
-function widgetComponentFilename(entityName, taxTypeCode, component, periodCode) {
-    const token = WIDGET_PACKAGE_TOKENS[taxTypeCode] || TAXTYPE_CONFIG[taxTypeCode]?.formCode || 'SPT';
-    return sanitizeFilenamePart(entityName) + ' - ' + token + ' ' + component + (periodCode ? ' ' + periodCode : '') + '.pdf';
+function widgetComponentFilename(entityName, taxTypeCode, component, periodCode, revision='') {
+    return require('../lib/spt-filenames').filename(taxTypeCode,periodCode,component==='INDUK'?'Induk':component,revision);
 }
 
 async function findWidgetReturnRow(page, taxpayerId, recordId, taxTypeCode, aggregateId) {
@@ -1542,22 +1639,24 @@ async function fetchWidgetBpe(page, taxpayerId, row) {
     }
 }
 
-async function downloadWidgetSptPackage(page, ctx, taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout) {
+async function downloadWidgetSptPackage(page, ctx, taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout, lampiranFormat = 'pdf') {
+    require('../lib/spt-access').assertAllowed(taxTypeCode,ctx,page);
+    const row = await findWidgetReturnRow(page, taxpayerId, recordId, taxTypeCode, aggregateId);
+    const revision=row.ReturnSheetModel?.match(/(?:amendment|pembetulan)\s+(\d+)/i)?.[1];
+    ctx = { ...ctx, lampiranFormat, fileSuffix: revision ? 'PB '+revision : '' };
     const lampiranCtx = outputLayout === 'combined' ? { ...ctx, compFolder: null } : ctx;
     const lampiranResult = await downloadLampiran(page, lampiranCtx, taxpayerId, recordId, taxTypeCode, mode, taxYearHint, outputLayout);
     if (!lampiranResult || !lampiranResult.ok) return lampiranResult;
-    const row = await findWidgetReturnRow(page, taxpayerId, recordId, taxTypeCode, aggregateId);
     const periodCode = widgetPeriodCode(row, taxTypeCode, taxYearHint);
     const [bpeBuffer, rawIndukBuffer] = await Promise.all([
         fetchWidgetBpe(page, taxpayerId, row).catch((error) => { log('[Lampiran widget] BPE tidak tersedia - ' + error.message + ' - dilewati.'); return null; }),
         fetchWidgetInduk(page, taxpayerId, row)
     ]);
-    const indukBuffer = taxTypeCode === 'VAT_VAT'
-        ? await compactPpnOfficialIndukPdf(rawIndukBuffer) : rawIndukBuffer;
-    if (outputLayout === 'combined') {
+    const indukBuffer = rawIndukBuffer;
+    if (outputLayout === 'combined' && lampiranFormat !== 'excel') {
         if (!lampiranResult.combinedPath || !fs.existsSync(lampiranResult.combinedPath)) throw new Error('PDF lampiran gabungan tidak ditemukan.');
         const ordered = [...(bpeBuffer ? [bpeBuffer] : []), indukBuffer, fs.readFileSync(lampiranResult.combinedPath)];
-        const finalPath = path.join(lampiranResult.dir, widgetPackageFilename(lampiranResult.entityName, taxTypeCode, mode, periodCode));
+        const finalPath = path.join(lampiranResult.dir, require('../lib/spt-filenames').filename(taxTypeCode,periodCode,mode==='print'?'Ringkas':mode==='confidential'?'Confidential':'Lengkap',row.ReturnSheetModel?.match(/(?:amendment|pembetulan)\s+(\d+)/i)?.[1]));
         fs.writeFileSync(finalPath, await mergePdfs(ordered));
         try { fs.rmSync(lampiranResult.combinedPath, { force: true }); } catch (_) {}
         if (ctx.compFolder) {
@@ -1565,14 +1664,16 @@ async function downloadWidgetSptPackage(page, ctx, taxpayerId, recordId, aggrega
             fs.copyFileSync(finalPath, path.join(ctx.compFolder, path.basename(finalPath)));
         }
         log('[Lampiran widget] Tersimpan paket BPE - Induk - Lampiran: ' + finalPath);
-        return { ...lampiranResult, count: 1, paths: [finalPath], combinedPath: finalPath, bpeIncluded: !!bpeBuffer, indukIncluded: true };
+        const extras = lampiranResult.paths.filter(file => /\.xlsx$/i.test(file));
+        if (ctx.compFolder) for (const file of extras) fs.copyFileSync(file, path.join(ctx.compFolder, path.basename(file)));
+        return { ...lampiranResult, count: 1 + extras.length, paths: [finalPath, ...extras], combinedPath: finalPath, bpeIncluded: !!bpeBuffer, indukIncluded: true };
     }
     const extraPaths = [];
     if (bpeBuffer) {
-        const bpePath = path.join(lampiranResult.dir, widgetComponentFilename(lampiranResult.entityName, taxTypeCode, 'BPE', periodCode));
+        const bpePath = path.join(lampiranResult.dir, widgetComponentFilename(lampiranResult.entityName, taxTypeCode, 'BPE', periodCode, revision));
         fs.writeFileSync(bpePath, bpeBuffer); extraPaths.push(bpePath);
     }
-    const indukPath = path.join(lampiranResult.dir, widgetComponentFilename(lampiranResult.entityName, taxTypeCode, 'INDUK', periodCode));
+    const indukPath = path.join(lampiranResult.dir, widgetComponentFilename(lampiranResult.entityName, taxTypeCode, 'INDUK', periodCode, revision));
     fs.writeFileSync(indukPath, indukBuffer); extraPaths.push(indukPath);
     if (ctx.compFolder) for (const filePath of extraPaths) {
         fs.mkdirSync(ctx.compFolder, { recursive: true });
@@ -1582,21 +1683,21 @@ async function downloadWidgetSptPackage(page, ctx, taxpayerId, recordId, aggrega
     return { ...lampiranResult, count: lampiranResult.count + extraPaths.length, paths: [...extraPaths, ...lampiranResult.paths], bpeIncluded: !!bpeBuffer, indukIncluded: true };
 }
 
-async function installLampiranWidget(page, { saveRoot, entityCode, compFolder }) {
-    const ctx = { saveRoot: saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), entityCode, compFolder };
+async function installLampiranWidget(page, { saveRoot, entityCode, compFolder, restricted }) {
+    const ctx = { saveRoot: saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), entityCode, compFolder, restricted };
     const browserContext = page.context();
     // Sumber data grid lengkap ditangkap pasif sejak sebelum halaman SPT dibuka. Header
     // autentikasi hanya disimpan di memori proses dan tidak pernah ditulis ke log/fixture.
     returnsheetGridApi.watchContext(browserContext);
-    try { await browserContext.exposeFunction('__ca_downloadSptPackageV1150', (taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout) => {
+    try { await browserContext.exposeFunction('__ca_downloadSptPackageV1150', (taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout, lampiranFormat) => {
         log('[Lampiran engine v1.15.0-final] Binding paket aktif untuk ' + taxTypeCode + ' mode ' + mode + ', output ' + outputLayout + '.');
         // Cari tab yang benar saat tombol diklik. `page` awal dapat berbeda karena Coretax bisa
         // membuka form SPT pada tab baru setelah widget pertama kali dipasang.
         const active = browserContext.pages().find(p => !p.isClosed() && p.url().includes(String(taxpayerId)) && p.url().includes(String(recordId)))
             || browserContext.pages().find(p => !p.isClosed() && /\/(corporate-income-tax-return|personal-income-tax-return|article-21-26-tax-return|withholding-tax-return|value-added-tax-return)\//i.test(p.url())) || page;
-        return downloadWidgetSptPackage(active, ctx, taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout);
+        return downloadWidgetSptPackage(active, ctx, taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout, lampiranFormat);
     }); } catch (e) { log('[Lampiran engine v1.15.0-final] Gagal memasang binding baru: ' + e.message); }
-    const script = lampiranWidget.buildLampiranWidgetScript();
+    const script = lampiranWidget.buildLampiranWidgetScript(require('../lib/spt-access').isRestricted(restricted));
     try { await browserContext.addInitScript({ content: script }); }
     catch (e) { log('[Lampiran] Gagal memasang init script: ' + e.message); }
 
