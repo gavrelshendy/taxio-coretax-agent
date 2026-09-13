@@ -1442,18 +1442,19 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
             fs.mkdirSync(dir, { recursive: true });
             const labels = (await waitForTabLabels(page)).filter(label => !/^induk$/i.test(label) && (!ctx.onlyLabels?.length || ctx.onlyLabels.includes(label)));
             if (!labels.length) throw new Error('Lampiran belum tersedia.');
-            const tabs = [];
+            const tabs = [],confidentialSummaries=[];
             for (const label of labels) {
                 if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label);
                 await waitForTabContentStable(page, config.rootSelector);
                 await setUpTables(page, label, 'full', taxTypeCode);
                 await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
                 tabs.push(await require('../lib/lampiran-capture').collectTab(page, config.rootSelector, label));
+                if(ctx.returnSheets&&taxTypeCode==='ICT_WIT'&&PPH21_API_GRIDS[label]){try{confidentialSummaries.push(await collectPph21ConfidentialSummary(page,label));}catch(e){log('[Lampiran] Ringkasan Confidential '+label+' gagal dibaca: '+e.message);}}
                 log('[Lampiran] ' + label + ': seluruh tabel berhasil dibaca.');
             }
             const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'');
             const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, period: period.headerLabel, title: config.title, taxTypeCode }, {
-                mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout
+                mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession
             });
             if (mode === 'confidential' && format === 'both') {
                 const pdf = await downloadLampiran(page, { ...ctx, lampiranFormat: 'pdf' }, taxpayerId, recordId, taxTypeCode, mode, taxYearHint, outputLayout);
@@ -1461,8 +1462,8 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
                 result.paths.push(...pdf.paths); result.combinedPath = pdf.combinedPath;
             }
             if (ctx.compFolder) { fs.mkdirSync(ctx.compFolder, { recursive: true }); for (const file of result.paths) fs.copyFileSync(file, path.join(ctx.compFolder, path.basename(file))); }
-            await clickTab(page, labels[0]);
-            return { ok: true, count: result.paths.length, paths: result.paths, combinedPath: result.combinedPath, excelPath: result.excelPath, sheets: ctx.returnSheets ? result.sheets : undefined, dir, entityName: entity, period, mode, outputLayout };
+            if(!ctx.returnSheets)await clickTab(page, labels[0]);
+            return { ok: true, confidentialSummaries, count: result.paths.length, paths: result.paths, combinedPath: result.combinedPath, excelPath: result.excelPath, sheets: ctx.returnSheets ? result.sheets : undefined, dir, entityName: entity, period, mode, outputLayout };
         } catch (e) { return { ok: false, error: e.message }; }
     }
     try {

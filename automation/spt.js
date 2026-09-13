@@ -488,7 +488,7 @@ async function processSptCombo(ctx) {
                     outputDir: saveDir,
                     entityCode,
                     entityName: entityCode,
-                    compFolder: null, lampiranFormat, returnSheets: !!ctx.a1Book, fileSuffix: pbSuffix ? ' ' + pbSuffix : ''
+                    compFolder: null, lampiranFormat, returnSheets: !!ctx.a1Book, renderSession:ctx.a1Book?.renderSession, fileSuffix: pbSuffix ? ' ' + pbSuffix : ''
                 }, authState.taxpayerId, row.RecordId, row.TaxTypeCode, lampiranMode,
                 isAnnual ? mmYY : '', outputLayout);
                 if (!lampiranResult || !lampiranResult.ok) {
@@ -496,10 +496,8 @@ async function processSptCombo(ctx) {
                 }
                 if(ctx.a1Book){
                   try {
-                    // Reopen the source form: printing may have selected a different tab.
-                    await openLampiranView(page,row,authState,emit);
-                    const secret=await lampiran.downloadLampiran(page,{saveRoot,outputDir:saveDir,entityCode,entityName:entityCode,compFolder:null,lampiranFormat:'pdf',fileSuffix:pbSuffix?' PB '+pbSuffix:''},authState.taxpayerId,row.RecordId,row.TaxTypeCode,'confidential','',outputLayout);
-                    if(!secret.ok||!secret.combinedPath)throw Error(secret.error||'PDF rahasia gagal dibuat.');
+                    const secret=await require('../lib/lampiran-confidential').renderConfidential(lampiranResult.confidentialSummaries,{entity:lampiranResult.entityName,period:lampiranResult.period.headerLabel,title:lampiran.TAXTYPE_CONFIG[row.TaxTypeCode].title,taxTypeCode:row.TaxTypeCode},{dir:saveDir,stem:require('../lib/spt-filenames').filename(row.TaxTypeCode,mmYY,'Lampiran - Confidential',pbSuffix,''),outputLayout,renderSession:ctx.a1Book.renderSession});
+                    if(!secret.combinedPath)throw Error(secret.error||'PDF rahasia gagal dibuat.');
                     const secretPath=path.join(ctx.finalDir || saveDir,buildSptFilename(entityCode,meta.packageToken+' (Rahasia)',mmYY,pbSuffix));
                     if(!fs.existsSync(bpePath)||!fs.existsSync(sptPath))throw Error('Paket belum lengkap: BPE atau Induk belum tersedia.');
                     const official=[bpePath,sptPath].filter(file=>fs.existsSync(file));
@@ -560,6 +558,7 @@ async function runSptDownload(opts) {
     if(opts.a1Year !== undefined && opts.restricted)throw new Error('Mode A1 tidak tersedia untuk pengguna Restricted.');
     const { client, orgId, entity, jenisPajakKeys } = opts;
     const a1Book = opts.a1Year ? new (require('../lib/a1-workbook').AnnualWorkbook)(opts.a1Year) : null;
+    if(a1Book)a1Book.renderSession=require('../lib/lampiran-export').createRenderSession();
     const checkPph25 = !!opts.checkPph25;
     const includeLampiran = !!opts.includeLampiran;
     const includeBpe = opts.includeBpe !== false;
@@ -845,6 +844,7 @@ async function runSptDownload(opts) {
         if (!(e && e.isStop)) throw e;
     } finally {
         await htmlToPdf.closeRenderer().catch(() => {});
+        if(a1Book)await a1Book.renderSession.close().catch(()=>{});
     }
 
     if(a1Book){const result=await a1Book.save(path.join(saveRoot,entity.entity_id,'SPT','A1',String(opts.a1Year)),entity.entity_name);log('Mode A1: '+result.file+(result.partial?' — BELUM LENGKAP, periksa sheet Kontrol.':' — selesai.'));}
