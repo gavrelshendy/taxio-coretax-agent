@@ -65,6 +65,17 @@ const {typed}=require('../lib/lampiran-export');
  assert(!secret.summaryTab(summaries).html.includes('RECIPIENT_PRIVATE_SENTINEL'));assert(!secret.summaryTab(summaries).html.includes('1234567890123456'));assert.throws(()=>secret.summaryTab(summaries.slice(1)),/harus mencakup/);assert.equal(secret.format(239487131),'239.487.131');
  const secretResult=await secret.renderConfidential(summaries,{entity:'ENTITAS UJI',period:'Juli 2026',title:'SPT Masa PPh 21',taxTypeCode:'ICT_WIT'},{dir,stem:'Confidential',outputLayout:'combined'});
  assert.equal(secretResult.paths.length,1);assert.equal(secretResult.sheets[0].tables[0].rows.length,4);assert.equal((await require('pdf-lib').PDFDocument.load(fs.readFileSync(secretResult.combinedPath))).getPageCount(),1);
+ await require('./test-excel-control-layout')(dir);
+ const session=require('../lib/lampiran-export').createRenderSession();
+ let shared;
+ try{
+  shared=await session.getBrowser();
+  const first=await renderTabs([fixture],{entity:'UJI',period:'2026',title:'SPT',taxTypeCode:'ICT_WIT'},{dir,stem:'Shared full',mode:'full',format:'pdf',renderSession:session});
+  const second=await secret.renderConfidential(summaries,{entity:'UJI',period:'2026',title:'SPT',taxTypeCode:'ICT_WIT'},{dir,stem:'Shared confidential',renderSession:session});
+  assert.equal(await session.getBrowser(),shared);assert.equal(shared.contexts().length,0);assert(first.combinedPath&&second.combinedPath);
+  await assert.rejects(secret.renderConfidential(summaries.slice(1),{},{renderSession:session}),/harus mencakup/);assert(shared.isConnected());
+ }finally{await session.close();}assert(!shared.isConnected());
+ console.log('PASS: full and Confidential reuse one browser; render pages and browser are closed.');
  console.log('PASS: Confidential uses shared PDF renderer; four aggregate rows; no recipient details; negative and large totals.');
  console.log('PASS: actual PDF + Excel files for all five tax types. Packaged runtime: '+!!process.pkg);
  console.log('PASS: 0/50/51/615 rows; full totals; negative cents; text identifiers; dates; pagination completeness; PDF/Excel menu.');
