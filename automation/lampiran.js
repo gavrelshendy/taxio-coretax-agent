@@ -1377,6 +1377,19 @@ async function printPaginatorPages(page, session, mode, stableRootSelector = '',
     return buffers;
 }
 
+/** NPWP WP aktif, dari field Tin di halaman SPT atau dari header akun Coretax. Dipakai bila NPWP
+ *  tidak datang dari Taxio (login manual): kop lampiran PER-11 mencetak NPWP per kotak digit. */
+async function detectActiveTaxpayerTin(page) {
+    return page.evaluate(`(() => {
+      const clean=s=>(s||'').replace(/\\s+/g,' ').trim();
+      const field=document.querySelector('[formcontrolname="Tin"]');
+      const fromField=clean(field&&(field.value||field.textContent)).replace(/\\D/g,'');
+      if(/^\\d{15,16}$/.test(fromField))return fromField;
+      const head=Array.from(document.querySelectorAll('header *,nav *')).map(e=>clean(e.textContent)).join(' ');
+      return (head.match(/\\d{15,16}/)||[''])[0];
+    })()`).catch(() => '');
+}
+
 /** Baca WP aktif dari pill akun Coretax. Ini sengaja tidak memakai nama entitas dari Taxio,
  * agar benar ketika user login manual maupun sedang impersonate. */
 async function detectActiveTaxpayerName(page) {
@@ -1401,7 +1414,7 @@ function filename(entity, config, label, periodLabel, revision='') {
     const code=Object.keys(TAXTYPE_CONFIG).find(key=>TAXTYPE_CONFIG[key]===config);
     const mode=/Rahasia|Confidential/i.test(label)?'Confidential':/Ringkas|Print/i.test(label)?'Ringkas':'Lengkap';
     const section=label.replace(/GABUNGAN|\((?:Rahasia|Confidential|Ringkas|Print|Lengkap)\)/gi,'').trim();
-    return require('../lib/spt-filenames').filename(code,periodLabel,'Lampiran'+(section?' '+section:'')+' - '+mode,revision);
+    return require('../lib/spt-filenames').filename(code,periodLabel,'Lampiran'+(section?' '+section:'')+' - '+mode,revision,'pdf',entity);
 }
 
 async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mode, taxYearHint = '', outputLayout = 'combined') {
@@ -1424,11 +1437,11 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
                 await waitForTabContentStable(page,config.rootSelector);
                 summaries.push(await collectPph21ConfidentialSummary(page,label));
             }
-            const stem=require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - Confidential',ctx.fileSuffix,'');
+            const stem=require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - Confidential',ctx.fileSuffix,'',ctx.entityCode||entity);
             const result=await require('../lib/lampiran-confidential').renderConfidential(summaries,{entity,period:period.headerLabel,title:config.title,taxTypeCode},{dir,stem,outputLayout});
             if(ctx.compFolder){fs.mkdirSync(ctx.compFolder,{recursive:true});for(const file of result.paths)fs.copyFileSync(file,path.join(ctx.compFolder,path.basename(file)));}
             await clickTab(page,'L-IA');
-            return {ok:true,count:result.paths.length,paths:result.paths,combinedPath:result.combinedPath,dir,entityName:entity,period,mode,outputLayout};
+            return {ok:true,count:result.paths.length,paths:result.paths,combinedPath:result.combinedPath,dir,entityName:entity,entityKey:ctx.entityCode||entity,period,mode,outputLayout};
         }catch(e){return {ok:false,error:e.message};}
     }
     // The Confidential PDF case returned above; every other combination is rebuilt from the
@@ -1453,8 +1466,10 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
             if(ctx.returnSheets&&taxTypeCode==='ICT_WIT'&&PPH21_API_GRIDS[label]){try{confidentialSummaries.push(await collectPph21ConfidentialSummary(page,label));}catch(e){log('[Lampiran] Ringkasan Confidential '+label+' gagal dibaca: '+e.message);}}
             log('[Lampiran] ' + label + ': seluruh tabel berhasil dibaca.');
         }
-        const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'');
-        const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, entityNpwp: ctx.entityNpwp, period: period.headerLabel, title: config.title, taxTypeCode }, {
+        // (named after Taxio's entity code when there is one, else the taxpayer's name - see lib/spt-filenames.js)
+        const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'',ctx.entityCode||entity);
+        const entityNpwp = ctx.entityNpwp || await detectActiveTaxpayerTin(page);
+        const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, entityNpwp, period: period.headerLabel, title: config.title, taxTypeCode }, {
             mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession,layoutStyle:ctx.layoutStyle
         });
         if (mode === 'confidential' && format === 'both') {
@@ -1464,7 +1479,7 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         }
         if (ctx.compFolder) { fs.mkdirSync(ctx.compFolder, { recursive: true }); for (const file of result.paths) fs.copyFileSync(file, path.join(ctx.compFolder, path.basename(file))); }
         if(!ctx.returnSheets)await clickTab(page, labels[0]);
-        return { ok: true, confidentialSummaries, count: result.paths.length, paths: result.paths, combinedPath: result.combinedPath, excelPath: result.excelPath, sheets: ctx.returnSheets ? result.sheets : undefined, dir, entityName: entity, period, mode, outputLayout };
+        return { ok: true, confidentialSummaries, count: result.paths.length, paths: result.paths, combinedPath: result.combinedPath, excelPath: result.excelPath, sheets: ctx.returnSheets ? result.sheets : undefined, dir, entityName: entity, entityKey: ctx.entityCode || entity, period, mode, outputLayout };
     } catch (e) { return { ok: false, error: e.message }; }
 }
 
@@ -1490,11 +1505,11 @@ function widgetPeriodCode(row, taxTypeCode, taxYearHint) {
 }
 
 function widgetPackageFilename(entityName, taxTypeCode, mode, periodCode) {
-    return require('../lib/spt-filenames').filename(taxTypeCode,periodCode,mode==='print'?'Ringkas':mode==='confidential'?'Confidential':'Lengkap');
+    return require('../lib/spt-filenames').filename(taxTypeCode,periodCode,mode==='print'?'Ringkas':mode==='confidential'?'Confidential':'Lengkap','','pdf',entityName);
 }
 
 function widgetComponentFilename(entityName, taxTypeCode, component, periodCode, revision='') {
-    return require('../lib/spt-filenames').filename(taxTypeCode,periodCode,component==='INDUK'?'Induk':component,revision);
+    return require('../lib/spt-filenames').filename(taxTypeCode,periodCode,component==='INDUK'?'Induk':component,revision,'pdf',entityName);
 }
 
 async function findWidgetReturnRow(page, taxpayerId, recordId, taxTypeCode, aggregateId) {
@@ -1575,7 +1590,7 @@ async function downloadWidgetSptPackage(page, ctx, taxpayerId, recordId, aggrega
     if (outputLayout === 'combined' && lampiranFormat !== 'excel') {
         if (!lampiranResult.combinedPath || !fs.existsSync(lampiranResult.combinedPath)) throw new Error('PDF lampiran gabungan tidak ditemukan.');
         const ordered = [...(bpeBuffer ? [bpeBuffer] : []), indukBuffer, fs.readFileSync(lampiranResult.combinedPath)];
-        const finalPath = path.join(lampiranResult.dir, require('../lib/spt-filenames').filename(taxTypeCode,periodCode,mode==='print'?'Ringkas':mode==='confidential'?'Confidential':'Lengkap',row.ReturnSheetModel?.match(/(?:amendment|pembetulan)\s+(\d+)/i)?.[1]));
+        const finalPath = path.join(lampiranResult.dir, require('../lib/spt-filenames').filename(taxTypeCode,periodCode,mode==='print'?'Ringkas':mode==='confidential'?'Confidential':'Lengkap',row.ReturnSheetModel?.match(/(?:amendment|pembetulan)\s+(\d+)/i)?.[1],'pdf',lampiranResult.entityKey||lampiranResult.entityName));
         fs.writeFileSync(finalPath, await mergePdfs(ordered));
         try { fs.rmSync(lampiranResult.combinedPath, { force: true }); } catch (_) {}
         if (ctx.compFolder) {
@@ -1589,10 +1604,10 @@ async function downloadWidgetSptPackage(page, ctx, taxpayerId, recordId, aggrega
     }
     const extraPaths = [];
     if (bpeBuffer) {
-        const bpePath = path.join(lampiranResult.dir, widgetComponentFilename(lampiranResult.entityName, taxTypeCode, 'BPE', periodCode, revision));
+        const bpePath = path.join(lampiranResult.dir, widgetComponentFilename(lampiranResult.entityKey || lampiranResult.entityName, taxTypeCode, 'BPE', periodCode, revision));
         fs.writeFileSync(bpePath, bpeBuffer); extraPaths.push(bpePath);
     }
-    const indukPath = path.join(lampiranResult.dir, widgetComponentFilename(lampiranResult.entityName, taxTypeCode, 'INDUK', periodCode, revision));
+    const indukPath = path.join(lampiranResult.dir, widgetComponentFilename(lampiranResult.entityKey || lampiranResult.entityName, taxTypeCode, 'INDUK', periodCode, revision));
     fs.writeFileSync(indukPath, indukBuffer); extraPaths.push(indukPath);
     if (ctx.compFolder) for (const filePath of extraPaths) {
         fs.mkdirSync(ctx.compFolder, { recursive: true });

@@ -191,7 +191,7 @@ function parseModelSptSuffix(modelText) {
 /** Per the spec's exact format: "ENTITY CODE - <token> MMYY[ PB N]". Unchanged from the
  *  click-based version. */
 function buildSptFilename(entityCode, token, mmYY, pbSuffix) {
-    return require('../lib/spt-filenames').tokenFilename(token,mmYY,pbSuffix);
+    return require('../lib/spt-filenames').tokenFilename(token,mmYY,pbSuffix,entityCode);
 }
 
 function buildLampiranViewCandidates(row, authState) {
@@ -496,7 +496,7 @@ async function processSptCombo(ctx) {
                 }
                 if(ctx.a1Book){
                   try {
-                    const secret=await require('../lib/lampiran-confidential').renderConfidential(lampiranResult.confidentialSummaries,{entity:lampiranResult.entityName,period:lampiranResult.period.headerLabel,title:lampiran.TAXTYPE_CONFIG[row.TaxTypeCode].title,taxTypeCode:row.TaxTypeCode},{dir:saveDir,stem:require('../lib/spt-filenames').filename(row.TaxTypeCode,mmYY,'Lampiran - Confidential',pbSuffix,''),outputLayout,renderSession:ctx.a1Book.renderSession});
+                    const secret=await require('../lib/lampiran-confidential').renderConfidential(lampiranResult.confidentialSummaries,{entity:lampiranResult.entityName,period:lampiranResult.period.headerLabel,title:lampiran.TAXTYPE_CONFIG[row.TaxTypeCode].title,taxTypeCode:row.TaxTypeCode},{dir:saveDir,stem:require('../lib/spt-filenames').filename(row.TaxTypeCode,mmYY,'Lampiran - Confidential',pbSuffix,'',entityCode),outputLayout,renderSession:ctx.a1Book.renderSession});
                     if(!secret.combinedPath)throw Error(secret.error||'PDF rahasia gagal dibuat.');
                     const secretPath=path.join(ctx.finalDir || saveDir,buildSptFilename(entityCode,meta.packageToken+' (Rahasia)',mmYY,pbSuffix));
                     if(!fs.existsSync(bpePath)||!fs.existsSync(sptPath))throw Error('Paket belum lengkap: BPE atau Induk belum tersedia.');
