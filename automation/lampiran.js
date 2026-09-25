@@ -1431,140 +1431,40 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
             return {ok:true,count:result.paths.length,paths:result.paths,combinedPath:result.combinedPath,dir,entityName:entity,period,mode,outputLayout};
         }catch(e){return {ok:false,error:e.message};}
     }
-    if (mode !== 'confidential' || format !== 'pdf') {
-        try {
-            const config = TAXTYPE_CONFIG[taxTypeCode];
-            const period = config.annual && /^(19|20)\d{2}$/.test(String(taxYearHint))
-                ? { year: taxYearHint, fileLabel: taxYearHint, headerLabel: 'Tahun ' + taxYearHint }
-                : await detectTaxPeriod(page, config);
-            const entity = sanitizeFilenamePart(ctx.entityName || await detectActiveTaxpayerName(page) || ctx.entityCode || 'SPT');
-            const dir = ctx.outputDir || path.join(ctx.saveRoot, entity, 'SPT', String(period.year));
-            fs.mkdirSync(dir, { recursive: true });
-            const labels = (await waitForTabLabels(page)).filter(label => !/^induk$/i.test(label) && (!ctx.onlyLabels?.length || ctx.onlyLabels.includes(label)));
-            if (!labels.length) throw new Error('Lampiran belum tersedia.');
-            const tabs = [],confidentialSummaries=[];
-            for (const label of labels) {
-                if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label);
-                await waitForTabContentStable(page, config.rootSelector);
-                await setUpTables(page, label, 'full', taxTypeCode);
-                await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
-                tabs.push(await require('../lib/lampiran-capture').collectTab(page, config.rootSelector, label));
-                if(ctx.returnSheets&&taxTypeCode==='ICT_WIT'&&PPH21_API_GRIDS[label]){try{confidentialSummaries.push(await collectPph21ConfidentialSummary(page,label));}catch(e){log('[Lampiran] Ringkasan Confidential '+label+' gagal dibaca: '+e.message);}}
-                log('[Lampiran] ' + label + ': seluruh tabel berhasil dibaca.');
-            }
-            const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'');
-            const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, period: period.headerLabel, title: config.title, taxTypeCode }, {
-                mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession
-            });
-            if (mode === 'confidential' && format === 'both') {
-                const pdf = await downloadLampiran(page, { ...ctx, lampiranFormat: 'pdf' }, taxpayerId, recordId, taxTypeCode, mode, taxYearHint, outputLayout);
-                if (!pdf.ok) throw new Error(pdf.error);
-                result.paths.push(...pdf.paths); result.combinedPath = pdf.combinedPath;
-            }
-            if (ctx.compFolder) { fs.mkdirSync(ctx.compFolder, { recursive: true }); for (const file of result.paths) fs.copyFileSync(file, path.join(ctx.compFolder, path.basename(file))); }
-            if(!ctx.returnSheets)await clickTab(page, labels[0]);
-            return { ok: true, confidentialSummaries, count: result.paths.length, paths: result.paths, combinedPath: result.combinedPath, excelPath: result.excelPath, sheets: ctx.returnSheets ? result.sheets : undefined, dir, entityName: entity, period, mode, outputLayout };
-        } catch (e) { return { ok: false, error: e.message }; }
-    }
+    // The Confidential PDF case returned above; every other combination is rebuilt from the
+    // captured tab HTML by lib/lampiran-export.js.
     try {
         const config = TAXTYPE_CONFIG[taxTypeCode];
-        // Tangkap periode sebelum menunggu/inventarisasi tab. Angular Coretax dapat merender
-        // ulang form sesaat setelah tab muncul dan mengosongkan TaxYear sementara; jika tahun
-        // dibaca setelah itu, PDF berisiko salah tahun atau menunggu tanpa hasil.
-        const hintedYear = /^(?:19|20)\d{2}$/.test(String(taxYearHint || '')) ? String(taxYearHint) : '';
-        const period = config.annual && hintedYear
-            ? { year: hintedYear, fileLabel: hintedYear, headerLabel: 'Tahun ' + hintedYear }
+        const period = config.annual && /^(19|20)\d{2}$/.test(String(taxYearHint))
+            ? { year: taxYearHint, fileLabel: taxYearHint, headerLabel: 'Tahun ' + taxYearHint }
             : await detectTaxPeriod(page, config);
-        const labels = await waitForTabLabels(page);
-        if (!labels.length) return { ok: false, error: 'Tab lampiran belum muncul. Tunggu halaman selesai dimuat lalu coba lagi.' };
-        const session = await page.context().newCDPSession(page);
-        const year = period.year;
-        const detected = await detectActiveTaxpayerName(page);
-        const entity = sanitizeFilenamePart(ctx.entityName || (detected !== 'SPT' ? detected : ctx.entityCode || taxpayerId || 'SPT'));
-        const dir = ctx.outputDir || path.join(ctx.saveRoot, entity, 'SPT', String(year));
+        const entity = sanitizeFilenamePart(ctx.entityName || await detectActiveTaxpayerName(page) || ctx.entityCode || 'SPT');
+        const dir = ctx.outputDir || path.join(ctx.saveRoot, entity, 'SPT', String(period.year));
         fs.mkdirSync(dir, { recursive: true });
-        const saved = [], buffers = [];
-        const stableRootSelector = config.repeatHeader ? config.rootSelector : '';
-        const confidentialLabels = mode === 'confidential' ? labels.filter(label => PPH21_API_GRIDS[label]) : [];
-        const confidentialSummaries = [];
-        const lastConfidentialLabel = confidentialLabels[confidentialLabels.length - 1];
+        const labels = (await waitForTabLabels(page)).filter(label => !/^induk$/i.test(label) && (!ctx.onlyLabels?.length || ctx.onlyLabels.includes(label)));
+        if (!labels.length) throw new Error('Lampiran belum tersedia.');
+        const tabs = [],confidentialSummaries=[];
         for (const label of labels) {
-            if (Array.isArray(ctx.onlyLabels) && ctx.onlyLabels.length && !ctx.onlyLabels.includes(label)) continue;
-            if (!await clickTab(page, label)) { log('[Lampiran] Tab tidak dapat dibuka: ' + label); continue; }
-            if (stableRootSelector) await waitForTabContentStable(page, stableRootSelector);
-            const modeLabel = mode === 'print' ? 'Ringkas' : mode === 'confidential' ? 'Rahasia' : 'Lengkap';
-            const suffix = (!config.annual || TWO_VERSION_TABS.has(label)) ? ' (' + modeLabel + ')' : '';
-            await setUpTables(page, label, mode === 'confidential' ? 'print' : mode, taxTypeCode);
-            if (stableRootSelector) await waitForTabContentStable(page, stableRootSelector, { minWaitMs: 700, timeoutMs: 8000 });
-            // Reset paginator sebelum memasang kop. Klik paginator memicu render ulang Angular
-            // dan dapat membuang elemen kop jika dilakukan setelah preparePageForPrint.
-            await resetPaginators(page);
-            // Inventarisasi dilakukan sebelum CSS cetak menyembunyikan paginator.
-            // ID owner dipertahankan pada DOM agar semua halaman dapat ditelusuri tanpa
-            // mencetak ulang tabel pasangan yang berbeda.
-            const paginatorStates = await paginatorIds(page);
-            if (paginatorStates.length) log('[Lampiran paginator] ' + label + ': ' + paginatorStates.map(state => state.total).join(', ') + ' entri.');
-            await preparePageForPrint(page, label, { entity, year, periodLabel: period.headerLabel,
-                rootSelector: config.rootSelector, formTitle: config.title, sourceTitle: config.sourceTitle,
-                repeatHeader: config.repeatHeader, annual: config.annual });
-            await page.waitForTimeout(300);
-            // Angular Coretax dapat merender ulang root sesaat setelah tab dibuka dan membuang
-            // elemen kop. Pasang ulang tepat sebelum print agar PDF paket selalu mendapat kop.
-            await preparePageForPrint(page, label, { entity, year, periodLabel: period.headerLabel,
-                rootSelector: config.rootSelector, formTitle: config.title, sourceTitle: config.sourceTitle,
-                repeatHeader: config.repeatHeader, annual: config.annual });
-            try {
-                const printScale = config.annual
-                    ? (ANNUAL_PRINT_SCALE[taxTypeCode + ':' + label] || PRINT_SCALE)
-                    : stableRootSelector && paginatorStates.length
-                        ? (MONTHLY_PAGINATOR_SCALE[taxTypeCode + ':' + label] || PRINT_SCALE) : PRINT_SCALE;
-                let outputLabel = label + suffix;
-                let apiBuffers = null;
-                if (config.annual && mode === 'full') {
-                    apiBuffers = await printAnnualApiPages(page, session, taxTypeCode, label, config.rootSelector, printScale);
-                } else if (taxTypeCode === 'ICT_WIT' && mode === 'full') {
-                    apiBuffers = await printPph21ApiPages(page, session, label, paginatorStates, config.rootSelector, printScale);
-                } else if (taxTypeCode === 'ICT_WT' && mode === 'full') {
-                    apiBuffers = await printUnifikasiApiPages(page, session, label, paginatorStates, config.rootSelector, printScale);
-                } else if (taxTypeCode === 'VAT_VAT' && mode === 'full') {
-                    apiBuffers = await printPpnApiPages(page, session, label, paginatorStates, config.rootSelector, printScale);
-                } else if (taxTypeCode === 'ICT_WIT' && mode === 'confidential' && PPH21_API_GRIDS[label]) {
-                    const summary = await collectPph21ConfidentialSummary(page, label);
-                    confidentialSummaries.push(summary);
-                    log('[Lampiran Rahasia] ' + label + ': ' + summary.count + ' data, bruto ' + summary.grossIncome + ', PPh ' + summary.incomeTax + '.');
-                    if (label !== lastConfidentialLabel) continue;
-                    if (confidentialSummaries.length !== confidentialLabels.length) {
-                        throw new Error('Ringkasan rahasia tidak lengkap: ' + confidentialSummaries.length + '/' + confidentialLabels.length + ' lampiran.');
-                    }
-                    apiBuffers = await printPph21ConfidentialOverview(page, session, confidentialSummaries, config.rootSelector, printScale);
-                    outputLabel = 'L1-L3' + suffix;
-                }
-                const pageBuffers = apiBuffers || (config.annual
-                    ? await printAnnualDomPages(page, session, mode, stableRootSelector, paginatorStates, config.rootSelector, printScale)
-                    : taxTypeCode === 'VAT_VAT'
-                        ? await printPpnDomPages(page, session, mode, stableRootSelector, paginatorStates, config.rootSelector, printScale, label)
-                        : await printPaginatorPages(page, session, mode, stableRootSelector, paginatorStates, config.rootSelector, printScale));
-                const buf = pageBuffers.length === 1 ? pageBuffers[0] : await mergePdfs(pageBuffers);
-                buffers.push(buf);
-                if (outputLayout !== 'combined') {
-                    const outPath = path.join(dir, filename(entity, config, outputLabel, period.fileLabel,ctx.fileSuffix));
-                    fs.writeFileSync(outPath, buf); saved.push(outPath);
-                    if (ctx.compFolder) { fs.mkdirSync(ctx.compFolder, { recursive: true }); fs.copyFileSync(outPath, path.join(ctx.compFolder, path.basename(outPath))); }
-                    log('[Lampiran] Tersimpan: ' + outPath);
-                }
-            } catch (e) { log('[Lampiran] Gagal cetak ' + label + ': ' + e.message); }
+            if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label);
+            await waitForTabContentStable(page, config.rootSelector);
+            await setUpTables(page, label, 'full', taxTypeCode);
+            await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
+            tabs.push(await require('../lib/lampiran-capture').collectTab(page, config.rootSelector, label));
+            if(ctx.returnSheets&&taxTypeCode==='ICT_WIT'&&PPH21_API_GRIDS[label]){try{confidentialSummaries.push(await collectPph21ConfidentialSummary(page,label));}catch(e){log('[Lampiran] Ringkasan Confidential '+label+' gagal dibaca: '+e.message);}}
+            log('[Lampiran] ' + label + ': seluruh tabel berhasil dibaca.');
         }
-        if (!buffers.length) return { ok: false, error: 'Tidak ada lampiran yang berhasil dicetak.' };
-        let mergedPath = null;
-        if (outputLayout !== 'separate') {
-            const mergedLabel = mode === 'print' ? 'GABUNGAN (Ringkas)' : mode === 'confidential' ? 'GABUNGAN (Rahasia)' : 'GABUNGAN (Lengkap)';
-            mergedPath = path.join(dir, filename(entity, config, mergedLabel, period.fileLabel,ctx.fileSuffix));
-            fs.writeFileSync(mergedPath, await mergePdfs(buffers)); saved.push(mergedPath);
-            if (ctx.compFolder) fs.copyFileSync(mergedPath, path.join(ctx.compFolder, path.basename(mergedPath)));
-            log('[Lampiran] Tersimpan: ' + mergedPath);
+        const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'');
+        const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, entityNpwp: ctx.entityNpwp, period: period.headerLabel, title: config.title, taxTypeCode }, {
+            mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession,layoutStyle:ctx.layoutStyle
+        });
+        if (mode === 'confidential' && format === 'both') {
+            const pdf = await downloadLampiran(page, { ...ctx, lampiranFormat: 'pdf' }, taxpayerId, recordId, taxTypeCode, mode, taxYearHint, outputLayout);
+            if (!pdf.ok) throw new Error(pdf.error);
+            result.paths.push(...pdf.paths); result.combinedPath = pdf.combinedPath;
         }
-        try { await clickTab(page, labels[0]); } catch (e) {}
-        return { ok: true, count: saved.length, paths: saved, combinedPath: mergedPath, dir, entityName: entity, period, mode, outputLayout };
+        if (ctx.compFolder) { fs.mkdirSync(ctx.compFolder, { recursive: true }); for (const file of result.paths) fs.copyFileSync(file, path.join(ctx.compFolder, path.basename(file))); }
+        if(!ctx.returnSheets)await clickTab(page, labels[0]);
+        return { ok: true, confidentialSummaries, count: result.paths.length, paths: result.paths, combinedPath: result.combinedPath, excelPath: result.excelPath, sheets: ctx.returnSheets ? result.sheets : undefined, dir, entityName: entity, period, mode, outputLayout };
     } catch (e) { return { ok: false, error: e.message }; }
 }
 

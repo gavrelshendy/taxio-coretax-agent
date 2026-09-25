@@ -56,7 +56,9 @@ process.on('uncaughtException', (err) => {
 });
 
 const http = require('http');
-const { log, showErrorPopup } = require('./lib/log');
+const { log, showNativePopup } = require('./lib/log');
+// Before the dashboard exists there is no window to show a notice in: these use a message box.
+const showErrorPopup = (msg) => showNativePopup(msg, 'Coretax Agent Error', 'Error');
 const state = require('./lib/state');
 const sessionStore = require('./lib/session-store');
 const entitiesLib = require('./lib/entities');

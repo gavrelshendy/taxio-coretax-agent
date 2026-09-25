@@ -748,12 +748,15 @@
         const lampiranFormat = $('spt-lampiran-format').value;
         const lampiranMode = lampiranFormat === 'excel' ? 'full' : $('spt-lampiran-mode').value;
         const outputLayout = $('spt-output-layout').value;
+        // The annual SPT lampiran always print on the PER-11 forms (chosen server side); the
+        // monthly ones keep Coretax's layout - there is no layout to choose any more.
+        const layoutStyle = 'coretax';
         if (!masaInput) { alert('Masa wajib diisi.'); return; }
         if (!jenisPajakKeys.length) { alert('Pilih minimal satu Jenis Pajak.'); return; }
         await api('/api/actions/download-spt', {
           method: 'POST',
           body: JSON.stringify({ entity: selectedEntity, jenisPajakKeys, masaInput, saveRoot: saveRoot || undefined, checkPph25,
-            includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout })
+            includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle })
         });
         pollRunStatus();
       } else if (activeFeature === 'pm-download') {
@@ -875,6 +878,7 @@
     es.onmessage = (ev) => {
       try {
         const entry = JSON.parse(ev.data);
+        if (entry.notice) { showNotice(entry.notice); return; }
         const line = document.createElement('div');
         line.className = 'log-line';
         line.textContent = entry.line;
@@ -884,6 +888,47 @@
     };
     es.onerror = () => { /* EventSource auto-reconnects */ };
   }
+
+  // ---------- Notices ----------
+  // Every notice the app raises (success, warning, error) shows here, inside the window, instead
+  // of a separate Windows message box. Info closes itself; warnings and errors stay until closed.
+  const shownNotices = new Set();
+  function showNotice(n) {
+    if (!n || shownNotices.has(n.id)) return;
+    shownNotices.add(n.id);
+    let stack = document.getElementById('notice-stack');
+    if (!stack) {
+      const style = document.createElement('style');
+      style.textContent = `#notice-stack{position:fixed;top:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:380px}
+        .notice{background:#fff;border:1px solid #e2e8f0;border-left:4px solid #2563eb;border-radius:8px;box-shadow:0 6px 18px rgba(15,23,42,.14);padding:10px 34px 10px 12px;font-size:13px;color:#0f172a;position:relative;white-space:pre-line;animation:noticeIn .18s ease-out}
+        .notice.warning{border-left-color:#d97706}.notice.error{border-left-color:#dc2626}
+        .notice b{display:block;font-size:12px;margin-bottom:2px;color:#334155}
+        .notice button{position:absolute;top:6px;right:8px;border:none;background:none;font-size:16px;line-height:1;color:#64748b;cursor:pointer}
+        @keyframes noticeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}`;
+      document.head.appendChild(style);
+      stack = document.createElement('div');
+      stack.id = 'notice-stack';
+      document.body.appendChild(stack);
+    }
+    const card = document.createElement('div');
+    card.className = 'notice ' + (n.level || 'info');
+    const title = document.createElement('b');
+    title.textContent = n.level === 'error' ? 'Galat' : n.level === 'warning' ? 'Perhatian' : 'Info';
+    const body = document.createElement('div');
+    body.textContent = n.msg;
+    const close = document.createElement('button');
+    close.textContent = '×';
+    close.title = 'Tutup';
+    const dismiss = () => { card.remove(); if (!n.local) fetch('/api/notices/ack?id=' + encodeURIComponent(n.id), { method: 'POST' }).catch(() => {}); };
+    close.onclick = dismiss;
+    card.append(close, title, body);
+    stack.appendChild(card);
+    if ((n.level || 'info') === 'info') setTimeout(dismiss, 8000);
+  }
+  // The window's own warnings ("Masa wajib diisi", "Gagal ...") use the same in-app card
+  // instead of the browser's blocking alert dialog.
+  let localNoticeSeq = 0;
+  window.alert = (msg) => showNotice({ id: 'local-' + (++localNoticeSeq), local: true, level: /^Gagal/i.test(String(msg)) ? 'error' : 'warning', msg: String(msg) });
 
   // ---------- Boot ----------
   (async function boot() {

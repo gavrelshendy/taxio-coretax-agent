@@ -60,6 +60,27 @@ const {typed}=require('../lib/lampiran-export');
   const wb=new (require('exceljs').Workbook)();await wb.xlsx.readFile(result.excelPath);
   assert.equal(wb.worksheets.length,1);assert.equal(result.sheets[0].tables[0].rows[0][1],'0012345678901234567890');
  }
+ // The annual SPT's Excel is the filled PER-11 form: one worksheet per form sheet, Coretax's
+ // colours, amounts as numbers, identifiers as text.
+ {
+  const per11Pdf=require('../lib/lampiran-per11-pdf');const {amount}=require('../lib/lampiran-per11-excel');
+  assert.deepEqual(amount('1.234.567',{h:'right'}),{value:1234567,numFmt:'#,##0'});assert.equal(amount('(1.234)',{h:'right'}).value,-1234);
+  assert.equal(amount('0,2500',{h:'right'}).numFmt,'#,##0.0000');assert.equal(amount('0102',{h:'center'}),null);assert.equal(amount('2025',{h:'center'}),null);assert.equal(amount('3400000000000001',{h:'center'}),null);
+  const model={tables:[{title:'A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS',headers:['NO.','NAMA','ALAMAT','NEGARA','NPWP/NIK','Jabatan','Modal Disetor / NILAI (Rp)','Modal Disetor / %','DIVIDEN/PEMBAGIAN LABA(Rp)'],rows:[['1','PEMEGANG UJI','JL UJI 1','Indonesia','3400000000000001','Komisaris','38.400.000','100,0000','0']],totals:{6:'38.400.000',8:'0'}}],fields:[]};
+  const b=await chromium.launch({channel:'chrome',headless:true});
+  try{
+   const r=await per11Pdf.renderTab(b,{taxTypeCode:'ICT_RCIT',label:'L2',model,answers:null,npwp:'012345678901000',year:'2025',mode:'full'});
+   assert(r&&r.excel.length===1&&r.fragments.length===1);
+   const file=path.join(dir,'per11-excel.xlsx');
+   await require('../lib/lampiran-export').writeWorkbook([{label:'L2',...model,per11Excel:{entries:r.excel,kind:r.kind}}],{entity:'UJI',title:'SPT',period:'2025'},file);
+   const wb=new (require('exceljs').Workbook)();await wb.xlsx.readFile(file);
+   const ws=wb.getWorksheet('Lampiran 2');assert(ws,'worksheet Lampiran 2');
+   const cells=[];ws.eachRow(row=>row.eachCell(c=>cells.push(c)));
+   assert(cells.some(c=>c.value===38400000),'amount as a number');assert(cells.some(c=>c.value==='3400000000000001'),'NPWP as text');
+   assert(cells.some(c=>c.fill&&c.fill.fgColor&&c.fill.fgColor.argb==='FFFFD600'),'Coretax yellow in the kop');
+  }finally{await b.close();}
+  console.log('PASS: annual SPT Excel = filled PER-11 form (sheet per form, amounts numeric, identifiers text, Coretax colours).');
+ }
  const secret=require('../lib/lampiran-confidential');
  const summaries=['L-IA','L-IB','L-II','L-III'].map((code,i)=>({code,title:'Judul lampiran '+code,count:i,grossIncome:239487131,incomeTax:i===1?-101168:44500979,recipientName:'RECIPIENT_PRIVATE_SENTINEL',rows:[{NIK:'1234567890123456'}]}));
  assert(!secret.summaryTab(summaries).html.includes('RECIPIENT_PRIVATE_SENTINEL'));assert(!secret.summaryTab(summaries).html.includes('1234567890123456'));assert.throws(()=>secret.summaryTab(summaries.slice(1)),/harus mencakup/);assert.equal(secret.format(239487131),'239.487.131');
