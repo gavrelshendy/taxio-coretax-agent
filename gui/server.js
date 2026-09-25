@@ -10,7 +10,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { log, onLogLine, LOG_FILE } = require('../lib/log');
+const { log, onLogLine, LOG_FILE, pendingNotices, ackNotice } = require('../lib/log');
 const state = require('../lib/state');
 const sessionStore = require('../lib/session-store');
 const entitiesLib = require('../lib/entities');
@@ -361,7 +361,7 @@ async function handleDownloadSpt(req, res) {
         const yy=String(body.a1Year).slice(2);
         body={...body,jenisPajakKeys:['pph21'],masaInput:'01'+yy+'-12'+yy,includeLampiran:true,includeBpe:true,includeInduk:true,lampiranMode:'full',lampiranFormat:'pdf',outputLayout:'combined',checkPph25:false};
     }
-    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout } = body || {};
+    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!Array.isArray(jenisPajakKeys) || !jenisPajakKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis pajak & masa wajib diisi.' });
 
@@ -372,7 +372,7 @@ async function handleDownloadSpt(req, res) {
         if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Manual" dan login dulu.' });
         const folder = sanitizeFolder(entity.entity_name || 'Manual');
         runOpts = { manualPage, entity: { entity_id: folder, entity_name: entity.entity_name || 'Sesi Manual', npwp: '', individual: false }, jenisPajakKeys, masaInput, saveRoot, checkPph25,
-            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout,
+            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle,
             onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
     } else {
         if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
@@ -394,7 +394,7 @@ async function handleDownloadSpt(req, res) {
             client: s.client, orgId: s.orgId,
             entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
             picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot, checkPph25,
-            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout,
+            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle,
             restricted, allowedEbupotSections, passphrase, fallbackPicIds,
             onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok)
         };
@@ -720,7 +720,9 @@ function handleEvents(req, res) {
         'Connection': 'keep-alive'
     });
     res.write(': connected\n\n');
-    for (const entry of logBacklog) res.write('data: ' + JSON.stringify(entry) + '\n\n');
+    // Log backlog without its notices; the notices the window has not closed yet come after it.
+    for (const entry of logBacklog) if (!entry.notice) res.write('data: ' + JSON.stringify(entry) + '\n\n');
+    for (const notice of pendingNotices()) res.write('data: ' + JSON.stringify({ notice, ts: notice.ts }) + '\n\n');
     const unsubscribe = onLogLine((entry) => { try { res.write('data: ' + JSON.stringify(entry) + '\n\n'); } catch (e) { } });
     const keepAlive = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) { } }, 20000);
     req.on('close', () => { clearInterval(keepAlive); unsubscribe(); });
@@ -821,6 +823,7 @@ function createGuiServer(port) {
             if (pathname === '/api/check-update' && req.method === 'POST') return handleCheckUpdate(req, res);
             if (pathname === '/api/tray/open' && req.method === 'POST') return handleTrayOpen(req, res);
             if (pathname === '/api/log/clear' && req.method === 'POST') return handleClearLog(req, res);
+            if (pathname === '/api/notices/ack' && req.method === 'POST') { ackNotice(url.searchParams.get('id') || 'all'); return sendJson(res, 200, { ok: true }); }
             return serveStatic(req, res, pathname);
         } catch (e) {
             log('GUI server error: ' + e.message);

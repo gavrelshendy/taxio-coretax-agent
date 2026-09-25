@@ -1,0 +1,5407 @@
+{
+ "L1A": {
+  "lampiran": "LAMPIRAN 1A",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan dengan sektor usaha selain dari sektor usaha yang telah ditentukan pada Lampiran 1B s.d. Lampiran 1L",
+  "sector": "UMUM",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 33,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah HPP",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 32,
+    "blankRows": 15,
+    "totalRow": 33,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 72,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1B": {
+  "lampiran": "LAMPIRAN 1B",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor manufaktur",
+  "sector": "MANUFAKTUR",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 32,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Pembelian Bahan Baku",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 31,
+    "blankRows": 14,
+    "totalRow": 32,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 88,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1C": {
+  "lampiran": "LAMPIRAN 1C",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor perdagangan",
+  "sector": "DAGANG",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 33,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah HPP",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 32,
+    "blankRows": 15,
+    "totalRow": 33,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 72,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1D": {
+  "lampiran": "LAMPIRAN 1D",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor jasa",
+  "sector": "JASA",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 37,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Beban Usaha",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 36,
+    "blankRows": 19,
+    "totalRow": 37,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 59,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1E": {
+  "lampiran": "LAMPIRAN 1E",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor bank konvensional",
+  "sector": "BANK KONVENSIONAL",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 35,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Pendapatan Operasional Lain",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 34,
+    "blankRows": 17,
+    "totalRow": 35,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 70,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1F": {
+  "lampiran": "LAMPIRAN 1F",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor dana pensiun",
+  "sector": "DANA PENSIUN",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 24,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Pendapatan Investasi",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 23,
+    "blankRows": 6,
+    "totalRow": 24,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 60,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1G": {
+  "lampiran": "LAMPIRAN 1G",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor asuransi",
+  "sector": "ASURANSI",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 22,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Pendapatan Premi Neto",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 21,
+    "blankRows": 4,
+    "totalRow": 22,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 58,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1H": {
+  "lampiran": "LAMPIRAN 1H",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor properti",
+  "sector": "PROPERTI",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 42,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Beban Usaha",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 41,
+    "blankRows": 24,
+    "totalRow": 42,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 63,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1I": {
+  "lampiran": "LAMPIRAN 1I",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor bank syariah",
+  "sector": "BANK SYARIAH",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 28,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah pendapatan bagi hasil",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 27,
+    "blankRows": 10,
+    "totalRow": 28,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 84,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1J": {
+  "lampiran": "LAMPIRAN 1J",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor infrastruktur",
+  "sector": "INFRASTRUKTUR",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 40,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Beban Usaha",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 39,
+    "blankRows": 22,
+    "totalRow": 40,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 63,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1K": {
+  "lampiran": "LAMPIRAN 1K",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor sekuritas",
+  "sector": "SEKURITAS",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 25,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Pendapatan Usaha",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 24,
+    "blankRows": 7,
+    "totalRow": 25,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 61,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L1L": {
+  "lampiran": "LAMPIRAN 1L",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak badan sektor pembiayaan",
+  "sector": "PEMBIAYAAN",
+  "subtitle": "REKONSILIASI LAPORAN KEUANGAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": null,
+  "formBottom": 44,
+  "tables": [
+   {
+    "title": "A. LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Beban Usaha",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 43,
+    "blankRows": 26,
+    "totalRow": 44,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (KOMERSIAL)",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh BERSIFAT FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 44,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL (Sebelum Fasilitas Perpajakan)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 48,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. LAPORAN POSISI KEUANGAN",
+    "sideBySide": true,
+    "headerRow": 64,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L2": {
+  "lampiran": "LAMPIRAN 2",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh seluruh Wajib Pajak badan",
+  "sector": "",
+  "subtitle": "DAFTAR KEPEMILIKAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 59,
+  "formBottom": 34,
+  "tables": [
+   {
+    "title": "A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS",
+    "totalLabel": "JUMLAH",
+    "headerRow": 18,
+    "dataStart": 19,
+    "dataEnd": 23,
+    "blankRows": 5,
+    "totalRow": 24,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 11,
+      "width": 8
+     },
+     {
+      "num": "(3)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "",
+      "left": 12,
+      "right": 22,
+      "width": 11
+     },
+     {
+      "num": "(4)",
+      "label": "NEGARA",
+      "sub": "",
+      "parent": "",
+      "left": 23,
+      "right": 26,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "NPWP/NIK",
+      "sub": "",
+      "parent": "",
+      "left": 27,
+      "right": 34,
+      "width": 8
+     },
+     {
+      "num": "(6)",
+      "label": "JABATAN",
+      "sub": "",
+      "parent": "",
+      "left": 35,
+      "right": 42,
+      "width": 8
+     },
+     {
+      "num": "(7)",
+      "label": "NILAI (Rp)",
+      "sub": "",
+      "parent": "MODAL DISETOR",
+      "left": 43,
+      "right": 50,
+      "width": 8
+     },
+     {
+      "num": "(8)",
+      "label": "%",
+      "sub": "",
+      "parent": "MODAL DISETOR",
+      "left": 51,
+      "right": 52,
+      "width": 2
+     },
+     {
+      "num": "(9)",
+      "label": "DIVIDEN/PEMBAGIAN LABA (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 53,
+      "right": 59,
+      "width": 7
+     }
+    ]
+   },
+   {
+    "title": "B. DAFTAR PENYERTAAN MODAL, UTANG, DAN/ATAU PIUTANG PADA PERUSAHAAN AFILIASI",
+    "totalLabel": "",
+    "headerRow": 33,
+    "dataStart": 34,
+    "dataEnd": 34,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 11,
+      "width": 8
+     },
+     {
+      "num": "(3)",
+      "label": "NEGARA",
+      "sub": "",
+      "parent": "",
+      "left": 12,
+      "right": 14,
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NPWP/NIK",
+      "sub": "",
+      "parent": "",
+      "left": 15,
+      "right": 22,
+      "width": 8
+     },
+     {
+      "num": "(5)",
+      "label": "NILAI (Rp)",
+      "sub": "",
+      "parent": "PENYERTAAN MODAL",
+      "left": 23,
+      "right": 29,
+      "width": 7
+     },
+     {
+      "num": "(6)",
+      "label": "%",
+      "sub": "",
+      "parent": "PENYERTAAN MODAL",
+      "left": 30,
+      "right": 31,
+      "width": 2
+     },
+     {
+      "num": "(7)",
+      "label": "NILAI (Rp)",
+      "sub": "",
+      "parent": "UTANG",
+      "left": 32,
+      "right": 39,
+      "width": 8
+     },
+     {
+      "num": "(8)",
+      "label": "TAHUN",
+      "sub": "",
+      "parent": "UTANG",
+      "left": 40,
+      "right": 41,
+      "width": 2
+     },
+     {
+      "num": "(9)",
+      "label": "BUNGA/TAHUN",
+      "sub": "",
+      "parent": "UTANG",
+      "left": 42,
+      "right": 45,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI (Rp)",
+      "sub": "",
+      "parent": "PIUTANG",
+      "left": 46,
+      "right": 53,
+      "width": 8
+     },
+     {
+      "num": "(11)",
+      "label": "TAHUN",
+      "sub": "",
+      "parent": "PIUTANG",
+      "left": 54,
+      "right": 55,
+      "width": 2
+     },
+     {
+      "num": "(12)",
+      "label": "BUNGA/TAHUN",
+      "sub": "",
+      "parent": "PIUTANG",
+      "left": 56,
+      "right": 59,
+      "width": 4
+     }
+    ]
+   }
+  ]
+ },
+ "L3": {
+  "lampiran": "LAMPIRAN 3",
+  "halaman": "",
+  "perhatian": "Formulir ini digunakan untuk Wajib Pajak yang memperoleh/menerima penghasilan yang dipotong/ dipungut PPh oleh pihak lain",
+  "sector": "",
+  "subtitle": "DAFTAR PPh YANG DIPOTONG/DIPUNGUT OLEH PIHAK LAIN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 41,
+  "formBottom": 73,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH",
+    "headerRow": 20,
+    "dataStart": 21,
+    "dataEnd": 40,
+    "blankRows": 20,
+    "totalRow": 41,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 2,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "PEMOTONG PAJAK",
+      "left": 3,
+      "right": 8,
+      "width": 6
+     },
+     {
+      "num": "(3)",
+      "label": "NEGARA",
+      "sub": "",
+      "parent": "PEMOTONG PAJAK",
+      "left": 9,
+      "right": 11,
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "TANGGAL PAJAK PENGHASILAN TERUTANG/DIBAYAR/DIPOTONG",
+      "sub": "",
+      "parent": "",
+      "left": 12,
+      "right": 15,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "JENIS PENGHASILAN",
+      "sub": "",
+      "parent": "",
+      "left": 16,
+      "right": 18,
+      "width": 3
+     },
+     {
+      "num": "(6)",
+      "label": "PENGHASILAN NETO (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 19,
+      "right": 23,
+      "width": 5
+     },
+     {
+      "num": "(7)",
+      "label": "NILAI (Rp)",
+      "sub": "",
+      "parent": "PAJAK PENGHASILAN TERUTANG/DIBAYAR/DIPOTONG DI LUAR NEGERI",
+      "left": 24,
+      "right": 28,
+      "width": 5
+     },
+     {
+      "num": "(8)",
+      "label": "MATA UANG",
+      "sub": "",
+      "parent": "PAJAK PENGHASILAN TERUTANG/DIBAYAR/DIPOTONG DI LUAR NEGERI",
+      "left": 29,
+      "right": 31,
+      "width": 3
+     },
+     {
+      "num": "(9)",
+      "label": "NILAI (DALAM MATA UANG ASING)",
+      "sub": "",
+      "parent": "PAJAK PENGHASILAN TERUTANG/DIBAYAR/DIPOTONG DI LUAR NEGERI",
+      "left": 32,
+      "right": 36,
+      "width": 5
+     },
+     {
+      "num": "(10)",
+      "label": "KREDIT PAJAK YANG DAPAT DIPERHITUNGKAN (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 41,
+      "width": 5
+     }
+    ]
+   },
+   {
+    "title": "B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN",
+    "totalLabel": "JUMLAH",
+    "headerRow": 52,
+    "dataStart": 53,
+    "dataEnd": 72,
+    "blankRows": 20,
+    "totalRow": 73,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 2,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "PEMOTONG/PEMUNGUT PAJAK",
+      "left": 3,
+      "right": 10,
+      "width": 8
+     },
+     {
+      "num": "(3)",
+      "label": "NPWP",
+      "sub": "",
+      "parent": "PEMOTONG/PEMUNGUT PAJAK",
+      "left": 11,
+      "right": 15,
+      "width": 5
+     },
+     {
+      "num": "(4)",
+      "label": "JENIS PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 16,
+      "right": 19,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DASAR PENGENAAN PAJAK (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 20,
+      "right": 25,
+      "width": 6
+     },
+     {
+      "num": "(6)",
+      "label": "PPh YANG DIPOTONG/DIPUNGUT (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 26,
+      "right": 31,
+      "width": 6
+     },
+     {
+      "num": "(7)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "BUKTI PEMOTONGAN/SSP/SSPCP",
+      "left": 32,
+      "right": 37,
+      "width": 6
+     },
+     {
+      "num": "(8)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "BUKTI PEMOTONGAN/SSP/SSPCP",
+      "left": 38,
+      "right": 41,
+      "width": 4
+     }
+    ]
+   }
+  ]
+ },
+ "L4": {
+  "lampiran": "LAMPIRAN 4",
+  "halaman": "",
+  "perhatian": "Formulir ini hanya digunakan oleh Wajib Pajak yang menerima penghasilan yang dikenakan PPh yang bersifat final dan penghasilan yang tidak termasuk objek pajak",
+  "sector": "",
+  "subtitle": "PENGHASILAN YANG DIKENAKAN PPh YANG BERSIFAT FINAL DAN PENGHASILAN YANG TIDAK TERMASUK OBJEK PAJAK",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 41,
+  "formBottom": 58,
+  "tables": [
+   {
+    "title": "A. PENGHASILAN YANG DIKENAKAN PPh YANG BERSIFAT FINAL",
+    "totalLabel": "JUMLAH",
+    "headerRow": 18,
+    "dataStart": 19,
+    "dataEnd": 32,
+    "blankRows": 14,
+    "totalRow": 33,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NPWP",
+      "sub": "",
+      "parent": "PEMOTONG/PEMUNGUT PAJAK",
+      "left": 4,
+      "right": 7,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "PEMOTONG/PEMUNGUT PAJAK",
+      "left": 8,
+      "right": 12,
+      "width": 5
+     },
+     {
+      "num": "(4)",
+      "label": "KODE OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 13,
+      "right": 16,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "OBJEK PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 23,
+      "width": 7
+     },
+     {
+      "num": "(6)",
+      "label": "DASAR PENGENAAN PAJAK (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 24,
+      "right": 31,
+      "width": 8
+     },
+     {
+      "num": "(7)",
+      "label": "TARIF (%)",
+      "sub": "",
+      "parent": "",
+      "left": 32,
+      "right": 34,
+      "width": 3
+     },
+     {
+      "num": "(8)",
+      "label": "PPh TERUTANG (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 35,
+      "right": 41,
+      "width": 7
+     }
+    ]
+   },
+   {
+    "title": "B. PENGHASILAN YANG TIDAK TERMASUK OBJEK PAJAK",
+    "totalLabel": "JUMLAH",
+    "headerRow": 43,
+    "dataStart": 44,
+    "dataEnd": 57,
+    "blankRows": 14,
+    "totalRow": 58,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "KODE JENIS PENGHASILAN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 9,
+      "width": 6
+     },
+     {
+      "num": "(3)",
+      "label": "JENIS PENGHASILAN",
+      "sub": "",
+      "parent": "",
+      "left": 10,
+      "right": 20,
+      "width": 11
+     },
+     {
+      "num": "(4)",
+      "label": "SUMBER PENGHASILAN",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 32,
+      "width": 12
+     },
+     {
+      "num": "(5)",
+      "label": "PENGHASILAN BRUTO (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 41,
+      "width": 9
+     }
+    ]
+   }
+  ]
+ },
+ "L5": {
+  "lampiran": "LAMPIRAN 5",
+  "halaman": "",
+  "perhatian": "Formulir ini hanya digunakan oleh Wajib Pajak yang menerima atau memperoleh penghasilan dari usaha dengan peredaran bruto tertentu yang dikenakan PPh yang bersifat final",
+  "sector": "",
+  "subtitle": "REKAPITULASI PEREDARAN BRUTO",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 57,
+  "formBottom": 36,
+  "tables": [
+   {
+    "title": "A. ALAMAT TEMPAT KEGIATAN USAHA",
+    "totalLabel": "JUMLAH",
+    "headerRow": 18,
+    "dataStart": 19,
+    "dataEnd": 26,
+    "blankRows": 8,
+    "totalRow": 27,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NOMOR IDENTITAS TEMPAT KEGIATAN USAHA",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 7,
+      "width": 6
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA TKU",
+      "sub": "",
+      "parent": "",
+      "left": 8,
+      "right": 12,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "",
+      "left": 13,
+      "right": 24,
+      "width": 12
+     },
+     {
+      "num": "(4)",
+      "label": "KELURAHAN/DESA",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 32,
+      "width": 8
+     },
+     {
+      "num": "(5)",
+      "label": "KECAMATAN",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 40,
+      "width": 8
+     },
+     {
+      "num": "(6)",
+      "label": "KOTA/KABUPATEN",
+      "sub": "",
+      "parent": "",
+      "left": 41,
+      "right": 48,
+      "width": 8
+     },
+     {
+      "num": "(7)",
+      "label": "PROVINSI",
+      "sub": "",
+      "parent": "",
+      "left": 49,
+      "right": 57,
+      "width": 9
+     }
+    ]
+   },
+   {
+    "title": "B. REKAPITULASI PEREDARAN BRUTO DAN PPh YANG TELAH DIBAYAR",
+    "totalLabel": "JUMLAH PEREDARAN BRUTO",
+    "headerRow": 29,
+    "dataStart": 30,
+    "dataEnd": 35,
+    "blankRows": 6,
+    "totalRow": 36,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NAMA TKU",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 5,
+      "width": 4
+     },
+     {
+      "num": "(2)",
+      "label": "JANUARI",
+      "sub": "",
+      "parent": "",
+      "left": 6,
+      "right": 9,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "FEBRUARI",
+      "sub": "",
+      "parent": "",
+      "left": 10,
+      "right": 13,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "MARET",
+      "sub": "",
+      "parent": "",
+      "left": 14,
+      "right": 17,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "APRIL",
+      "sub": "",
+      "parent": "",
+      "left": 18,
+      "right": 21,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "MEI",
+      "sub": "",
+      "parent": "",
+      "left": 22,
+      "right": 25,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "JUNI",
+      "sub": "",
+      "parent": "",
+      "left": 26,
+      "right": 29,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "JULI",
+      "sub": "",
+      "parent": "",
+      "left": 30,
+      "right": 33,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "AGUSTUS",
+      "sub": "",
+      "parent": "",
+      "left": 34,
+      "right": 37,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "SEPTEMBER",
+      "sub": "",
+      "parent": "",
+      "left": 38,
+      "right": 41,
+      "width": 4
+     },
+     {
+      "num": "(11)",
+      "label": "OKTOBER",
+      "sub": "",
+      "parent": "",
+      "left": 42,
+      "right": 45,
+      "width": 4
+     },
+     {
+      "num": "(12)",
+      "label": "NOVEMBER",
+      "sub": "",
+      "parent": "",
+      "left": 46,
+      "right": 49,
+      "width": 4
+     },
+     {
+      "num": "(13)",
+      "label": "DESEMBER",
+      "sub": "",
+      "parent": "",
+      "left": 50,
+      "right": 53,
+      "width": 4
+     },
+     {
+      "num": "(14)",
+      "label": "JUMLAH",
+      "sub": "",
+      "parent": "",
+      "left": 54,
+      "right": 57,
+      "width": 4
+     }
+    ]
+   }
+  ]
+ },
+ "L6": {
+  "lampiran": "LAMPIRAN 6",
+  "halaman": "",
+  "perhatian": "Formulir ini digunakan oleh Wajib Pajak yang diwajibkan melakukan penyetoran PPh Pasal 25",
+  "sector": "",
+  "subtitle": "ANGSURAN PPh TAHUN PAJAK BERJALAN",
+  "index": [],
+  "form": {
+   "valueLabel": "NILAI (Rp)",
+   "items": [
+    {
+     "marker": "1",
+     "label": "PENGHASILAN YANG MENJADI DASAR PENGHITUNGAN ANGSURAN",
+     "note": "",
+     "formula": "",
+     "row": 15
+    },
+    {
+     "marker": "2",
+     "label": "KOMPENSASI KERUGIAN FISKAL (Diisi dari Formulir Lampiran 7 Jumlah Kompensasi Kerugian Fiskal Tahun Pajak Berjalan)",
+     "note": "",
+     "formula": "",
+     "row": 20
+    },
+    {
+     "marker": "3",
+     "label": "PENGHASILAN KENA PAJAK",
+     "note": "",
+     "formula": "( 1 - 2 )",
+     "row": 25
+    },
+    {
+     "marker": "4",
+     "label": "PPh YANG TERUTANG",
+     "note": "",
+     "formula": "( Tarif x 3 )",
+     "row": 30
+    },
+    {
+     "marker": "5",
+     "label": "KREDIT PAJAK TAHUN PAJAK YANG LALU ATAS PENGHASILAN YANG TERMASUK DALAM ANGKA 1 YANG DIPOTONG/DIPUNGUT PIHAK LAIN",
+     "note": "",
+     "formula": "",
+     "row": 35
+    },
+    {
+     "marker": "6",
+     "label": "PPh YANG HARUS DIBAYAR SENDIRI",
+     "note": "",
+     "formula": "( 4 - 5 )",
+     "row": 40
+    },
+    {
+     "marker": "7",
+     "label": "ANGSURAN PPh PASAL 25",
+     "note": "",
+     "formula": "( 1/…. *) x 6 )",
+     "row": 45
+    }
+   ],
+   "notes": [
+    "Diisi dengan jumlah Masa Pajak dalam Tahun Pajak/Bagian Tahun Pajak SPT yang Dilaporkan"
+   ]
+  },
+  "checklist": null,
+  "outline": null,
+  "formRight": 0,
+  "formBottom": 0,
+  "tables": []
+ },
+ "L7": {
+  "lampiran": "LAMPIRAN 7",
+  "halaman": "",
+  "perhatian": "Formulir ini hanya digunakan oleh Wajib Pajak yang memiliki kerugian fiskal yang dapat dikompensasikan",
+  "sector": "",
+  "subtitle": "PENGHITUNGAN KOMPENSASI KERUGIAN FISKAL",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 59,
+  "formBottom": 29,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH",
+    "headerRow": 18,
+    "dataStart": 19,
+    "dataEnd": 28,
+    "blankRows": 10,
+    "totalRow": 29,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 2,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "TAHUN/BAGIAN TAHUN PAJAK",
+      "sub": "",
+      "parent": "LABA (RUGI) NETO FISKAL",
+      "left": 3,
+      "right": 6,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI (Rp)",
+      "sub": "",
+      "parent": "LABA (RUGI) NETO FISKAL",
+      "left": 7,
+      "right": 11,
+      "width": 5
+     },
+     {
+      "num": "(4)",
+      "label": "TAHUN",
+      "sub": "NILAI (Rp) (Y-4)",
+      "parent": "KOMPENSASI KERUGIAN FISKAL",
+      "left": 12,
+      "right": 19,
+      "width": 8
+     },
+     {
+      "num": "(5)",
+      "label": "TAHUN",
+      "sub": "NILAI (Rp) (Y-3)",
+      "parent": "KOMPENSASI KERUGIAN FISKAL",
+      "left": 20,
+      "right": 27,
+      "width": 8
+     },
+     {
+      "num": "(6)",
+      "label": "TAHUN",
+      "sub": "NILAI (Rp) (Y-2)",
+      "parent": "KOMPENSASI KERUGIAN FISKAL",
+      "left": 28,
+      "right": 35,
+      "width": 8
+     },
+     {
+      "num": "(7)",
+      "label": "TAHUN",
+      "sub": "NILAI (Rp) (Y-1)",
+      "parent": "KOMPENSASI KERUGIAN FISKAL",
+      "left": 36,
+      "right": 43,
+      "width": 8
+     },
+     {
+      "num": "(8)",
+      "label": "TAHUN",
+      "sub": "TAHUN PAJAK INI NILAI (Rp)*",
+      "parent": "KOMPENSASI KERUGIAN FISKAL",
+      "left": 44,
+      "right": 51,
+      "width": 8
+     },
+     {
+      "num": "(9)",
+      "label": "TAHUN",
+      "sub": "TAHUN PAJAK BERJALAN NILAI (Rp)**",
+      "parent": "KOMPENSASI KERUGIAN FISKAL",
+      "left": 52,
+      "right": 59,
+      "width": 8
+     }
+    ]
+   }
+  ]
+ },
+ "L8": {
+  "lampiran": "LAMPIRAN 8",
+  "halaman": "",
+  "perhatian": "Formulir ini digunakan oleh Wajib Pajak yang berhak menggunakan tarif sebagaimana Pasal 31E ayat (1) UU PPh",
+  "sector": "",
+  "subtitle": "PENGHITUNGAN FASILITAS PENGURANGAN TARIF PPh BAGI WAJIB PAJAK BADAN DALAM NEGERI BERDASARKAN PASAL 31E AYAT (1) UNDANG-UNDANG PPh*)",
+  "index": [],
+  "form": {
+   "valueLabel": "NILAI (Rupiah)",
+   "items": [
+    {
+     "marker": "1",
+     "label": "PEREDARAN BRUTO",
+     "note": "Jumlah Peredaran Bruto",
+     "formula": "",
+     "row": 15
+    },
+    {
+     "marker": "2",
+     "label": "PENGHASILAN KENA PAJAK",
+     "note": "",
+     "formula": "",
+     "row": 21
+    },
+    {
+     "marker": "a",
+     "label": "Penghasilan Kena Pajak dari bagian peredaran bruto yang memperoleh fasilitas**)",
+     "note": "((Rp4.800.000.000/Jumlah Peredaran Bruto) x Penghasilan Kena Pajak)",
+     "formula": "",
+     "row": 23
+    },
+    {
+     "marker": "b",
+     "label": "Penghasilan Kena Pajak dari bagian peredaran bruto yang tidak memperoleh fasilitas",
+     "note": "(Penghasilan Kena Pajak - Penghasilan Kena Pajak dari bagian peredaran bruto yang memperoleh fasilitas)",
+     "formula": "",
+     "row": 27
+    },
+    {
+     "marker": "3",
+     "label": "PPh TERUTANG",
+     "note": "",
+     "formula": "",
+     "row": 31
+    },
+    {
+     "marker": "a",
+     "label": "PPh Terutang atas Penghasilan Kena Pajak dari bagian peredararan bruto yang memperoleh fasilitas",
+     "note": "(",
+     "formula": "50% x Tarif Ps. 17 ayat (1) huruf b UU PPh x Penghasilan Kena Pajak dari bagian peredaran bruto yang memperoleh fasilitas )",
+     "row": 33
+    },
+    {
+     "marker": "b",
+     "label": "PPh Terutang atas Penghasilan Kena Pajak dari bagian peredararan bruto yang tidak memperoleh fasilitas",
+     "note": "(",
+     "formula": "Tarif Ps. 17 ayat (1) huruf b UU PPh x Penghasilan Kena Pajak dari bagian peredaran bruto yang memperoleh fasilitas )",
+     "row": 38
+    },
+    {
+     "marker": "4",
+     "label": "JUMLAH PPh TERUTANG",
+     "note": "",
+     "formula": "( 3a + 3b )",
+     "row": 43
+    }
+   ],
+   "notes": [
+    "Penghitungan ini hanya dibuat oleh Wajib Pajak Badan Dalam Negeri dengan peredaran bruto sampai dengan Rp50.000.000.000,00 (Lima Puluh Miliar Rupiah).",
+    "Dalam hal peredaran bruto sampai dengan Rp4.800.000.000,00 (Empat Miliar Delapan Ratus Juta Rupiah), seluruh Penghasilan Kena Pajak merupakan Penghasilan Kena Pajak dari bagian peredaran bruto yang memperoleh fasilitas."
+   ]
+  },
+  "checklist": null,
+  "outline": null,
+  "formRight": 0,
+  "formBottom": 0,
+  "tables": []
+ },
+ "L9": {
+  "lampiran": "LAMPIRAN 9",
+  "halaman": "",
+  "perhatian": "Formulir ini wajib diisi oleh Wajib Pajak yang membebankan biaya penyusutan dan/atau amortisasi",
+  "sector": "",
+  "subtitle": "DAFTAR PENYUSUTAN DAN AMORTISASI FISKAL",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": [
+   {
+    "marker": "I.",
+    "title": "HARTA BERWUJUD",
+    "members": 5
+   },
+   {
+    "marker": "II.",
+    "title": "KELOMPOK BANGUNAN",
+    "members": 2
+   },
+   {
+    "marker": "III.",
+    "title": "HARTA TAK BERWUJUD",
+    "members": 5
+   }
+  ],
+  "formRight": 58,
+  "formBottom": 32,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH PENYUSUTAN FISKAL",
+    "headerRow": 15,
+    "dataStart": 16,
+    "dataEnd": 31,
+    "blankRows": 16,
+    "totalRow": 32,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE HARTA",
+      "sub": "",
+      "parent": "",
+      "left": 1,
+      "right": 3,
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "KELOMPOK/ JENIS HARTA",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 12,
+      "width": 9
+     },
+     {
+      "num": "(3)",
+      "label": "BULAN/TAHUN PEROLEHAN",
+      "sub": "",
+      "parent": "",
+      "left": 13,
+      "right": 17,
+      "width": 5
+     },
+     {
+      "num": "(4)",
+      "label": "BIAYA PEROLEHAN (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 18,
+      "right": 25,
+      "width": 8
+     },
+     {
+      "num": "(5)",
+      "label": "NILAI SISA BUKU FISKAL PADA AWAL TAHUN (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 26,
+      "right": 33,
+      "width": 8
+     },
+     {
+      "num": "(6)",
+      "label": "KOMERSIAL",
+      "sub": "",
+      "parent": "METODE PENYUSUTAN/AMORTISASI",
+      "left": 34,
+      "right": 38,
+      "width": 5
+     },
+     {
+      "num": "(7)",
+      "label": "FISKAL",
+      "sub": "",
+      "parent": "METODE PENYUSUTAN/AMORTISASI",
+      "left": 39,
+      "right": 43,
+      "width": 5
+     },
+     {
+      "num": "(8)",
+      "label": "PENYUSUTAN/AMORTISASI FISKAL TAHUN INI (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 44,
+      "right": 51,
+      "width": 8
+     },
+     {
+      "num": "(9)",
+      "label": "KETERANGAN",
+      "sub": "",
+      "parent": "",
+      "left": 52,
+      "right": 58,
+      "width": 7
+     }
+    ]
+   }
+  ]
+ },
+ "L10A": {
+  "lampiran": "LAMPIRAN 10A",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang mempunyai transaksi dengan pihak yang mempunyai hubungan istimewa",
+  "sector": "",
+  "subtitle": "DAFTAR TRANSAKSI YANG DIPENGARUHI HUBUNGAN ISTIMEWA",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 58,
+  "formBottom": 17,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 17,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 1,
+      "right": 2,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 10,
+      "width": 8
+     },
+     {
+      "num": "(3)",
+      "label": "NPWP/TIN",
+      "sub": "",
+      "parent": "",
+      "left": 11,
+      "right": 18,
+      "width": 8
+     },
+     {
+      "num": "(4)",
+      "label": "NEGARA",
+      "sub": "",
+      "parent": "",
+      "left": 19,
+      "right": 21,
+      "width": 3
+     },
+     {
+      "num": "(5)",
+      "label": "BENTUK HUBUNGAN",
+      "sub": "",
+      "parent": "",
+      "left": 22,
+      "right": 26,
+      "width": 5
+     },
+     {
+      "num": "(6)",
+      "label": "KEGIATAN USAHA",
+      "sub": "",
+      "parent": "",
+      "left": 27,
+      "right": 34,
+      "width": 8
+     },
+     {
+      "num": "(7)",
+      "label": "JENIS TRANSAKSI",
+      "sub": "",
+      "parent": "",
+      "left": 35,
+      "right": 38,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "NILAI TRANSAKSI (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 39,
+      "right": 45,
+      "width": 7
+     },
+     {
+      "num": "(9)",
+      "label": "METODE PENENTUAN HARGA TRANSFER YANG DIGUNAKAN",
+      "sub": "",
+      "parent": "",
+      "left": 46,
+      "right": 50,
+      "width": 5
+     },
+     {
+      "num": "(10)",
+      "label": "ALASAN PENGGUNAAN METODE",
+      "sub": "",
+      "parent": "",
+      "left": 51,
+      "right": 58,
+      "width": 8
+     }
+    ]
+   }
+  ]
+ },
+ "L10B": {
+  "lampiran": "LAMPIRAN 10B",
+  "halaman": "",
+  "perhatian": "Formulir ini digunakan oleh Wajib Pajak yang mempunyai transaksi dengan pihak yang mempunyai hubungan istimewa",
+  "sector": "",
+  "subtitle": "PERNYATAAN TERKAIT TRANSAKSI YANG DIPENGARUHI HUBUNGAN ISTIMEWA",
+  "index": [],
+  "form": null,
+  "checklist": [
+   {
+    "type": "section",
+    "title": "PERNYATAAN TERKAIT TRANSAKSI YANG DIPENGARUHI HUBUNGAN ISTIMEWA"
+   },
+   {
+    "type": "text",
+    "text": "Berikut catatan-catatan khusus yang kami buat untuk mendukung bahwa transaksi yang dilakukan dengan pihak yang mempunyai hubungan istimewa telah sesuai dengan prinsip kewajaran (arm's length principle) dan kelaziman usaha."
+   },
+   {
+    "type": "item",
+    "marker": "a",
+    "label": "Transaksi dengan pihak yang memiliki hubungan istimewa karena kepemilikan saham/penyertaan",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "b",
+    "label": "Transaksi dengan pihak yang memiliki hubungan istimewa karena penguasaan",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "c",
+    "label": "Transaksi dengan pihak yang memiliki hubungan istimewa karena hubungan keluarga",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "d",
+    "label": "Transaksi yang dilakukan antarpihak yang tidak memiliki hubungan istimewa tetapi Pihak Afiliasi dari salah satu atau kedua pihak yang bertransaksi tersebut menentukan lawan transaksi dan harga transaksi.",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "text",
+    "text": "Bahwasanya kami telah menerapkan Prinsip Kewajaran dan Kelaziman Usaha"
+   },
+   {
+    "type": "item",
+    "marker": "a",
+    "label": "berdasarkan keadaan yang sebenarnya.",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "b",
+    "label": "pada saat Penentuan Harga Transfer dan/ atau saat terjadinya Transaksi yang Dipengaruhi Hubungan Istimewa.",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "c",
+    "label": "sesuai dengan • tahapan penerapan Prinsip Kewajaran dan Kelaziman Usaha; dan • tahapan pendahuluan dalam hal terdapat Transaksi Yang Dipengaruhi Hubungan Istimewa tertentu.",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "a",
+    "label": "nilai peredaran bruto tahun pajak sebelumnya dalam satu tahun pajak lebih dari Rp50.000.000.000,00 (lima puluh miliar rupiah);",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "b",
+    "label": "nilai Transaksi Afiliasi tahun pajak sebelumnya dalam satu tahun pajak lebih dari Rp20.000.000.000,00 (dua puluh miliar rupiah) untuk transaksi barang berwujud;",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "marker": "c",
+    "label": "nilai Transaksi Afiliasi tahun pajak sebelumnya dalam satu tahun pajak: lebih dari Rp5.000.000.000,00 (lima miliar rupiah) untuk masing-masing penyediaan jasa, pembayaran bunga, pemanfaatan barang tidak berwujud, atau Transaksi Afiliasi lainnya;",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "d",
+    "label": "Pihak Afiliasi yang berada di negara atau yurisdiksi dengan tarif pajak penghasilan lebih rendah daripada tarif pajak penghasilan",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "e",
+    "label": "Grup Usaha dengan peredaran bruto konsolidasi paling sedikit Rp11.000.000.000.000,00 (sebelas triliun rupiah) pada tahun pajak sebelumnya",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "text",
+    "text": "Bahwasanya kami telah menyelenggarakan:"
+   },
+   {
+    "type": "item",
+    "marker": "a",
+    "label": "Dokumen Induk",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "b",
+    "label": "Dokumen Lokal",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   },
+   {
+    "type": "item",
+    "marker": "c",
+    "label": "Laporan per Negara",
+    "answers": [
+     "Ya",
+     "Tidak"
+    ]
+   }
+  ],
+  "outline": null,
+  "formRight": 0,
+  "formBottom": 0,
+  "tables": []
+ },
+ "L10C": {
+  "lampiran": "LAMPIRAN 10C",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang mempunyai transaksi dengan pihak yang mempunyai hubungan istimewa",
+  "sector": "",
+  "subtitle": "PERNYATAAN TRANSAKSI DENGAN PIHAK YANG MERUPAKAN PENDUDUK TAX HAVEN COUNTRY",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 58,
+  "formBottom": 17,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 17,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 3,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA MITRA TRANSAKSI",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 18,
+      "width": 15
+     },
+     {
+      "num": "(3)",
+      "label": "JENIS TRANSAKSI",
+      "sub": "",
+      "parent": "",
+      "left": 19,
+      "right": 34,
+      "width": 16
+     },
+     {
+      "num": "(4)",
+      "label": "NEGARA",
+      "sub": "",
+      "parent": "",
+      "left": 35,
+      "right": 45,
+      "width": 11
+     },
+     {
+      "num": "(5)",
+      "label": "NILAI TRANSAKSI (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 46,
+      "right": 58,
+      "width": 13
+     }
+    ]
+   }
+  ]
+ },
+ "L10D": {
+  "lampiran": "LAMPIRAN 10D",
+  "halaman": "",
+  "perhatian": "Formulir ini digunakan oleh Wajib Pajak yang mempunyai transaksi dengan pihak yang mempunyai hubungan istimewa",
+  "sector": "",
+  "subtitle": "IKHTISAR DOKUMEN INDUK DAN DOKUMEN LOKAL",
+  "index": [],
+  "form": null,
+  "checklist": [
+   {
+    "type": "section",
+    "marker": "I.",
+    "title": "IKHTISAR DOKUMEN INDUK"
+   },
+   {
+    "type": "text",
+    "text": "Bahwasanya kami telah menyelenggarakan dokumen induk yang menjadi dasar penerapan Prinsip Kewajaran dan Kelaziman Usaha (arm ’s length principle), yang memuat informasi mengenai Grup usaha sebagai berikut:"
+   },
+   {
+    "type": "item",
+    "label": "Struktur dan Bagan Kepemilikan Grup Usaha serta Negara atau Yurisdiksi Masing-Masing Anggota Grup Usaha",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "label": "Kegiatan Usaha yang Dilakukan oleh Grup Usaha",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "label": "Harta Tidak Berwujud yang Dimiliki Grup Usaha",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "label": "Aktivitas Keuangan dan Pembiayaan dalam Grup Usaha",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "label": "Laporan Keuangan Konsolidasi Entitas Induk dan Informasi Perpajakan terkait Transaksi Afiliasi",
+    "answers": []
+   },
+   {
+    "type": "section",
+    "marker": "II.",
+    "title": "IKHTISAR DOKUMEN LOKAL"
+   },
+   {
+    "type": "text",
+    "text": "Bahwasanya kami telah menyelenggarakan dokumen lokal yang menjadi dasar penerapan Prinsip Kewajaran dan Kelaziman Usaha (arm ’s length principle), yang memuat informasi mengenai Grup usaha sebagai berikut:"
+   },
+   {
+    "type": "item",
+    "label": "Identitas dan Kegiatan Usaha yang Dilakukan Wajib Pajak",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "label": "Informasi Transaksi Afiliasi dan Transaksi Independen yang Dilakukan Wajib Pajak",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "label": "Penerapan Prinsip Kewajaran dan Kelaziman Usaha",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "label": "Informasi Keuangan Wajib Pajak",
+    "answers": []
+   },
+   {
+    "type": "item",
+    "label": "Peristiwa-Peristiwa/Kejadian-Kejadian/Fakta-fakta Non Keuangan yang Mempengaruhi Pembentukan Harga atau Tingkat Laba",
+    "answers": []
+   },
+   {
+    "type": "section",
+    "marker": "III.",
+    "title": "PERNYATAAN PENYELENGGARAAN DAN PENYEDIAAN DOKUMEN INDUK DAN DOKUMEN LOKAL"
+   },
+   {
+    "type": "text",
+    "text": "Bahwasanya kami telah menyelenggarakan dokumen induk dan dokumen lokal berdasarkan data dan informasi yang tersedia saat dilakukannya Transaksi Afiliasi, dan:"
+   }
+  ],
+  "outline": null,
+  "formRight": 0,
+  "formBottom": 0,
+  "tables": []
+ },
+ "L11A": {
+  "lampiran": "LAMPIRAN 11A",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang wajib menyampaikan rincian atas biaya-biaya tertentu",
+  "sector": "",
+  "subtitle": "RINCIAN BIAYA TERTENTU",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 41,
+  "formBottom": 100,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "Jumlah Biaya yang dikeluarkan",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 91,
+    "blankRows": 74,
+    "totalRow": 92,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 2,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NOMOR IDENTITAS (NPWP/NIK/ Lainnya)",
+      "sub": "",
+      "parent": "DATA PENERIMA",
+      "left": 3,
+      "right": 6,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "DATA PENERIMA",
+      "left": 7,
+      "right": 10,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "DATA PENERIMA",
+      "left": 11,
+      "right": 15,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "DATA PENERIMA",
+      "left": 16,
+      "right": 18,
+      "width": 3
+     },
+     {
+      "num": "(6)",
+      "label": "JENIS BIAYA",
+      "sub": "",
+      "parent": "DATA PENERIMA",
+      "left": 19,
+      "right": 22,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "NILAI (Rp)",
+      "sub": "",
+      "parent": "DATA PENERIMA",
+      "left": 23,
+      "right": 25,
+      "width": 3
+     },
+     {
+      "num": "(8)",
+      "label": "KETERANGAN",
+      "sub": "",
+      "parent": "DATA PENERIMA",
+      "left": 26,
+      "right": 29,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "JUMLAH PPh (Rp)",
+      "sub": "",
+      "parent": "PEMOTONGAN/PEMUNGUTAN PPh",
+      "left": 30,
+      "right": 33,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NOMOR BUKTI PEMOTONGAN/PEMUNGUTAN",
+      "sub": "",
+      "parent": "PEMOTONGAN/PEMUNGUTAN PPh",
+      "left": 34,
+      "right": 41,
+      "width": 8
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "Jumlah Biaya yang dikeluarkan",
+    "headerRow": 29,
+    "dataStart": 30,
+    "dataEnd": 91,
+    "blankRows": 62,
+    "totalRow": 92,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 2,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "PEMBERIAN ENTERTAINMENT",
+      "left": 3,
+      "right": 5,
+      "width": 3
+     },
+     {
+      "num": "(3)",
+      "label": "TEMPAT",
+      "sub": "",
+      "parent": "PEMBERIAN ENTERTAINMENT",
+      "left": 6,
+      "right": 10,
+      "width": 5
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "PEMBERIAN ENTERTAINMENT",
+      "left": 11,
+      "right": 15,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "JENIS",
+      "sub": "",
+      "parent": "PEMBERIAN ENTERTAINMENT",
+      "left": 16,
+      "right": 18,
+      "width": 3
+     },
+     {
+      "num": "(6)",
+      "label": "NILAI (Rp)",
+      "sub": "",
+      "parent": "PEMBERIAN ENTERTAINMENT",
+      "left": 19,
+      "right": 22,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "RELASI USAHA YANG DIBERIKAN ENTERTAINMENT",
+      "left": 23,
+      "right": 26,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "JABATAN",
+      "sub": "",
+      "parent": "RELASI USAHA YANG DIBERIKAN ENTERTAINMENT",
+      "left": 27,
+      "right": 29,
+      "width": 3
+     },
+     {
+      "num": "(9)",
+      "label": "NAMA PERUSAHAAN",
+      "sub": "",
+      "parent": "RELASI USAHA YANG DIBERIKAN ENTERTAINMENT",
+      "left": 30,
+      "right": 34,
+      "width": 5
+     },
+     {
+      "num": "(10)",
+      "label": "JENIS USAHA",
+      "sub": "",
+      "parent": "RELASI USAHA YANG DIBERIKAN ENTERTAINMENT",
+      "left": 35,
+      "right": 38,
+      "width": 4
+     },
+     {
+      "num": "(11)",
+      "label": "KETERANGAN",
+      "sub": "",
+      "parent": "",
+      "left": 39,
+      "right": 41,
+      "width": 3
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "Jumlah Biaya yang dikeluarkan",
+    "headerRow": 40,
+    "dataStart": 41,
+    "dataEnd": 91,
+    "blankRows": 51,
+    "totalRow": 92,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 2,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NOMOR IDENTITAS (NPWP/NIK/Lainnya)",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 9,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "",
+      "left": 10,
+      "right": 13,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "",
+      "left": 14,
+      "right": 18,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "PLAFON PIUTANG (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 19,
+      "right": 23,
+      "width": 5
+     },
+     {
+      "num": "(6)",
+      "label": "PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 24,
+      "right": 30,
+      "width": 7
+     },
+     {
+      "num": "(7)",
+      "label": "METODE PEMBEBANAN",
+      "sub": "",
+      "parent": "",
+      "left": 31,
+      "right": 35,
+      "width": 5
+     },
+     {
+      "num": "(8)",
+      "label": "JENIS DOKUMEN PEMBUKTIAN YANG DISYARATKAN",
+      "sub": "",
+      "parent": "",
+      "left": 36,
+      "right": 41,
+      "width": 6
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "Jumlah Biaya yang dikeluarkan",
+    "headerRow": 54,
+    "dataStart": 55,
+    "dataEnd": 91,
+    "blankRows": 37,
+    "totalRow": 92,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "JENIS HARTA BERWUJUD",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 9,
+      "width": 6
+     },
+     {
+      "num": "(3)",
+      "label": "TAHUN PEROLEHAN",
+      "sub": "",
+      "parent": "",
+      "left": 10,
+      "right": 14,
+      "width": 5
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI PEROLEHAN (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 15,
+      "right": 20,
+      "width": 6
+     },
+     {
+      "num": "(5)",
+      "label": "S.D. TAHUN LALU",
+      "sub": "",
+      "parent": "PENYUSUTAN",
+      "left": 21,
+      "right": 27,
+      "width": 7
+     },
+     {
+      "num": "(6)",
+      "label": "TAHUN INI",
+      "sub": "",
+      "parent": "PENYUSUTAN",
+      "left": 28,
+      "right": 34,
+      "width": 7
+     },
+     {
+      "num": "(7)",
+      "label": "S.D. TAHUN INI",
+      "sub": "",
+      "parent": "PENYUSUTAN",
+      "left": 35,
+      "right": 41,
+      "width": 7
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "",
+    "headerRow": 99,
+    "dataStart": 100,
+    "dataEnd": 100,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 2,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NOMOR IDENTITAS (NPWP/NIK/Lainnya)",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 9,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "NAMA DEBITUR",
+      "sub": "",
+      "parent": "",
+      "left": 10,
+      "right": 16,
+      "width": 7
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 22,
+      "width": 6
+     },
+     {
+      "num": "(5)",
+      "label": "AWAL TAHUN BUKU",
+      "sub": "",
+      "parent": "NILAI KREDIT KURANG LANCAR",
+      "left": 23,
+      "right": 27,
+      "width": 5
+     },
+     {
+      "num": "(6)",
+      "label": "AKHIR TAHUN BUKU",
+      "sub": "",
+      "parent": "NILAI KREDIT KURANG LANCAR",
+      "left": 28,
+      "right": 32,
+      "width": 5
+     },
+     {
+      "num": "(7)",
+      "label": "JUMLAH BUNGA PADA TAHUN BUKU (AKRUAL)",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 37,
+      "width": 5
+     },
+     {
+      "num": "(8)",
+      "label": "KATEGORI",
+      "sub": "",
+      "parent": "",
+      "left": 38,
+      "right": 41,
+      "width": 4
+     }
+    ]
+   }
+  ]
+ },
+ "L11B": {
+  "lampiran": "LAMPIRAN 11B",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh semua Wajib Pajak Badan",
+  "sector": "",
+  "subtitle": "PENGHITUNGAN BIAYA PINJAMAN YANG DAPAT DIBEBANKAN UNTUK KEPERLUAN PENGHITUNGAN PAJAK PENGHASILAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 41,
+  "formBottom": 82,
+  "tables": [
+   {
+    "title": "A. PENGHITUNGAN SALDO RATA-RATA UTANG",
+    "totalLabel": "JUMLAH",
+    "headerRow": 43,
+    "dataStart": 44,
+    "dataEnd": 48,
+    "blankRows": 5,
+    "totalRow": 49,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NOMOR IDENTITAS (NPWP/NIK/Lainnya)",
+      "sub": "",
+      "parent": "PEMBERI PINJAMAN",
+      "left": 3,
+      "right": 6,
+      "width": 4
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "PEMBERI PINJAMAN",
+      "left": 7,
+      "right": 11,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "HUBUNGAN",
+      "sub": "",
+      "parent": "PEMBERI PINJAMAN",
+      "left": 12,
+      "right": 14,
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "BULAN KE-1",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 15,
+      "right": 16,
+      "width": 2
+     },
+     {
+      "num": "(5)",
+      "label": "BULAN KE-2",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 17,
+      "right": 18,
+      "width": 2
+     },
+     {
+      "num": "(6)",
+      "label": "BULAN KE-3",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 19,
+      "right": 20,
+      "width": 2
+     },
+     {
+      "num": "(7)",
+      "label": "BULAN KE-4",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 21,
+      "right": 22,
+      "width": 2
+     },
+     {
+      "num": "(8)",
+      "label": "BULAN KE-5",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 23,
+      "right": 24,
+      "width": 2
+     },
+     {
+      "num": "(9)",
+      "label": "BULAN KE-6",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 25,
+      "right": 26,
+      "width": 2
+     },
+     {
+      "num": "(10)",
+      "label": "BULAN KE-7",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 27,
+      "right": 28,
+      "width": 2
+     },
+     {
+      "num": "(11)",
+      "label": "BULAN KE-8",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 29,
+      "right": 30,
+      "width": 2
+     },
+     {
+      "num": "(12)",
+      "label": "BULAN KE-9",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 31,
+      "right": 32,
+      "width": 2
+     },
+     {
+      "num": "(13)",
+      "label": "BULAN KE-10",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 33,
+      "right": 34,
+      "width": 2
+     },
+     {
+      "num": "(14)",
+      "label": "BULAN KE-11",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 35,
+      "right": 36,
+      "width": 2
+     },
+     {
+      "num": "(15)",
+      "label": "BULAN KE-12",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 37,
+      "right": 38,
+      "width": 2
+     },
+     {
+      "num": "(16)",
+      "label": "RATA-RATA",
+      "sub": "",
+      "parent": "SALDO UTANG TIAP AKHIR BULAN (Rp)",
+      "left": 39,
+      "right": 41,
+      "width": 3
+     }
+    ]
+   },
+   {
+    "title": "B. PENGHITUNGAN SALDO RATA-RATA MODAL",
+    "totalLabel": "JUMLAH",
+    "headerRow": 56,
+    "dataStart": 57,
+    "dataEnd": 63,
+    "blankRows": 7,
+    "totalRow": 64,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "RINCIAN MODAL",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 14,
+      "width": 12
+     },
+     {
+      "num": "(2)",
+      "label": "BULAN KE-1",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 15,
+      "right": 16,
+      "width": 2
+     },
+     {
+      "num": "(3)",
+      "label": "BULAN KE-2",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 17,
+      "right": 18,
+      "width": 2
+     },
+     {
+      "num": "(4)",
+      "label": "BULAN KE-3",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 19,
+      "right": 20,
+      "width": 2
+     },
+     {
+      "num": "(5)",
+      "label": "BULAN KE-4",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 21,
+      "right": 22,
+      "width": 2
+     },
+     {
+      "num": "(6)",
+      "label": "BULAN KE-5",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 23,
+      "right": 24,
+      "width": 2
+     },
+     {
+      "num": "(7)",
+      "label": "BULAN KE-6",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 25,
+      "right": 26,
+      "width": 2
+     },
+     {
+      "num": "(8)",
+      "label": "BULAN KE-7",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 27,
+      "right": 28,
+      "width": 2
+     },
+     {
+      "num": "(9)",
+      "label": "BULAN KE-8",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 29,
+      "right": 30,
+      "width": 2
+     },
+     {
+      "num": "(10)",
+      "label": "BULAN KE-9",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 31,
+      "right": 32,
+      "width": 2
+     },
+     {
+      "num": "(11)",
+      "label": "BULAN KE-10",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 33,
+      "right": 34,
+      "width": 2
+     },
+     {
+      "num": "(12)",
+      "label": "BULAN KE-11",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 35,
+      "right": 36,
+      "width": 2
+     },
+     {
+      "num": "(13)",
+      "label": "BULAN KE-12",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 37,
+      "right": 38,
+      "width": 2
+     },
+     {
+      "num": "(14)",
+      "label": "RATA-RATA",
+      "sub": "",
+      "parent": "SALDO MODAL TIAP AKHIR BULAN (Rp)",
+      "left": 39,
+      "right": 41,
+      "width": 3
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "JUMLAH",
+    "headerRow": 76,
+    "dataStart": 77,
+    "dataEnd": 81,
+    "blankRows": 5,
+    "totalRow": 82,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "PEMBERI PINJAMAN",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 8,
+      "width": 7
+     },
+     {
+      "num": "(2)",
+      "label": "SALDO RATA-RATA UTANG",
+      "sub": "",
+      "parent": "",
+      "left": 9,
+      "right": 17,
+      "width": 9
+     },
+     {
+      "num": "(3)",
+      "label": "BIAYA PINJAMAN (BUNGA)",
+      "sub": "",
+      "parent": "",
+      "left": 18,
+      "right": 25,
+      "width": 8
+     },
+     {
+      "num": "(4)",
+      "label": "BIAYA PINJAMAN YANG DAPAT DIPERHITUNGKAN",
+      "sub": "",
+      "parent": "",
+      "left": 26,
+      "right": 33,
+      "width": 8
+     },
+     {
+      "num": "(5)",
+      "label": "BIAYA PINJAMAN YANG TIDAK DAPAT DIPERHITUNGKAN",
+      "sub": "",
+      "parent": "",
+      "left": 34,
+      "right": 41,
+      "width": 8
+     }
+    ]
+   }
+  ]
+ },
+ "L11C": {
+  "lampiran": "LAMPIRAN 11C",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang memiliki utang swasta luar negeri.",
+  "sector": "",
+  "subtitle": "LAPORAN UTANG SWASTA LUAR NEGERI",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 58,
+  "formBottom": 27,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 26,
+    "blankRows": 10,
+    "totalRow": 27,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 1,
+      "right": 1,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA",
+      "sub": "",
+      "parent": "PEMBERI PINJAMAN",
+      "left": 2,
+      "right": 5,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "PEMBERI PINJAMAN",
+      "left": 6,
+      "right": 9,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "NEGARA/ YURISDIKSI",
+      "sub": "",
+      "parent": "PEMBERI PINJAMAN",
+      "left": 10,
+      "right": 13,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "KODE",
+      "sub": "",
+      "parent": "MATA UANG",
+      "left": 14,
+      "right": 16,
+      "width": 3
+     },
+     {
+      "num": "(6)",
+      "label": "KURS AKHIR TAHUN",
+      "sub": "",
+      "parent": "MATA UANG",
+      "left": 17,
+      "right": 19,
+      "width": 3
+     },
+     {
+      "num": "(7)",
+      "label": "AWAL TAHUN",
+      "sub": "",
+      "parent": "POKOK UTANG (Rp)",
+      "left": 20,
+      "right": 24,
+      "width": 5
+     },
+     {
+      "num": "(8)",
+      "label": "PENAMBAHAN",
+      "sub": "",
+      "parent": "MUTASI",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "PENGURANGAN",
+      "sub": "",
+      "parent": "MUTASI",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "AKHIR TAHUN",
+      "sub": "",
+      "parent": "POKOK UTANG (Rp)",
+      "left": 33,
+      "right": 37,
+      "width": 5
+     },
+     {
+      "num": "(11)",
+      "label": "TANGGAL MULAI",
+      "sub": "",
+      "parent": "JANGKA WAKTU PINJAMAN",
+      "left": 38,
+      "right": 40,
+      "width": 3
+     },
+     {
+      "num": "(12)",
+      "label": "TANGGAL JATUH TEMPO",
+      "sub": "",
+      "parent": "JANGKA WAKTU PINJAMAN",
+      "left": 41,
+      "right": 43,
+      "width": 3
+     },
+     {
+      "num": "(13)",
+      "label": "TINGKAT (%)",
+      "sub": "",
+      "parent": "BUNGA",
+      "left": 44,
+      "right": 46,
+      "width": 3
+     },
+     {
+      "num": "(14)",
+      "label": "JUMLAH (Rp)",
+      "sub": "",
+      "parent": "BUNGA",
+      "left": 47,
+      "right": 50,
+      "width": 4
+     },
+     {
+      "num": "(15)",
+      "label": "BIAYA TERKAIT PEROLEHAN PINJAMAN SELAIN BUNGA (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 51,
+      "right": 54,
+      "width": 4
+     },
+     {
+      "num": "(16)",
+      "label": "PERUNTUKAN PINJAMAN",
+      "sub": "",
+      "parent": "",
+      "left": 55,
+      "right": 58,
+      "width": 4
+     }
+    ]
+   }
+  ]
+ },
+ "L12A": {
+  "lampiran": "LAMPIRAN 12A",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang merupakan Bentuk Usaha Tetap (BUT)",
+  "sector": "",
+  "subtitle": "PENGHITUNGAN PPh PASAL 26 AYAT (4)",
+  "index": [],
+  "form": {
+   "valueLabel": "NILAI (Rupiah)",
+   "items": [
+    {
+     "marker": "1",
+     "label": "PENGHASILAN KENA PAJAK",
+     "note": "",
+     "formula": "",
+     "row": 17
+    },
+    {
+     "marker": "2",
+     "label": "PPh TERUTANG",
+     "note": "",
+     "formula": "",
+     "row": 22
+    },
+    {
+     "marker": "3",
+     "label": "DASAR PENGENAAN PAJAK PPh PASAL 26 AYAT (4)",
+     "note": "",
+     "formula": "( 1 - 2 )",
+     "row": 27
+    },
+    {
+     "marker": "4",
+     "label": "PPh PASAL 26 AYAT (4)",
+     "note": "",
+     "formula": "",
+     "row": 32
+    },
+    {
+     "marker": "a",
+     "label": "TERUTANG : …… *) % X JUMLAH PADA ANGKA",
+     "note": "",
+     "formula": "3",
+     "row": 34
+    },
+    {
+     "marker": "b",
+     "label": "TIDAK TERUTANG, BERDASARKAN:",
+     "note": "1) 2) a) b) c) d) CATATAN : *) Tarif 22% atau tarif berdasarkan P3B **) Lampirkan bukti realisasi penanaman kembali",
+     "formula": "KETENTUAN P3B INDONESIA -",
+     "row": 37
+    }
+   ],
+   "notes": []
+  },
+  "checklist": null,
+  "outline": null,
+  "formRight": 0,
+  "formBottom": 0,
+  "tables": []
+ },
+ "L12B": {
+  "lampiran": "LAMPIRAN 12B",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang merupakan Bentuk Usaha Tetap (BUT) dan melakukan penanaman kembali penghasilan kena pajak sesudah dikurangi pajak",
+  "sector": "",
+  "subtitle": "PEMBERITAHUAN PENANAMAN KEMBALI PENGHASILAN KENA PAJAK SESUDAH DIKURANGI PAJAK BAGI WAJIB PAJAK BENTUK USAHA TETAP",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 40,
+  "formBottom": 177,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH",
+    "headerRow": 64,
+    "dataStart": 65,
+    "dataEnd": 67,
+    "blankRows": 3,
+    "totalRow": 68,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 5,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "BENTUK PENANAMAN KEMBALI",
+      "sub": "",
+      "parent": "",
+      "left": 6,
+      "right": 28,
+      "width": 23
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI REALISASI",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 35,
+      "width": 7
+     },
+     {
+      "num": "(4)",
+      "label": "TAHUN REALISASI",
+      "sub": "",
+      "parent": "",
+      "left": 36,
+      "right": 40,
+      "width": 5
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "",
+    "headerRow": 92,
+    "dataStart": 93,
+    "dataEnd": 93,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA PERUSAHAAN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 7,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "NPWP",
+      "sub": "",
+      "parent": "",
+      "left": 8,
+      "right": 11,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "",
+      "left": 12,
+      "right": 16,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "JENIS USAHA",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "AKTA PENDIRIAN",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "AKTA PENDIRIAN",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "NOTARIS",
+      "sub": "",
+      "parent": "AKTA PENDIRIAN",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "NILAI INVESTASI",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "MASA PERUSAHAAN MULAI AKTIF BEROPERASI/ BERPRODUKSI KOMERSIAL",
+      "sub": "",
+      "parent": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "",
+    "headerRow": 138,
+    "dataStart": 139,
+    "dataEnd": 139,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA PERUSAHAAN",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 7,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "NPWP",
+      "sub": "",
+      "parent": "",
+      "left": 8,
+      "right": 11,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "parent": "",
+      "left": 12,
+      "right": 16,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "JENIS USAHA",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 19,
+      "width": 3
+     },
+     {
+      "num": "(6)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "AKTA PENYERTAAN MODAL",
+      "left": 20,
+      "right": 22,
+      "width": 3
+     },
+     {
+      "num": "(7)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "AKTA PENYERTAAN MODAL",
+      "left": 23,
+      "right": 25,
+      "width": 3
+     },
+     {
+      "num": "(8)",
+      "label": "NOTARIS",
+      "sub": "",
+      "parent": "AKTA PENYERTAAN MODAL",
+      "left": 26,
+      "right": 28,
+      "width": 3
+     },
+     {
+      "num": "(9)",
+      "label": "NILAI INVESTASI",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 31,
+      "width": 3
+     },
+     {
+      "num": "(10)",
+      "label": "MASA PERUSAHAAN MULAI AKTIF BEROPERASI/ BERPRODUKSI KOMERSIAL",
+      "sub": "",
+      "parent": "",
+      "left": 32,
+      "right": 35,
+      "width": 4
+     },
+     {
+      "num": "(11)",
+      "label": "YA/ TIDAK",
+      "sub": "",
+      "parent": "APAKAH PERUSAHAAN TERDAFTAR DI BURSA EFEK",
+      "left": 36,
+      "right": 37,
+      "width": 2
+     },
+     {
+      "num": "(12)",
+      "label": "NAMA BURSA EFEK",
+      "sub": "",
+      "parent": "APAKAH PERUSAHAAN TERDAFTAR DI BURSA EFEK",
+      "left": 38,
+      "right": 40,
+      "width": 3
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "",
+    "headerRow": 161,
+    "dataStart": 162,
+    "dataEnd": 162,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "JENIS AKTIVA TETAP",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 7,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "LOKASI AKTIVA TETAP",
+      "sub": "",
+      "parent": "",
+      "left": 8,
+      "right": 16,
+      "width": 9
+     },
+     {
+      "num": "(4)",
+      "label": "KUANTITAS",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "NILAI AKTIVA TETAP",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "BUKTI KEPEMILIKAN AKTIVA TETAP",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "BUKTI KEPEMILIKAN AKTIVA TETAP",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "AKTA/DOKUMEN PEMBELIAN",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "AKTA/DOKUMEN PEMBELIAN",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "",
+    "totalLabel": "",
+    "headerRow": 176,
+    "dataStart": 177,
+    "dataEnd": 177,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "JENIS AKTIVA",
+      "sub": "",
+      "parent": "",
+      "left": 4,
+      "right": 16,
+      "width": 13
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI INVESTASI",
+      "sub": "",
+      "parent": "",
+      "left": 17,
+      "right": 28,
+      "width": 12
+     },
+     {
+      "num": "(4)",
+      "label": "URAIAN",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 40,
+      "width": 12
+     }
+    ]
+   }
+  ]
+ },
+ "L13A": {
+  "lampiran": "LAMPIRAN 13A",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang berhak memperoleh fasilitas perpajakan dalam rangka penanaman modal",
+  "sector": "",
+  "subtitle": "DAFTAR FASILITAS PENANAMAN MODAL",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 58,
+  "formBottom": 32,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH FASILITAS PENGURANGAN PENGHASILAN NETO",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 31,
+    "blankRows": 14,
+    "totalRow": 32,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 1,
+      "right": 1,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "KEPUTUSAN ATAU PEMBERITAHUAN PEMBERIAN FASILITAS",
+      "left": 2,
+      "right": 4,
+      "width": 3
+     },
+     {
+      "num": "(3)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "KEPUTUSAN ATAU PEMBERITAHUAN PEMBERIAN FASILITAS",
+      "left": 5,
+      "right": 7,
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "KEPUTUSAN PEMANFAATAN FASILITAS",
+      "left": 8,
+      "right": 10,
+      "width": 3
+     },
+     {
+      "num": "(5)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "KEPUTUSAN PEMANFAATAN FASILITAS",
+      "left": 11,
+      "right": 13,
+      "width": 3
+     },
+     {
+      "num": "(6)",
+      "label": "DALAM MATA UANG ASING",
+      "sub": "",
+      "parent": "JUMLAH PENANAMAN MODAL YANG DISETUJUI",
+      "left": 14,
+      "right": 16,
+      "width": 3
+     },
+     {
+      "num": "(7)",
+      "label": "EKUIVALEN",
+      "sub": "",
+      "parent": "JUMLAH PENANAMAN MODAL YANG DISETUJUI",
+      "left": 17,
+      "right": 19,
+      "width": 3
+     },
+     {
+      "num": "(8)",
+      "label": "DALAM RUPIAH",
+      "sub": "",
+      "parent": "JUMLAH PENANAMAN MODAL YANG DISETUJUI",
+      "left": 20,
+      "right": 22,
+      "width": 3
+     },
+     {
+      "num": "(9)",
+      "label": "JUMLAH (Rp)",
+      "sub": "",
+      "parent": "JUMLAH PENANAMAN MODAL YANG DISETUJUI",
+      "left": 23,
+      "right": 25,
+      "width": 3
+     },
+     {
+      "num": "(10)",
+      "label": "BENTUK PENANAMAN MODAL",
+      "sub": "",
+      "parent": "",
+      "left": 26,
+      "right": 28,
+      "width": 3
+     },
+     {
+      "num": "(11)",
+      "label": "DI BIDANG DAN/ATAU DAERAH",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(12)",
+      "label": "FASILITAS YANG DIBERIKAN",
+      "sub": "",
+      "parent": "",
+      "left": 33,
+      "right": 35,
+      "width": 3
+     },
+     {
+      "num": "(13)",
+      "label": "PERSENTASE PENGURANGAN PENGHASLAN NETO",
+      "sub": "",
+      "parent": "",
+      "left": 36,
+      "right": 39,
+      "width": 4
+     },
+     {
+      "num": "(14)",
+      "label": "PENAMBAHAN JANGKA WAKTU KOMPENSASI KERUGIAN",
+      "sub": "",
+      "parent": "",
+      "left": 40,
+      "right": 43,
+      "width": 4
+     },
+     {
+      "num": "(15)",
+      "label": "AKUMULASI S.D. TAHUN INI",
+      "sub": "",
+      "parent": "REALISASI PENANAMAN MODAL",
+      "left": 44,
+      "right": 46,
+      "width": 3
+     },
+     {
+      "num": "(16)",
+      "label": "PADA SAAT MULAI BERPRODUKSI KOMERSIAL",
+      "sub": "",
+      "parent": "REALISASI PENANAMAN MODAL",
+      "left": 47,
+      "right": 49,
+      "width": 3
+     },
+     {
+      "num": "(17)",
+      "label": "SAAT MULAI BERPRODUKSI KOMERSIAL",
+      "sub": "",
+      "parent": "",
+      "left": 50,
+      "right": 52,
+      "width": 3
+     },
+     {
+      "num": "(18)",
+      "label": "TAHUN KE-",
+      "sub": "",
+      "parent": "FASILITAS PENGURANGAN PENGHASILAN NETO",
+      "left": 53,
+      "right": 55,
+      "width": 3
+     },
+     {
+      "num": "(19)",
+      "label": "JUMLAH (Rp)",
+      "sub": "",
+      "parent": "FASILITAS PENGURANGAN PENGHASILAN NETO",
+      "left": 56,
+      "right": 58,
+      "width": 3
+     }
+    ]
+   }
+  ]
+ },
+ "L13B": {
+  "lampiran": "LAMPIRAN 13B",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang berhak memperoleh fasilitas pengurangan penghasilan bruto",
+  "sector": "",
+  "subtitle": "DAFTAR TAMBAHAN PENGURANGAN PENGHASILAN BRUTO",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 41,
+  "formBottom": 60,
+  "tables": [
+   {
+    "title": "A. DALAM HAL PERUSAHAAN MENDAPAT FASILITAS PENGURANGAN PENGHASILAN BRUTO UNTUK KEGIATAN PRAKTIK KERJA, PEMAGANGAN, DAN/ATAU",
+    "totalLabel": "JUMLAH BIAYA TERKAIT KEGIATAN PRAKTIK KERJA, PEMAGANGAN, DAN/ATAU",
+    "headerRow": 17,
+    "dataStart": 18,
+    "dataEnd": 46,
+    "blankRows": 29,
+    "totalRow": 47,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 2,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "PERJANJIAN KERJA SAMA",
+      "left": 3,
+      "right": 12,
+      "width": 10
+     },
+     {
+      "num": "(3)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "PERJANJIAN KERJA SAMA",
+      "left": 13,
+      "right": 18,
+      "width": 6
+     },
+     {
+      "num": "(4)",
+      "label": "MITRA KEGIATAN",
+      "sub": "",
+      "parent": "",
+      "left": 19,
+      "right": 31,
+      "width": 13
+     },
+     {
+      "num": "(5)",
+      "label": "KETERANGAN",
+      "sub": "",
+      "parent": "",
+      "left": 32,
+      "right": 41,
+      "width": 10
+     }
+    ]
+   },
+   {
+    "title": "C. DALAM HAL PERUSAHAAN MENDAPAT FASILITAS PENGURANGAN PENGHASILAN BRUTO UNTUK PENELITIAN DAN PENGEMBANGAN",
+    "totalLabel": "JUMLAH TAMBAHAN PENGURANGAN PENGHASILAN BRUTO PENELITIAN DAN PENGEMBANGAN",
+    "headerRow": 56,
+    "dataStart": 57,
+    "dataEnd": 59,
+    "blankRows": 3,
+    "totalRow": 60,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NOMOR PROPOSAL",
+      "sub": "",
+      "parent": "",
+      "left": 2,
+      "right": 10,
+      "width": 9
+     },
+     {
+      "num": "(2)",
+      "label": "DARI TAHUN",
+      "sub": "",
+      "parent": "JANGKA WAKTU PENGELUARAN BIAYA",
+      "left": 11,
+      "right": 14,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "SAMPAI TAHUN",
+      "sub": "",
+      "parent": "JANGKA WAKTU PENGELUARAN BIAYA",
+      "left": 15,
+      "right": 18,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "JUMLAH BIAYA",
+      "sub": "",
+      "parent": "",
+      "left": 19,
+      "right": 23,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "TAHUN PEROLEHAN HAKI/KOMERSIALISASI",
+      "sub": "",
+      "parent": "",
+      "left": 24,
+      "right": 31,
+      "width": 8
+     },
+     {
+      "num": "(6)",
+      "label": "PERSENTASE FASILITAS",
+      "sub": "",
+      "parent": "",
+      "left": 32,
+      "right": 35,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "TAMBAHAN PENGURANGAN PENGHASILAN BRUTO PENELITIAN DAN PENGEMBANGAN",
+      "sub": "",
+      "parent": "",
+      "left": 36,
+      "right": 41,
+      "width": 6
+     }
+    ]
+   }
+  ]
+ },
+ "L13C": {
+  "lampiran": "LAMPIRAN 13C",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang memperoleh fasilitas pengurangan PPh badan",
+  "sector": "",
+  "subtitle": "DAFTAR FASILITAS PENGURANGAN PPh BADAN",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 58,
+  "formBottom": 34,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH FASILITAS PENGURANGAN PPh TERUTANG",
+    "headerRow": 15,
+    "dataStart": 16,
+    "dataEnd": 33,
+    "blankRows": 18,
+    "totalRow": 34,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "parent": "",
+      "left": 1,
+      "right": 2,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "KEPUTUSAN PEMBERIAN FASILITAS",
+      "left": 3,
+      "right": 7,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "KEPUTUSAN PEMBERIAN FASILITAS",
+      "left": 8,
+      "right": 11,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "NOMOR",
+      "sub": "",
+      "parent": "KEPUTUSAN PEMANFAATAN FASILITAS",
+      "left": 12,
+      "right": 16,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "TANGGAL",
+      "sub": "",
+      "parent": "KEPUTUSAN PEMANFAATAN FASILITAS",
+      "left": 17,
+      "right": 20,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "JANGKA WAKTU FASILITAS (TAHUN)",
+      "sub": "",
+      "parent": "",
+      "left": 21,
+      "right": 24,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PEMANFAATAN TAHUN KE-",
+      "sub": "",
+      "parent": "",
+      "left": 25,
+      "right": 28,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PERSENTASE PENGURANGAN PPh",
+      "sub": "",
+      "parent": "",
+      "left": 29,
+      "right": 32,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "PENGHASILAN KENA PAJAK",
+      "sub": "",
+      "parent": "PENGHITUNGAN FASILITAS PENGURANGAN PPh BADAN",
+      "left": 33,
+      "right": 41,
+      "width": 9
+     },
+     {
+      "num": "(10)",
+      "label": "PPh TERUTANG",
+      "sub": "",
+      "parent": "PENGHITUNGAN FASILITAS PENGURANGAN PPh BADAN",
+      "left": 42,
+      "right": 50,
+      "width": 9
+     },
+     {
+      "num": "(11)",
+      "label": "BESARAN FASILITAS PENGURANGAN PPh TERUTANG",
+      "sub": "",
+      "parent": "PENGHITUNGAN FASILITAS PENGURANGAN PPh BADAN",
+      "left": 51,
+      "right": 58,
+      "width": 8
+     }
+    ]
+   }
+  ]
+ },
+ "L14": {
+  "lampiran": "LAMPIRAN 14",
+  "halaman": "",
+  "perhatian": "Formulir ini diisi oleh Wajib Pajak yang memiliki sisa lebih yang digunakan untuk pembangunan dan pengadaan sarana dan prasarana",
+  "sector": "",
+  "subtitle": "PENGGUNAAN SISA LEBIH UNTUK PEMBANGUNAN DAN PENGADAAN SARANA DAN PRASARANA",
+  "index": [],
+  "form": null,
+  "checklist": null,
+  "outline": null,
+  "formRight": 58,
+  "formBottom": 22,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 21,
+    "blankRows": 5,
+    "totalRow": 22,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "TAHUN PAJAK/BAGIAN TAHUN PAJAK",
+      "sub": "",
+      "parent": "",
+      "left": 1,
+      "right": 4,
+      "width": 4
+     },
+     {
+      "num": "(2)",
+      "label": "PENYEDIAAN SISA LEBIH UNTUK DITANAMKAN KEMBALI SELAMA 4 TAHUN (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 5,
+      "right": 11,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "BENTUK PENANAMAN KEMBALI SISA LEBIH",
+      "sub": "",
+      "parent": "",
+      "left": 12,
+      "right": 15,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TAHUN KE-1",
+      "sub": "(Rp)",
+      "parent": "PENGGUNAAN SISA LEBIH UNTUK PEMBANGUNAN DAN PENGADAAN SARANA DAN PRASARANA",
+      "left": 16,
+      "right": 21,
+      "width": 6
+     },
+     {
+      "num": "(5)",
+      "label": "TAHUN KE-2",
+      "sub": "(Rp)",
+      "parent": "PENGGUNAAN SISA LEBIH UNTUK PEMBANGUNAN DAN PENGADAAN SARANA DAN PRASARANA",
+      "left": 22,
+      "right": 27,
+      "width": 6
+     },
+     {
+      "num": "(6)",
+      "label": "TAHUN KE-3",
+      "sub": "(Rp)",
+      "parent": "PENGGUNAAN SISA LEBIH UNTUK PEMBANGUNAN DAN PENGADAAN SARANA DAN PRASARANA",
+      "left": 28,
+      "right": 33,
+      "width": 6
+     },
+     {
+      "num": "(7)",
+      "label": "TAHUN KE-4",
+      "sub": "(Rp)",
+      "parent": "PENGGUNAAN SISA LEBIH UNTUK PEMBANGUNAN DAN PENGADAAN SARANA DAN PRASARANA",
+      "left": 34,
+      "right": 39,
+      "width": 6
+     },
+     {
+      "num": "(8)",
+      "label": "JUMLAH PENGGUNAAN SISA LEBIH (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 40,
+      "right": 44,
+      "width": 5
+     },
+     {
+      "num": "(9)",
+      "label": "SISA LEBIH YANG BELUM DITANAMKAN KEMBALI (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 45,
+      "right": 51,
+      "width": 7
+     },
+     {
+      "num": "(10)",
+      "label": "SISA LEBIH YANG MELEWATI JANGKA WAKTU PENANAMAN KEMBALI DALAM JANGKA WAKTU 4 TAHUN (Rp)",
+      "sub": "",
+      "parent": "",
+      "left": 52,
+      "right": 58,
+      "width": 7
+     }
+    ]
+   }
+  ]
+ }
+}

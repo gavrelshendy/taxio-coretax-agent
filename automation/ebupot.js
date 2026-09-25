@@ -75,6 +75,15 @@ const LISTING_ENDPOINT = {
 const PERIOD_FILTER_PROPERTY = { bp21: 'TaxPeriodCode', bppu: 'TaxPeriodCode', bpmp: 'TaxPeriodCode', bpa1: 'IncomePeriodCodeEnd' };
 const EBUPOT_TYPE_CODE = { bp21: 'EBUPOTBP21', bppu: 'EBUPOTBPU', bpa1: 'EBUPOTBPA1' }; // bpmp: pdf n/a
 const API_BASE = 'https://coretaxdjp.pajak.go.id/withholdingslipsportal/api';
+// Sentinel for "PDF never generated yet" - same convention automation/spt.js uses (CONFIRMED
+// LIVE there: Coretax treats an all-zero DocumentAggregateIdentifier as "generate on demand",
+// while a null one is rejected outright with a .NET System.Guid conversion error).
+const ZERO_DOC_ID = '00000000-0000-0000-0000-000000000000';
+// Rows sent with ZERO_DOC_ID that don't come back with a PDF immediately get re-tried after
+// re-fetching the listing (their DocumentFormAggregateIdentifier populates once Coretax has
+// generated the document) - 6 rounds * 5s = ~30s total, shared by all such rows in a combo.
+const PENDING_RETRY_ROUNDS = 6;
+const PENDING_RETRY_WAIT_MS = 5000;
 
 /** "0326" -> "03032026" - the MM+MM+YYYY period-code format Coretax's own filters use,
  *  confirmed live against both TaxPeriodCode and BPA1's IncomePeriodCodeEnd. */
@@ -209,7 +218,7 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
     const body = {
         WithholdingSlipsAggregateIdentifier: row.WithholdingslipsAggregateIdentifier,
         WithholdingSlipsRecordIdentifier: row.RecordId,
-        DocumentAggregateIdentifier: row.DocumentFormAggregateIdentifier,
+        DocumentAggregateIdentifier: row.DocumentFormAggregateIdentifier || ZERO_DOC_ID,
         TaxpayerAggregateIdentifier: row.TaxpayerAggregateIdentifier,
         EbupotType: EBUPOT_TYPE_CODE[bupotType],
         DocumentDate: String(row.LastUpdatedDate || '').slice(0, 19),
@@ -227,6 +236,12 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
     // created/signed documents not yet linked to a Document Form, per Coretax's own data) can't
     // be downloaded by this automation and need a manual download in Coretax's own UI instead -
     // the log message says as much and the row is skipped rather than crashing the whole run.
+    // UPDATE 2026-09-24: seen on a BP21 row signed 9+ days earlier (ESignStatus Done), so this
+    // is not only "freshly created" documents. Null is now sent as ZERO_DOC_ID instead - the
+    // "generate on demand" sentinel automation/spt.js already relies on against the same
+    // Coretax backend family - and a row that still isn't ready is flagged `notReady` so
+    // downloadComboData can re-fetch the listing and retry it after the other rows.
+    const docIdWasNull = !row.DocumentFormAggregateIdentifier;
     const missing = Object.keys(body).filter((k) => body[k] == null || body[k] === '');
     if (missing.length) {
         try { log('[debug] Baris e-Bupot ' + bupotType.toUpperCase() + ' dengan field kosong (' + missing.join(', ') + '), mengirim tetap: ' + JSON.stringify(row)); } catch (e) {}
@@ -235,8 +250,11 @@ async function fetchPdfForRow(page, authState, bupotType, row) {
     if (status === 401) { const e = new Error('Sesi berakhir (401) saat mengambil PDF.'); e.isSessionExpired = true; throw e; }
     const data = json && json.Payload && json.Payload.Message ? json.Payload.Message.Data : null;
     if (status !== 200 || !json || json.IsSuccessful === false || !data) {
-        if (missing.includes('DocumentAggregateIdentifier') && text && text.includes('System.Guid')) {
-            throw new Error('Dokumen ini belum siap diunduh otomatis (belum terhubung ke Document Form di Coretax - biasanya dokumen yang baru saja dibuat/ditandatangani) - silakan download manual lewat Coretax, atau coba lagi nanti.');
+        if (docIdWasNull) {
+            const e = new Error('Dokumen ini belum siap diunduh otomatis (Coretax belum menautkan dokumen PDF-nya ke bukti potong ini) - silakan download manual lewat Coretax, atau coba lagi nanti.'
+                + ' [HTTP ' + status + ': ' + String((json && (json.Errors ? JSON.stringify(json.Errors) : json.Message)) || text || '').slice(0, 300) + ']');
+            e.notReady = true;
+            throw e;
         }
         const detail = (json && json.Errors) ? JSON.stringify(json.Errors) : (text || '(tidak ada detail dari server)');
         throw new Error('Gagal mengambil PDF: HTTP ' + status + ' - ' + detail);
@@ -255,6 +273,7 @@ async function downloadComboData(ctx) {
     if (!rows.length) { emit('Tidak ada data untuk filter ini.'); return { downloadedCount: 0, rows: [] }; }
     emit('Total data: ' + rows.length + ' baris.');
     let downloadedCount = 0;
+    const pending = []; // rows sent with ZERO_DOC_ID that weren't ready yet - retried below
     if (pdfEnabled) {
         fs.mkdirSync(saveDir, { recursive: true });
         for (let i = 0; i < rows.length; i++) {
@@ -281,9 +300,37 @@ async function downloadComboData(ctx) {
                 downloadedCount++;
                 if (ref) downloadedRefs.add(ref);
                 emit('Terunduh (' + (i + 1) + '/' + rows.length + '): ' + filename);
+            } else if (lastErr && lastErr.notReady) {
+                pending.push({ index: i, row, filename, targetPath, lastErr });
             } else {
                 emit('Baris ke-' + (i + 1) + ' (' + filename + '): gagal terunduh - ' + (lastErr ? lastErr.message : 'tidak diketahui') + ' - dilewati, bisa diulang manual.');
             }
+        }
+        if (pending.length) emit(pending.length + ' dokumen belum siap di Coretax - meminta pembuatan PDF dan mencoba ulang...');
+        for (let round = 0; round < PENDING_RETRY_ROUNDS && pending.length; round++) {
+            await runcontrol.checkpoint();
+            await _sleep(PENDING_RETRY_WAIT_MS);
+            // Fresh listing state - DocumentFormAggregateIdentifier fills in once Coretax has
+            // generated the document, so don't keep re-sending the stale copy.
+            const fresh = await fetchAllRows(page, authState, bupotType, documentStatus, mmYY, kode, sizeState, () => {});
+            const byId = new Map(fresh.map((r) => [r.RecordId, r]));
+            for (let p = pending.length - 1; p >= 0; p--) {
+                const item = pending[p];
+                const row = byId.get(item.row.RecordId) || item.row;
+                try {
+                    fs.writeFileSync(item.targetPath, await fetchPdfForRow(page, authState, bupotType, row));
+                    downloadedCount++;
+                    if (row.WithholdingSlipsNumber) downloadedRefs.add(row.WithholdingSlipsNumber);
+                    emit('Terunduh (' + (item.index + 1) + '/' + rows.length + ', setelah dicoba ulang): ' + item.filename);
+                    pending.splice(p, 1);
+                } catch (e) {
+                    if (e.isSessionExpired) throw e;
+                    item.lastErr = e;
+                }
+            }
+        }
+        for (const item of pending) {
+            emit('Baris ke-' + (item.index + 1) + ' (' + item.filename + '): gagal terunduh - ' + item.lastErr.message + ' - dilewati, bisa diulang manual.');
         }
     }
     return { downloadedCount, rows };

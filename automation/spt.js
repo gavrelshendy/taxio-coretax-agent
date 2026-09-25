@@ -381,8 +381,8 @@ const GENERATE_POLL_WAIT_MS = 5000;
  *  Coretax is still rendering it) and BPE, skipping anything already on disk. A session-expiry
  *  mid-fetch bubbles up (`.isSessionExpired`) for the caller to re-login and re-run this combo. */
 async function processSptCombo(ctx) {
-    const { page, authState, saveDir, entityCode, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, signParam, isAnnual,
-        includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, saveRoot, log: emit } = ctx;
+    const { page, authState, saveDir, entityCode, entityNpwp, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, signParam, isAnnual,
+        includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, saveRoot, log: emit } = ctx;
     const taxPeriodCode = isAnnual ? annualYearToTaxPeriodCode(mmYY) : mmYYToTaxPeriodCode(mmYY);
     let downloadedAny = false;
     const rows = await fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeState, emit);
@@ -488,7 +488,7 @@ async function processSptCombo(ctx) {
                     outputDir: saveDir,
                     entityCode,
                     entityName: entityCode,
-                    compFolder: null, lampiranFormat, returnSheets: !!ctx.a1Book, renderSession:ctx.a1Book?.renderSession, fileSuffix: pbSuffix ? ' ' + pbSuffix : ''
+                    compFolder: null, lampiranFormat, layoutStyle, entityNpwp, returnSheets: !!ctx.a1Book, renderSession:ctx.a1Book?.renderSession, fileSuffix: pbSuffix ? ' ' + pbSuffix : ''
                 }, authState.taxpayerId, row.RecordId, row.TaxTypeCode, lampiranMode,
                 isAnnual ? mmYY : '', outputLayout);
                 if (!lampiranResult || !lampiranResult.ok) {
@@ -567,6 +567,10 @@ async function runSptDownload(opts) {
     const lampiranFormat = ['pdf', 'excel', 'both'].includes(opts.lampiranFormat) ? opts.lampiranFormat : 'pdf';
     const lampiranMode = ['print', 'full', 'confidential'].includes(opts.lampiranMode) ? opts.lampiranMode : 'print';
     const outputLayout = ['combined', 'separate'].includes(opts.outputLayout) ? opts.outputLayout : 'combined';
+    // 'formal' only actually does anything for ICT_PIT (SPT OP) lampiran - see
+    // lib/lampiran-layout-op-formal.js. Any other value/jenis silently keeps the default
+    // 'coretax' (screenshot-of-the-web-tab) rendering, unchanged from before this toggle existed.
+    const layoutStyle = opts.layoutStyle === 'formal' ? 'formal' : 'coretax';
     // Reassignable (not const) - the automatic fallback-PIC retry pass further down needs to
     // point login/cred at a DIFFERENT linked PIC after the first pass finishes, and
     // loginAndImpersonate()/openSptAndPrep() below close over this as a free variable so
@@ -732,7 +736,7 @@ async function runSptDownload(opts) {
                     const result = await processSptCombo({
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
                         compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual,
-                        includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, saveRoot,
+                        includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, entityNpwp: entity.npwp, saveRoot,
                         log: emit, a1Book, finalDir
                     });
                     if (result.downloadedAny) stats.downloaded++;

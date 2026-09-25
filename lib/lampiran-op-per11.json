@@ -1,0 +1,2646 @@
+{
+ "L1-1": {
+  "lampiran": "LAMPIRAN 1",
+  "halaman": "HALAMAN 1",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJIB PAJAK UNTUK MELAPORKAN HARTA, UTANG, DAFTAR ANGGOTA KELUARGA YANG MENJADI TANGGUNGAN, PENGHASILAN NETO DALAM NEGERI DARI PEKERJAAN DAN/ATAU BUKTI PEMOTONGAN PEMUNGUTAN PPh",
+  "index": [
+   {
+    "letter": "A.",
+    "title": "HARTA PADA AKHIR TAHUN PAJAK"
+   },
+   {
+    "letter": "B.",
+    "title": "UTANG PADA AKHIR TAHUN PAJAK"
+   },
+   {
+    "letter": "C.",
+    "title": "DAFTAR ANGGOTA KELUARGA YANG MENJADI TANGGUNGAN"
+   },
+   {
+    "letter": "D.",
+    "title": "PENGHASILAN NETO DALAM NEGERI DAN PEKERJAAN"
+   },
+   {
+    "letter": "E.",
+    "title": "DAFTAR BUKTI PEMOTONGAN/PEMUNGUTAN PPh"
+   }
+  ],
+  "formRight": 47,
+  "formBottom": 100,
+  "tables": [
+   {
+    "title": "1. KAS DAN SETARA KAS",
+    "totalLabel": "JUMLAH TABEL 1",
+    "headerRow": 18,
+    "dataStart": 19,
+    "dataEnd": 25,
+    "blankRows": 7,
+    "totalRow": 26,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE",
+      "sub": "",
+      "left": 3,
+      "right": 5,
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "DESKRIPSI",
+      "sub": "",
+      "left": 6,
+      "right": 10,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "NOMOR AKUN",
+      "sub": "",
+      "left": 11,
+      "right": 14,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "ATAS NAMA",
+      "sub": "",
+      "left": 15,
+      "right": 19,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "NAMA BANK/INSTITUSI",
+      "sub": "",
+      "left": 20,
+      "right": 25,
+      "width": 6
+     },
+     {
+      "num": "(6)",
+      "label": "LOKASI HARTA",
+      "sub": "",
+      "left": 26,
+      "right": 30,
+      "width": 5
+     },
+     {
+      "num": "(7)",
+      "label": "TAHUN PEROLEHAN",
+      "sub": "",
+      "left": 31,
+      "right": 34,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "SALDO",
+      "sub": "",
+      "left": 35,
+      "right": 39,
+      "width": 5
+     },
+     {
+      "num": "(9)",
+      "label": "KETERANGAN",
+      "sub": "(Harta PPS/Harta Investasi PPS)",
+      "left": 40,
+      "right": 47,
+      "width": 8
+     }
+    ]
+   },
+   {
+    "title": "2. PIUTANG",
+    "totalLabel": "JUMLAH TABEL 2",
+    "headerRow": 33,
+    "dataStart": 34,
+    "dataEnd": 43,
+    "blankRows": 10,
+    "totalRow": 44,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE",
+      "sub": "",
+      "left": 3,
+      "right": 5,
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "DESKRIPSI",
+      "sub": "",
+      "left": 6,
+      "right": 10,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "LOKASI PENERIMAPINJAMAN",
+      "sub": "",
+      "left": 11,
+      "right": 14,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "PENERIMA PINJAMAN",
+      "sub": "",
+      "left": 15,
+      "right": 25,
+      "width": 11
+     },
+     {
+      "num": "(5)",
+      "label": "NILAI PIUTANG",
+      "sub": "",
+      "left": 26,
+      "right": 30,
+      "width": 5
+     },
+     {
+      "num": "(6)",
+      "label": "TAHUN DIMULAI",
+      "sub": "",
+      "left": 31,
+      "right": 34,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "SALDO PIUTANG SAAT INI",
+      "sub": "",
+      "left": 35,
+      "right": 39,
+      "width": 5
+     },
+     {
+      "num": "(8)",
+      "label": "KETERANGAN",
+      "sub": "(Harta PPS/Harta Investasi PPS)",
+      "left": 40,
+      "right": 47,
+      "width": 8
+     }
+    ]
+   },
+   {
+    "title": "3. INVESTASI/SEKURITAS",
+    "totalLabel": "JUMLAH TABEL 3",
+    "headerRow": 51,
+    "dataStart": 52,
+    "dataEnd": 61,
+    "blankRows": 10,
+    "totalRow": 62,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE",
+      "sub": "",
+      "left": 3,
+      "right": 5,
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "DESKRIPSI",
+      "sub": "",
+      "left": 6,
+      "right": 10,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "LOKASI HARTA",
+      "sub": "",
+      "left": 11,
+      "right": 14,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "BANK / INSTITUSI / PENERIMA INVESTASI",
+      "sub": "",
+      "left": 15,
+      "right": 23,
+      "width": 9
+     },
+     {
+      "num": "(5)",
+      "label": "NOMOR AKUN",
+      "sub": "",
+      "left": 24,
+      "right": 27,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "HARGA PEROLEHAN",
+      "sub": "",
+      "left": 28,
+      "right": 32,
+      "width": 5
+     },
+     {
+      "num": "(7)",
+      "label": "TAHUN PEROLEHAN",
+      "sub": "",
+      "left": 33,
+      "right": 36,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "NILAI SAAT INI",
+      "sub": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KETERANGAN",
+      "sub": "(Harta PPS/Harta Investasi PPS)",
+      "left": 41,
+      "right": 47,
+      "width": 7
+     }
+    ]
+   },
+   {
+    "title": "4. HARTA BERGERAK",
+    "totalLabel": "JUMLAH TABEL 4",
+    "headerRow": 69,
+    "dataStart": 70,
+    "dataEnd": 99,
+    "blankRows": 30,
+    "totalRow": 100,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE",
+      "sub": "",
+      "left": 3,
+      "right": 5,
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "DESKRIPSI",
+      "sub": "",
+      "left": 6,
+      "right": 12,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "NOMOR POLISI/REGISTRASI",
+      "sub": "",
+      "left": 13,
+      "right": 16,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "KEPEMILIKAN",
+      "sub": "",
+      "left": 17,
+      "right": 27,
+      "width": 11
+     },
+     {
+      "num": "(5)",
+      "label": "TAHUN PEROLEHAN",
+      "sub": "",
+      "left": 28,
+      "right": 31,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "HARGA PEROLEHAN",
+      "sub": "",
+      "left": 32,
+      "right": 36,
+      "width": 5
+     },
+     {
+      "num": "(7)",
+      "label": "NILAI SAAT INI",
+      "sub": "",
+      "left": 37,
+      "right": 40,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "KETERANGAN",
+      "sub": "(Harta PPS/Harta Investasi PPS)",
+      "left": 41,
+      "right": 47,
+      "width": 7
+     }
+    ]
+   }
+  ]
+ },
+ "L1-2": {
+  "lampiran": "LAMPIRAN 1",
+  "halaman": "HALAMAN 2",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJIB PAJAK UNTUK MELAPORKAN HARTA, UTANG, DAFTAR ANGGOTA KELUARGA YANG MENJADI TANGGUNGAN, PENGHASILAN NETO DALAM NEGERI DARI PEKERJAAN DAN/ATAU BUKTI PEMOTONGAN PEMUNGUTAN PPh",
+  "index": [
+   {
+    "letter": "A.",
+    "title": "HARTA PADA AKHIR TAHUN PAJAK"
+   },
+   {
+    "letter": "B.",
+    "title": "UTANG PADA AKHIR TAHUN PAJAK"
+   },
+   {
+    "letter": "C.",
+    "title": "DAFTAR ANGGOTA KELUARGA YANG MENJADI TANGGUNGAN"
+   },
+   {
+    "letter": "D.",
+    "title": "PENGHASILAN NETO DALAM NEGERI DAN PEKERJAAN"
+   },
+   {
+    "letter": "E.",
+    "title": "DAFTAR BUKTI PEMOTONGAN/PEMUNGUTAN PPh"
+   }
+  ],
+  "formRight": 47,
+  "formBottom": 82,
+  "tables": [
+   {
+    "title": "5. HARTA TIDAK BERGERAK",
+    "totalLabel": "JUMLAH TABEL 5",
+    "headerRow": 18,
+    "dataStart": 19,
+    "dataEnd": 30,
+    "blankRows": 12,
+    "totalRow": 31,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "DESKRIPSI",
+      "sub": "",
+      "left": 5,
+      "right": 8,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "LOKASI HARTA",
+      "sub": "",
+      "left": 9,
+      "right": 12,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "UKURAN PROPERTI",
+      "sub": "",
+      "left": 13,
+      "right": 17,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "SUMBER KEPEMILIKAN",
+      "sub": "",
+      "left": 18,
+      "right": 22,
+      "width": 5
+     },
+     {
+      "num": "(6)",
+      "label": "NOMOR SERTIPIKAT",
+      "sub": "",
+      "left": 23,
+      "right": 27,
+      "width": 5
+     },
+     {
+      "num": "(7)",
+      "label": "TAHUN PEROLEHAN",
+      "sub": "",
+      "left": 28,
+      "right": 31,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "HARGA PEROLEHAN",
+      "sub": "",
+      "left": 32,
+      "right": 35,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "NILAI SAAT INI",
+      "sub": "",
+      "left": 36,
+      "right": 39,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "KETERANGAN",
+      "sub": "(Harta PPS/Harta Investasi PPS)",
+      "left": 40,
+      "right": 47,
+      "width": 8
+     }
+    ]
+   },
+   {
+    "title": "6. HARTA LAINNYA",
+    "totalLabel": "JUMLAH TABEL 6",
+    "headerRow": 38,
+    "dataStart": 39,
+    "dataEnd": 53,
+    "blankRows": 15,
+    "totalRow": 54,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "DESKRIPSI",
+      "sub": "",
+      "left": 5,
+      "right": 14,
+      "width": 10
+     },
+     {
+      "num": "(3)",
+      "label": "TAHUN PEROLEHAN",
+      "sub": "",
+      "left": 15,
+      "right": 18,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "BUKTI KEPEMILIKAN/NOMOR AKUN",
+      "sub": "",
+      "left": 19,
+      "right": 25,
+      "width": 7
+     },
+     {
+      "num": "(5)",
+      "label": "INFORMASI TAMBAHAN",
+      "sub": "",
+      "left": 26,
+      "right": 31,
+      "width": 6
+     },
+     {
+      "num": "(6)",
+      "label": "HARGA PEROLEHAN",
+      "sub": "",
+      "left": 32,
+      "right": 35,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "NILAI SAAT INI",
+      "sub": "",
+      "left": 36,
+      "right": 39,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "KETERANGAN",
+      "sub": "(Harta PPS/Harta Investasi PPS)",
+      "left": 40,
+      "right": 47,
+      "width": 8
+     }
+    ]
+   },
+   {
+    "title": "7. IKHTISAR HARTA",
+    "totalLabel": "JUMLAH HARTA PADA AKHIR TAHUN",
+    "headerRow": 59,
+    "dataStart": 60,
+    "dataEnd": 59,
+    "blankRows": 0,
+    "totalRow": 60,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "DESKRIPSI",
+      "sub": "",
+      "left": 3,
+      "right": 15,
+      "width": 13
+     },
+     {
+      "num": "(2)",
+      "label": "HARGA PEROLEHAN",
+      "sub": "",
+      "left": 16,
+      "right": 25,
+      "width": 10
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI SAAT INI",
+      "sub": "",
+      "left": 26,
+      "right": 47,
+      "width": 22
+     }
+    ]
+   },
+   {
+    "title": "B. UTANG PADA AKHIR TAHUN PAJAK",
+    "totalLabel": "JUMLAH TABEL B",
+    "headerRow": 69,
+    "dataStart": 70,
+    "dataEnd": 81,
+    "blankRows": 12,
+    "totalRow": 82,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "DESKRIPSI",
+      "sub": "",
+      "left": 5,
+      "right": 11,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "KREDITUR",
+      "sub": "",
+      "left": 12,
+      "right": 19,
+      "width": 8
+     },
+     {
+      "num": "(4)",
+      "label": "NEGARA KREDITUR",
+      "sub": "",
+      "left": 20,
+      "right": 25,
+      "width": 6
+     },
+     {
+      "num": "(5)",
+      "label": "TAHUN PEMINJAMAN",
+      "sub": "",
+      "left": 26,
+      "right": 29,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "SALDO",
+      "sub": "",
+      "left": 30,
+      "right": 39,
+      "width": 10
+     },
+     {
+      "num": "(7)",
+      "label": "KETERANGAN",
+      "sub": "",
+      "left": 40,
+      "right": 47,
+      "width": 8
+     }
+    ]
+   }
+  ]
+ },
+ "L1-3": {
+  "lampiran": "LAMPIRAN 1",
+  "halaman": "HALAMAN 3",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJIB PAJAK UNTUK MELAPORKAN HARTA, UTANG, DAFTAR ANGGOTA KELUARGA YANG MENJADI TANGGUNGAN, PENGHASILAN NETO DALAM NEGERI DARI PEKERJAAN DAN/ATAU BUKTI PEMOTONGAN PEMUNGUTAN PPh",
+  "index": [
+   {
+    "letter": "A.",
+    "title": "HARTA PADA AKHIR TAHUN PAJAK"
+   },
+   {
+    "letter": "B.",
+    "title": "UTANG PADA AKHIR TAHUN PAJAK"
+   },
+   {
+    "letter": "C.",
+    "title": "DAFTAR ANGGOTA KELUARGA YANG MENJADI TANGGUNGAN"
+   },
+   {
+    "letter": "D.",
+    "title": "PENGHASILAN NETO DALAM NEGERI DAN PEKERJAAN"
+   },
+   {
+    "letter": "E.",
+    "title": "DAFTAR BUKTI PEMOTONGAN/PEMUNGUTAN PPh"
+   }
+  ],
+  "formRight": 47,
+  "formBottom": 71,
+  "tables": [
+   {
+    "title": "C. DAFTAR ANGGOTA KELUARGA YANG MENJADI TANGGUNGAN",
+    "totalLabel": "JUMLAH TABEL D",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 35,
+    "blankRows": 19,
+    "totalRow": 36,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NAMA",
+      "sub": "",
+      "left": 3,
+      "right": 12,
+      "width": 10
+     },
+     {
+      "num": "(2)",
+      "label": "NIK",
+      "sub": "",
+      "left": 13,
+      "right": 19,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "TANGGAL LAHIR",
+      "sub": "",
+      "left": 20,
+      "right": 26,
+      "width": 7
+     },
+     {
+      "num": "(4)",
+      "label": "HUBUNGAN DENGAN WAJIB PAJAK",
+      "sub": "",
+      "left": 27,
+      "right": 35,
+      "width": 9
+     },
+     {
+      "num": "(5)",
+      "label": "PEKERJAAN",
+      "sub": "",
+      "left": 36,
+      "right": 47,
+      "width": 12
+     }
+    ]
+   },
+   {
+    "title": "D. PENGHASILAN NETO DALAM NEGERI DARI PEKERJAAN",
+    "totalLabel": "JUMLAH TABEL D",
+    "headerRow": 29,
+    "dataStart": 30,
+    "dataEnd": 35,
+    "blankRows": 6,
+    "totalRow": 36,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA PEMBERI KERJA",
+      "sub": "",
+      "left": 4,
+      "right": 11,
+      "width": 8
+     },
+     {
+      "num": "(3)",
+      "label": "NOMOR IDENTITAS PEMBERI KERJA",
+      "sub": "",
+      "left": 12,
+      "right": 19,
+      "width": 8
+     },
+     {
+      "num": "(4)",
+      "label": "PENGHASILAN BRUTO",
+      "sub": "",
+      "left": 20,
+      "right": 26,
+      "width": 7
+     },
+     {
+      "num": "(5)",
+      "label": "PENGURANG PENGHASILAN BRUTO",
+      "sub": "",
+      "left": 27,
+      "right": 35,
+      "width": 9
+     },
+     {
+      "num": "(6)",
+      "label": "PENGHASILAN NETO",
+      "sub": "",
+      "left": 36,
+      "right": 47,
+      "width": 12
+     }
+    ]
+   },
+   {
+    "title": "E. DAFTAR BUKTI PEMOTONGAN/PEMUNGUTAN PPh",
+    "totalLabel": "JUMLAH KREDIT PAJAK DALAM NEGERI",
+    "headerRow": 42,
+    "dataStart": 43,
+    "dataEnd": 70,
+    "blankRows": 28,
+    "totalRow": 71,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "PEMOTONG/PEMUNGUT PPh",
+      "sub": "",
+      "left": 4,
+      "right": 13,
+      "width": 10
+     },
+     {
+      "num": "(3)",
+      "label": "BUKTI PEMOTONGAN/PEMUNGUTAN",
+      "sub": "",
+      "left": 14,
+      "right": 21,
+      "width": 8
+     },
+     {
+      "num": "(4)",
+      "label": "JENIS PAJAK",
+      "sub": "",
+      "left": 22,
+      "right": 26,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "PENGHASILAN BRUTO",
+      "sub": "",
+      "left": 27,
+      "right": 38,
+      "width": 12
+     },
+     {
+      "num": "(6)",
+      "label": "JUMLAH PPh YANG DIPOTONG/DIPUNGUT",
+      "sub": "",
+      "left": 39,
+      "right": 47,
+      "width": 9
+     }
+    ]
+   }
+  ]
+ },
+ "L2": {
+  "lampiran": "LAMPIRAN 2",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJIB PAJAK UNTUK MELAPORKAN PENGHASILAN YANG DIKENAKAN PPh YANG BERSIFAT FINAL, PENGHASILAN YANG TIDAK TERMASUK OBJEK PAJAK DAN/ATAU PENGHASILAN NETO LUAR NEGERI",
+  "index": [
+   {
+    "letter": "A.",
+    "title": "PENGHASILAN YANG DIKENAKAN PAJAK PENGHASILAN BERSIFAT FINAL"
+   },
+   {
+    "letter": "B.",
+    "title": "PENGHASILAN YANG TIDAK TERMASUK OBJEK PAJAK"
+   },
+   {
+    "letter": "C.",
+    "title": "PENGHASILAN NETO LUAR NEGERI"
+   }
+  ],
+  "formRight": 47,
+  "formBottom": 73,
+  "tables": [
+   {
+    "title": "A. PENGHASILAN YANG DIKENAKAN PAJAK PENGHASILAN BERSIFAT FINAL",
+    "totalLabel": "JUMLAH TABEL A",
+    "headerRow": 15,
+    "dataStart": 16,
+    "dataEnd": 41,
+    "blankRows": 26,
+    "totalRow": 42,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "PEMOTONG/PEMUNGUT PPh",
+      "sub": "",
+      "left": 4,
+      "right": 13,
+      "width": 10
+     },
+     {
+      "num": "(3)",
+      "label": "KODE",
+      "sub": "",
+      "left": 14,
+      "right": 16,
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "JENIS PENGHASILAN",
+      "sub": "",
+      "left": 17,
+      "right": 25,
+      "width": 9
+     },
+     {
+      "num": "(5)",
+      "label": "DASAR PENGENAAN PAJAK",
+      "sub": "",
+      "left": 26,
+      "right": 34,
+      "width": 9
+     },
+     {
+      "num": "(6)",
+      "label": "PPh TERUTANG",
+      "sub": "",
+      "left": 35,
+      "right": 47,
+      "width": 13
+     }
+    ]
+   },
+   {
+    "title": "B. PENGHASILAN YANG TIDAK TERMASUK OBJEK PAJAK",
+    "totalLabel": "JUMLAH TABEL B",
+    "headerRow": 49,
+    "dataStart": 50,
+    "dataEnd": 56,
+    "blankRows": 7,
+    "totalRow": 57,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "KODE",
+      "sub": "",
+      "left": 4,
+      "right": 12,
+      "width": 9
+     },
+     {
+      "num": "(3)",
+      "label": "JENIS PENGHASILAN",
+      "sub": "",
+      "left": 13,
+      "right": 21,
+      "width": 9
+     },
+     {
+      "num": "(4)",
+      "label": "NIK/NPWP",
+      "sub": "",
+      "left": 22,
+      "right": 29,
+      "width": 8
+     },
+     {
+      "num": "(5)",
+      "label": "NAMA",
+      "sub": "",
+      "left": 30,
+      "right": 37,
+      "width": 8
+     },
+     {
+      "num": "(6)",
+      "label": "PENGHASILAN BRUTO",
+      "sub": "",
+      "left": 38,
+      "right": 47,
+      "width": 10
+     }
+    ]
+   },
+   {
+    "title": "C. PENGHASILAN NETO LUAR NEGERI",
+    "totalLabel": "JUMLAH TABEL C",
+    "headerRow": 65,
+    "dataStart": 66,
+    "dataEnd": 72,
+    "blankRows": 7,
+    "totalRow": 73,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA",
+      "sub": "",
+      "left": 4,
+      "right": 8,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "NEGARA",
+      "sub": "",
+      "left": 9,
+      "right": 12,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TANGGAL TRANSAKSI",
+      "sub": "",
+      "left": 13,
+      "right": 15,
+      "width": 3
+     },
+     {
+      "num": "(5)",
+      "label": "JENIS PENGHASILAN",
+      "sub": "",
+      "left": 16,
+      "right": 19,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "PENGHASILAN NETO",
+      "sub": "",
+      "left": 20,
+      "right": 23,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "NILAI DALAM MATA UANG ASING",
+      "sub": "",
+      "left": 24,
+      "right": 29,
+      "width": 6
+     },
+     {
+      "num": "(8)",
+      "label": "NILAI DALAM RUPIAH",
+      "sub": "",
+      "left": 30,
+      "right": 35,
+      "width": 6
+     },
+     {
+      "num": "(9)",
+      "label": "MATA UANG ASING",
+      "sub": "",
+      "left": 36,
+      "right": 41,
+      "width": 6
+     },
+     {
+      "num": "(10)",
+      "label": "KREDIT PAJAK YANG DAPAT DIPERHITUNGKAN",
+      "sub": "",
+      "left": 42,
+      "right": 47,
+      "width": 6
+     }
+    ]
+   }
+  ]
+ },
+ "L3A-1": {
+  "lampiran": "LAMPIRAN 3A-1",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI HARUS DIISI OLEH WAJIB PAJAK YANG MENYELENGGARAKAN PEMBUKUAN STELSEL KAS ATAU PEMBUKUAN STELSEL AKRUAL DI SEKTOR USAHA DAGANG",
+  "index": [],
+  "formRight": null,
+  "formBottom": 29,
+  "tables": [
+   {
+    "title": "A.1 LAPORAN LABA RUGI",
+    "totalLabel": "JUMLAH HARGA POKOK PENJUALAN",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 28,
+    "blankRows": 12,
+    "totalRow": 29,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "left": 5,
+      "right": 10,
+      "width": 6
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI KOMERSIAL",
+      "sub": "",
+      "left": 11,
+      "right": 14,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "left": 15,
+      "right": 18,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh FINAL",
+      "sub": "",
+      "left": 19,
+      "right": 22,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "left": 23,
+      "right": 26,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "left": 27,
+      "right": 30,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "left": 31,
+      "right": 34,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "left": 35,
+      "right": 38,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL",
+      "sub": "",
+      "left": 39,
+      "right": 42,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "A.2 LAPORAN POSISI KEUANGAN (NERACA)",
+    "sideBySide": true,
+    "headerRow": 50,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L3A-2": {
+  "lampiran": "LAMPIRAN 3A-2",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI HARUS DIISI OLEH WAJIB PAJAK YANG MENYELENGGARAKAN PEMBUKUAN STELSEL KAS ATAU PEMBUKUAN STELSEL AKRUAL DI SEKTOR USAHA JASA",
+  "index": [],
+  "formRight": null,
+  "formBottom": 22,
+  "tables": [
+   {
+    "title": "A.1 LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah yang melebihi kewajaran yang dibayarkan kepada pihak yang mempunyai hubungan istimewa sehubungan dengan pekerjaan yang dilakukan",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 21,
+    "blankRows": 5,
+    "totalRow": 22,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "left": 5,
+      "right": 10,
+      "width": 6
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI KOMERSIAL",
+      "sub": "",
+      "left": 11,
+      "right": 14,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "left": 15,
+      "right": 18,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh FINAL",
+      "sub": "",
+      "left": 19,
+      "right": 22,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "left": 23,
+      "right": 26,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "left": 27,
+      "right": 30,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "left": 31,
+      "right": 34,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "left": 35,
+      "right": 38,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL",
+      "sub": "",
+      "left": 39,
+      "right": 42,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "A.2 LAPORAN POSISI KEUANGAN (NERACA)",
+    "sideBySide": true,
+    "headerRow": 40,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L3A-3": {
+  "lampiran": "LAMPIRAN 3A-3",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI HARUS DIISI OLEH WAJIB PAJAK YANG MENYELENGGARAKAN PEMBUKUAN STELSEL KAS ATAU PEMBUKUAN STELSEL AKRUAL DI SEKTOR USAHA INDUSTRI",
+  "index": [],
+  "formRight": null,
+  "formBottom": 29,
+  "tables": [
+   {
+    "title": "A.1 LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah yang melebihi kewajaran yang dibayarkan kepada pihak yang mempunyai hubungan istimewa sehubungan dengan pekerjaan yang dilakukan",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 28,
+    "blankRows": 12,
+    "totalRow": 29,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE AKUN",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA AKUN",
+      "sub": "",
+      "left": 5,
+      "right": 10,
+      "width": 6
+     },
+     {
+      "num": "(3)",
+      "label": "NILAI KOMERSIAL",
+      "sub": "",
+      "left": 11,
+      "right": 14,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "TIDAK TERMASUK OBJEK PAJAK",
+      "sub": "",
+      "left": 15,
+      "right": 18,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "DIKENAKAN PPh FINAL",
+      "sub": "",
+      "left": 19,
+      "right": 22,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "OBJEK PAJAK TIDAK FINAL",
+      "sub": "",
+      "left": 23,
+      "right": 26,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "PENYESUAIAN FISKAL POSITIF",
+      "sub": "",
+      "left": 27,
+      "right": 30,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "PENYESUAIAN FISKAL NEGATIF",
+      "sub": "",
+      "left": 31,
+      "right": 34,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "KODE PENYESUAIAN FISKAL",
+      "sub": "",
+      "left": 35,
+      "right": 38,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "NILAI FISKAL",
+      "sub": "",
+      "left": 39,
+      "right": 42,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "A.2 LAPORAN POSISI KEUANGAN (NERACA)",
+    "sideBySide": true,
+    "headerRow": 61,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "ASET",
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "NILAI",
+      "width": 1
+     },
+     {
+      "num": "(3)",
+      "label": "LIABILITAS DAN EKUITAS",
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "NILAI",
+      "width": 1
+     }
+    ]
+   }
+  ]
+ },
+ "L3A-4": {
+  "lampiran": "LAMPIRAN 3A-4",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI HARUS DIISI OLEH WAJIB PAJAK YANG MENYELENGGARAKAN PENCATATAN DAN/ATAU MEMILIKI PENGHASILAN NETO DALAM NEGERI LAINNYA",
+  "index": [
+   {
+    "letter": "A.",
+    "title": "PENGHASILAN NETO DALAM NEGERI DARI USAHA DAN/ATAU PEKERJAAN BEBAS BERDASARKAN PENCATATAN"
+   },
+   {
+    "letter": "B.",
+    "title": "PENGHASILAN NETO DALAM NEGERI LAINNYA"
+   }
+  ],
+  "formRight": 47,
+  "formBottom": 54,
+  "tables": [
+   {
+    "title": "A. PENGHASILAN NETO DALAM NEGERI DARI USAHA DAN/ATAU PEKEJAAN BEBAS BERDASARKAN PENCATATAN",
+    "totalLabel": "JUMLAH TABEL A",
+    "headerRow": 15,
+    "dataStart": 16,
+    "dataEnd": 26,
+    "blankRows": 11,
+    "totalRow": 27,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA TEMPAT KEGIATAN USAHA (TKU)",
+      "sub": "",
+      "left": 4,
+      "right": 11,
+      "width": 8
+     },
+     {
+      "num": "(3)",
+      "label": "JENIS USAHA / PEKERJAAN BEBAS",
+      "sub": "",
+      "left": 12,
+      "right": 19,
+      "width": 8
+     },
+     {
+      "num": "(4)",
+      "label": "PEREDARAN BRUTO",
+      "sub": "",
+      "left": 20,
+      "right": 26,
+      "width": 7
+     },
+     {
+      "num": "(5)",
+      "label": "NORMA (%)",
+      "sub": "",
+      "left": 27,
+      "right": 35,
+      "width": 9
+     },
+     {
+      "num": "(6)",
+      "label": "PENGHASILAN NETO",
+      "sub": "",
+      "left": 36,
+      "right": 47,
+      "width": 12
+     }
+    ]
+   },
+   {
+    "title": "B. PENGHASILAN NETO DALAM NEGERI LAINNYA",
+    "totalLabel": "JUMLAH TABEL B",
+    "headerRow": 33,
+    "dataStart": 34,
+    "dataEnd": 53,
+    "blankRows": 20,
+    "totalRow": 54,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "KODE",
+      "sub": "",
+      "left": 4,
+      "right": 10,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "KODE",
+      "sub": "",
+      "left": 11,
+      "right": 30,
+      "width": 20
+     },
+     {
+      "num": "(4)",
+      "label": "PENGHASILAN NETO",
+      "sub": "",
+      "left": 31,
+      "right": 47,
+      "width": 17
+     }
+    ]
+   }
+  ]
+ },
+ "L3B": {
+  "lampiran": "LAMPIRAN 3B",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJIB PAJAK YANG BERKEWAJIBAN MELAPORKAN RINCIAN REKAPITULASI PEREDARAN BRUTO",
+  "index": [],
+  "formRight": 67,
+  "formBottom": 78,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH",
+    "headerRow": 15,
+    "dataStart": 16,
+    "dataEnd": 22,
+    "blankRows": 7,
+    "totalRow": 23,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "ID TKU",
+      "sub": "",
+      "left": 5,
+      "right": 12,
+      "width": 8
+     },
+     {
+      "num": "(3)",
+      "label": "NAMA TKU",
+      "sub": "",
+      "left": 13,
+      "right": 22,
+      "width": 10
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "left": 23,
+      "right": 31,
+      "width": 9
+     },
+     {
+      "num": "(5)",
+      "label": "KELURAHAN/DESA",
+      "sub": "",
+      "left": 32,
+      "right": 40,
+      "width": 9
+     },
+     {
+      "num": "(6)",
+      "label": "KECAMATAN",
+      "sub": "",
+      "left": 41,
+      "right": 48,
+      "width": 8
+     },
+     {
+      "num": "(7)",
+      "label": "KOTA/KABUPATEN",
+      "sub": "",
+      "left": 49,
+      "right": 57,
+      "width": 9
+     },
+     {
+      "num": "(8)",
+      "label": "PROVINSI",
+      "sub": "",
+      "left": 58,
+      "right": 67,
+      "width": 10
+     }
+    ]
+   },
+   {
+    "title": "A. REKAPITULASI PEREDARAN BRUTO UNTUK WAJIB PAJAK ORANG PRIBADI YANG MEMILIKI PEREDARAN BRUTO TERTENTU YANG DIKENAI PAJAK BERSIFAT FINAL",
+    "totalLabel": "JUMLAH PPh FINAL TERUTANG (0,5 % X d)",
+    "headerRow": 24,
+    "dataStart": 25,
+    "dataEnd": 35,
+    "blankRows": 11,
+    "totalRow": 36,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA TKU",
+      "sub": "",
+      "left": 4,
+      "right": 13,
+      "width": 10
+     },
+     {
+      "num": "(3)",
+      "label": "JANUARI",
+      "sub": "",
+      "left": 14,
+      "right": 17,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "FEBRUARI",
+      "sub": "",
+      "left": 18,
+      "right": 21,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "MARET",
+      "sub": "",
+      "left": 22,
+      "right": 25,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "APRIL",
+      "sub": "",
+      "left": 26,
+      "right": 29,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "MEI",
+      "sub": "",
+      "left": 30,
+      "right": 33,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "JUNI",
+      "sub": "",
+      "left": 34,
+      "right": 37,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "JULI",
+      "sub": "",
+      "left": 38,
+      "right": 41,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "AGUSTUS",
+      "sub": "",
+      "left": 42,
+      "right": 45,
+      "width": 4
+     },
+     {
+      "num": "(11)",
+      "label": "SEPTEMBER",
+      "sub": "",
+      "left": 46,
+      "right": 49,
+      "width": 4
+     },
+     {
+      "num": "(12)",
+      "label": "OKTOBER",
+      "sub": "",
+      "left": 50,
+      "right": 53,
+      "width": 4
+     },
+     {
+      "num": "(13)",
+      "label": "NOPEMBER",
+      "sub": "",
+      "left": 54,
+      "right": 57,
+      "width": 4
+     },
+     {
+      "num": "(14)",
+      "label": "DESEMBER",
+      "sub": "",
+      "left": 58,
+      "right": 61,
+      "width": 4
+     },
+     {
+      "num": "(15)",
+      "label": "JUMLAH",
+      "sub": "",
+      "left": 62,
+      "right": 67,
+      "width": 6
+     }
+    ]
+   },
+   {
+    "title": "1. METODE PEMBUKUAN PENCATATAN 2. PEMBUKUAN STELSEL KAS ATAU PEMBUKUAN STELSEL AKRUAL",
+    "totalLabel": "JUMLAH PEREDARAN BRUTO",
+    "headerRow": 58,
+    "dataStart": 59,
+    "dataEnd": 61,
+    "blankRows": 3,
+    "totalRow": 62,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA TKU",
+      "sub": "",
+      "left": 4,
+      "right": 10,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "METODE PEMBUKUAN",
+      "sub": "",
+      "left": 11,
+      "right": 13,
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "JANUARI",
+      "sub": "",
+      "left": 14,
+      "right": 17,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "FEBRUARI",
+      "sub": "",
+      "left": 18,
+      "right": 21,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "MARET",
+      "sub": "",
+      "left": 22,
+      "right": 25,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "APRIL",
+      "sub": "",
+      "left": 26,
+      "right": 29,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "MEI",
+      "sub": "",
+      "left": 30,
+      "right": 33,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "JUNI",
+      "sub": "",
+      "left": 34,
+      "right": 37,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "JULI",
+      "sub": "",
+      "left": 38,
+      "right": 41,
+      "width": 4
+     },
+     {
+      "num": "(11)",
+      "label": "AGUSTUS",
+      "sub": "",
+      "left": 42,
+      "right": 45,
+      "width": 4
+     },
+     {
+      "num": "(12)",
+      "label": "SEPTEMBER",
+      "sub": "",
+      "left": 46,
+      "right": 49,
+      "width": 4
+     },
+     {
+      "num": "(13)",
+      "label": "OKTOBER",
+      "sub": "",
+      "left": 50,
+      "right": 53,
+      "width": 4
+     },
+     {
+      "num": "(14)",
+      "label": "NOVEMBER",
+      "sub": "",
+      "left": 54,
+      "right": 57,
+      "width": 4
+     },
+     {
+      "num": "(15)",
+      "label": "DESEMBER",
+      "sub": "",
+      "left": 58,
+      "right": 61,
+      "width": 4
+     },
+     {
+      "num": "(16)",
+      "label": "JUMLAH",
+      "sub": "",
+      "left": 62,
+      "right": 67,
+      "width": 6
+     }
+    ]
+   },
+   {
+    "title": "C. REKAPITULASI PEREDARAN BRUTO UNTUK PENGGUNA NORMA PENGHITUNGAN PENGHASILAN NETO (NPPN)",
+    "totalLabel": "JUMLAH PEREDARAN BRUTO",
+    "headerRow": 74,
+    "dataStart": 75,
+    "dataEnd": 77,
+    "blankRows": 3,
+    "totalRow": 78,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "NAMA TKU",
+      "sub": "",
+      "left": 4,
+      "right": 10,
+      "width": 7
+     },
+     {
+      "num": "(3)",
+      "label": "JENIS USAHA/ PEKERJAAN BEBAS",
+      "sub": "",
+      "left": 11,
+      "right": 13,
+      "width": 3
+     },
+     {
+      "num": "(4)",
+      "label": "JANUARI",
+      "sub": "",
+      "left": 14,
+      "right": 17,
+      "width": 4
+     },
+     {
+      "num": "(5)",
+      "label": "FEBRUARI",
+      "sub": "",
+      "left": 18,
+      "right": 21,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "MARET",
+      "sub": "",
+      "left": 22,
+      "right": 25,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "APRIL",
+      "sub": "",
+      "left": 26,
+      "right": 29,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "MEI",
+      "sub": "",
+      "left": 30,
+      "right": 33,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "JUNI",
+      "sub": "",
+      "left": 34,
+      "right": 37,
+      "width": 4
+     },
+     {
+      "num": "(10)",
+      "label": "JULI",
+      "sub": "",
+      "left": 38,
+      "right": 41,
+      "width": 4
+     },
+     {
+      "num": "(11)",
+      "label": "AGUSTUS",
+      "sub": "",
+      "left": 42,
+      "right": 45,
+      "width": 4
+     },
+     {
+      "num": "(12)",
+      "label": "SEPTEMBER",
+      "sub": "",
+      "left": 46,
+      "right": 49,
+      "width": 4
+     },
+     {
+      "num": "(13)",
+      "label": "OKTOBER",
+      "sub": "",
+      "left": 50,
+      "right": 53,
+      "width": 4
+     },
+     {
+      "num": "(14)",
+      "label": "NOVEMBER",
+      "sub": "",
+      "left": 54,
+      "right": 57,
+      "width": 4
+     },
+     {
+      "num": "(15)",
+      "label": "DESEMBER",
+      "sub": "",
+      "left": 58,
+      "right": 61,
+      "width": 4
+     },
+     {
+      "num": "(16)",
+      "label": "JUMLAH",
+      "sub": "",
+      "left": 62,
+      "right": 67,
+      "width": 6
+     }
+    ]
+   }
+  ]
+ },
+ "L3C": {
+  "lampiran": "LAMPIRAN 3C",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJIB PAJAK YANG MEMBEBANKAN BIAYA PENYUSUTAN DAN/ATAU AMORTISASI",
+  "index": [],
+  "formRight": 61,
+  "formBottom": 36,
+  "tables": [
+   {
+    "title": "A.1 LAPORAN LABA RUGI",
+    "totalLabel": "Jumlah Angka Tahunan",
+    "headerRow": 16,
+    "dataStart": 17,
+    "dataEnd": 35,
+    "blankRows": 19,
+    "totalRow": 36,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "KODE HARTA",
+      "sub": "",
+      "left": 3,
+      "right": 5,
+      "width": 3
+     },
+     {
+      "num": "(2)",
+      "label": "KELOMPOK / JENIS HARGA",
+      "sub": "",
+      "left": 6,
+      "right": 13,
+      "width": 8
+     },
+     {
+      "num": "(3)",
+      "label": "BULAN / TAHUN PEROLEHAN",
+      "sub": "",
+      "left": 14,
+      "right": 18,
+      "width": 5
+     },
+     {
+      "num": "(4)",
+      "label": "HARGA PEROLEHAN (RUPIAH)",
+      "sub": "",
+      "left": 19,
+      "right": 26,
+      "width": 8
+     },
+     {
+      "num": "(5)",
+      "label": "NILAI SISA BUKU FISKAL AWAL TAHUN (RUPIAH)",
+      "sub": "",
+      "left": 27,
+      "right": 34,
+      "width": 8
+     },
+     {
+      "num": "(6)",
+      "label": "KOMERSIAL",
+      "sub": "",
+      "left": 35,
+      "right": 39,
+      "width": 5
+     },
+     {
+      "num": "(7)",
+      "label": "FISKAL",
+      "sub": "",
+      "left": 40,
+      "right": 44,
+      "width": 5
+     },
+     {
+      "num": "(8)",
+      "label": "PENYUSUTAN / AMORTISASI FISKAL PADA TAHUN INI (RUPIAH)",
+      "sub": "",
+      "left": 45,
+      "right": 53,
+      "width": 9
+     },
+     {
+      "num": "(9)",
+      "label": "KETERANGAN",
+      "sub": "",
+      "left": 54,
+      "right": 61,
+      "width": 8
+     }
+    ]
+   }
+  ]
+ },
+ "L3D": {
+  "lampiran": "LAMPIRAN 3D",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJJIB PAJAK YANG MEMBEBANKAN BIAYA ENTERTAINMENT, BIAYA PROMOSI DAN PENJUALAN, SERTA PENGGANTIAN ATAU IMBALAN DALAM BENTUK NANTURA DAN/ATAU KENIKMATAN DAN/ATAU DAFTAR PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH",
+  "index": [],
+  "formRight": 47,
+  "formBottom": 48,
+  "tables": [
+   {
+    "title": "A. DAFTAR NOMINATIF BIAYA ENTERTAINMENT",
+    "totalLabel": "JUMLAH",
+    "headerRow": 18,
+    "dataStart": 19,
+    "dataEnd": 30,
+    "blankRows": 12,
+    "totalRow": 31,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "TANGGAL",
+      "sub": "",
+      "left": 5,
+      "right": 7,
+      "width": 3
+     },
+     {
+      "num": "(3)",
+      "label": "NAMA TEMPAT",
+      "sub": "",
+      "left": 8,
+      "right": 13,
+      "width": 6
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "left": 14,
+      "right": 18,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "JENIS",
+      "sub": "",
+      "left": 19,
+      "right": 22,
+      "width": 4
+     },
+     {
+      "num": "(6)",
+      "label": "JUMLAH",
+      "sub": "",
+      "left": 23,
+      "right": 26,
+      "width": 4
+     },
+     {
+      "num": "(7)",
+      "label": "NAMA",
+      "sub": "",
+      "left": 27,
+      "right": 30,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "POSISI",
+      "sub": "",
+      "left": 31,
+      "right": 34,
+      "width": 4
+     },
+     {
+      "num": "(9)",
+      "label": "NAMA PERUSAHAAN",
+      "sub": "",
+      "left": 35,
+      "right": 39,
+      "width": 5
+     },
+     {
+      "num": "(10)",
+      "label": "JENIS USAHA",
+      "sub": "",
+      "left": 40,
+      "right": 43,
+      "width": 4
+     },
+     {
+      "num": "(11)",
+      "label": "KETERANGAN",
+      "sub": "",
+      "left": 44,
+      "right": 47,
+      "width": 4
+     }
+    ]
+   },
+   {
+    "title": "B. DAFTAR NOMINATIF BIAYA PROMOSI SERTA PENGGANTIAN ATAU IMBALAN DALAM BENTUK NATURA DAN/ATAU KENIKMATAN",
+    "totalLabel": "JUMLAH PLAFON PIUTANG",
+    "headerRow": 32,
+    "dataStart": 33,
+    "dataEnd": 43,
+    "blankRows": 11,
+    "totalRow": 44,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NOMOR IDENTITAS",
+      "sub": "",
+      "left": 5,
+      "right": 9,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "NAMA",
+      "sub": "",
+      "left": 10,
+      "right": 13,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "left": 14,
+      "right": 18,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "TANGGAL",
+      "sub": "",
+      "left": 19,
+      "right": 21,
+      "width": 3
+     },
+     {
+      "num": "(6)",
+      "label": "BENTUK DAN JENIS BIAYA",
+      "sub": "",
+      "left": 22,
+      "right": 27,
+      "width": 6
+     },
+     {
+      "num": "(7)",
+      "label": "NILAI",
+      "sub": "",
+      "left": 28,
+      "right": 31,
+      "width": 4
+     },
+     {
+      "num": "(8)",
+      "label": "KETERANGAN",
+      "sub": "",
+      "left": 32,
+      "right": 36,
+      "width": 5
+     },
+     {
+      "num": "(9)",
+      "label": "JUMLAH",
+      "sub": "",
+      "left": 37,
+      "right": 42,
+      "width": 6
+     },
+     {
+      "num": "(10)",
+      "label": "NOMOR BUKTI POTONG",
+      "sub": "",
+      "left": 43,
+      "right": 47,
+      "width": 5
+     }
+    ]
+   },
+   {
+    "title": "C. DAFTAR PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH",
+    "totalLabel": "",
+    "headerRow": 47,
+    "dataStart": 48,
+    "dataEnd": 48,
+    "blankRows": 1,
+    "totalRow": 0,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 4,
+      "width": 2
+     },
+     {
+      "num": "(2)",
+      "label": "NOMOR IDENTITAS",
+      "sub": "",
+      "left": 5,
+      "right": 10,
+      "width": 6
+     },
+     {
+      "num": "(3)",
+      "label": "NAMA DEBITUR",
+      "sub": "",
+      "left": 11,
+      "right": 15,
+      "width": 5
+     },
+     {
+      "num": "(4)",
+      "label": "ALAMAT",
+      "sub": "",
+      "left": 16,
+      "right": 20,
+      "width": 5
+     },
+     {
+      "num": "(5)",
+      "label": "JUMLAH PLAFON PIUTANG",
+      "sub": "",
+      "left": 21,
+      "right": 26,
+      "width": 6
+     },
+     {
+      "num": "(6)",
+      "label": "JUMLAH PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH",
+      "sub": "",
+      "left": 27,
+      "right": 32,
+      "width": 6
+     },
+     {
+      "num": "(7)",
+      "label": "METODE PEMBEBANAN",
+      "sub": "",
+      "left": 33,
+      "right": 38,
+      "width": 6
+     },
+     {
+      "num": "(8)",
+      "label": "JENIS DOKUMEN PEMBUKTIAN PEMENUHAN PERSYARATAN",
+      "sub": "",
+      "left": 39,
+      "right": 47,
+      "width": 9
+     }
+    ]
+   }
+  ]
+ },
+ "L4": {
+  "lampiran": "LAMPIRAN 4",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJIB PAJAK YANG BERKEWAJIBAN MEMBAYAR ANGSURAN PPh PASAL 25 DAN/ATAU WAJIB PAJAK YANG STATUS KEWAJIBAN PAJAK WAJIB PAJAK DAN PASANGANNYA ADALAH PISAH HARTA (PH) ATAU MEMILIH TERPISAH (MT)",
+  "index": [
+   {
+    "letter": "A.",
+    "title": "PENGHITUNGAN ANGSURAN PPh PASAL 25 TAHUN PAJAK BERIKUTNYA"
+   },
+   {
+    "letter": "B.",
+    "title": "PENGHITUNGAN PPh TERUTANG WAJIB PAJAK DAN SUAMI/ISTRI"
+   }
+  ],
+  "formRight": 0,
+  "formBottom": 0,
+  "tables": []
+ },
+ "L5": {
+  "lampiran": "LAMPIRAN 5",
+  "halaman": "",
+  "perhatian": "LAMPIRAN INI DIISI OLEH WAJIB PAJAK YANG MENGAKUI KOMPENSASI KERUGIAN FISKAL,PENGURANG PENGHASILAN NETO, DAN/ATAU PENGURANG PPh TERUTANG",
+  "index": [
+   {
+    "letter": "A.",
+    "title": "PENGHITUNGAN KOMPENSASI KERUGIAN FISKAL"
+   },
+   {
+    "letter": "B.",
+    "title": "PENGURANG PENGHASILAN NETO"
+   },
+   {
+    "letter": "C.",
+    "title": "PENGURANG PPh TERUTANG"
+   }
+  ],
+  "formRight": 60,
+  "formBottom": 42,
+  "tables": [
+   {
+    "title": "",
+    "totalLabel": "JUMLAH TABEL A",
+    "headerRow": 19,
+    "dataStart": 20,
+    "dataEnd": 29,
+    "blankRows": 10,
+    "totalRow": 30,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "TAHUN PAJAK",
+      "sub": "",
+      "left": 4,
+      "right": 7,
+      "width": 4
+     },
+     {
+      "num": "(3)",
+      "label": "RUPIAH",
+      "sub": "",
+      "left": 8,
+      "right": 11,
+      "width": 4
+     },
+     {
+      "num": "(4)",
+      "label": "1",
+      "sub": "0 2 TAHUN RUPIAH",
+      "left": 12,
+      "right": 19,
+      "width": 8
+     },
+     {
+      "num": "(5)",
+      "label": "0",
+      "sub": "2 TAHUN RUPIAH",
+      "left": 20,
+      "right": 27,
+      "width": 8
+     },
+     {
+      "num": "(6)",
+      "label": "3",
+      "sub": "0 2 TAHUN RUPIAH",
+      "left": 28,
+      "right": 35,
+      "width": 8
+     },
+     {
+      "num": "(7)",
+      "label": "4",
+      "sub": "0 2 TAHUN RUPIAH",
+      "left": 36,
+      "right": 43,
+      "width": 8
+     },
+     {
+      "num": "(8)",
+      "label": "5",
+      "sub": "0 2 TAHUN RUPIAH (TAHUN PAJAK INI)",
+      "left": 44,
+      "right": 51,
+      "width": 8
+     },
+     {
+      "num": "(9)",
+      "label": "6",
+      "sub": "0 2 TAHUN RUPIAH (TAHUN PAJAK BERJALAN)",
+      "left": 52,
+      "right": 60,
+      "width": 9
+     }
+    ]
+   },
+   {
+    "title": "B. PENGURANG PENGHASILAN BRUTO C. PENGURANG PPh TERUTANG",
+    "totalLabel": "JUMLAH TABEL B",
+    "headerRow": 37,
+    "dataStart": 38,
+    "dataEnd": 41,
+    "blankRows": 4,
+    "totalRow": 42,
+    "columns": [
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 3,
+      "right": 3,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "KODE",
+      "sub": "",
+      "left": 4,
+      "right": 8,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "JENIS PENGURANG PENGHASILAN NETO",
+      "sub": "",
+      "left": 9,
+      "right": 17,
+      "width": 9
+     },
+     {
+      "num": "(4)",
+      "label": "JUMLAH PENGURANG PENGHASILAN NETO",
+      "sub": "",
+      "left": 18,
+      "right": 25,
+      "width": 8
+     },
+     {
+      "num": "(1)",
+      "label": "NO.",
+      "sub": "",
+      "left": 28,
+      "right": 28,
+      "width": 1
+     },
+     {
+      "num": "(2)",
+      "label": "KODE",
+      "sub": "",
+      "left": 29,
+      "right": 33,
+      "width": 5
+     },
+     {
+      "num": "(3)",
+      "label": "JENIS PENGURANG PPh TERUTANG",
+      "sub": "",
+      "left": 34,
+      "right": 42,
+      "width": 9
+     },
+     {
+      "num": "(4)",
+      "label": "JUMLAH PENGURANG PPh TERUTANG",
+      "sub": "",
+      "left": 43,
+      "right": 50,
+      "width": 8
+     }
+    ]
+   }
+  ]
+ }
+}
