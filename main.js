@@ -58,10 +58,10 @@ process.on('uncaughtException', (err) => {
 const http = require('http');
 const { log, showNativePopup } = require('./lib/log');
 // Before the dashboard exists there is no window to show a notice in: these use a message box.
-const showErrorPopup = (msg) => showNativePopup(msg, 'Coretax Agent Error', 'Error');
+const showErrorPopup = (msg) => showNativePopup(msg, 'Taxio Pilot Error', 'Error');
 const state = require('./lib/state');
 const sessionStore = require('./lib/session-store');
-const entitiesLib = require('./lib/entities');
+const connection = require('./lib/connection');
 const deeplink = require('./lib/deeplink');
 const { createGuiServer } = require('./gui/server');
 const { openWindow } = require('./gui/window');
@@ -80,12 +80,13 @@ async function tryRestoreSessions() {
     const restoredByProject = await sessionStore.restoreAllSessions();
     for (const [projectId, restored] of Object.entries(restoredByProject)) {
         try {
-            const membership = await entitiesLib.getMyOrgId(restored.client, restored.user.id);
-            state.set(projectId, {
-                client: restored.client, project: restored.project, session: restored.session,
-                user: restored.session.user, orgId: membership.org_id, role: membership.role, membership
+            // Lewat pintu yang sama dengan login di dashboard: akun yang belum jadi anggota aktif
+            // grup (masih menunggu admin) tidak dianggap terhubung, tapi statusnya tetap tampil.
+            const reg = await connection.attach(projectId, {
+                client: restored.client, project: restored.project, session: restored.session, user: restored.session.user
             });
-            log('Sesi tersimpan dipulihkan: ' + restored.session.user.email + ' (' + restored.project.label + ').');
+            if (reg.status === 'active') log('Sesi tersimpan dipulihkan: ' + restored.session.user.email + ' (' + restored.project.label + ').');
+            else log('Sesi tersimpan dipulihkan: ' + restored.session.user.email + ', tapi akun belum aktif di grup (' + reg.status + ').');
         } catch (e) {
             log('Tidak bisa memulihkan sesi ' + restored.project.label + ' (' + e.message + ') - silakan hubungkan ulang.');
         }
@@ -144,7 +145,7 @@ function forwardDeepLinkToRunningInstance(url) {
 }
 
 async function main(deepLinkUrl) {
-    log('Coretax Agent memulai...' + (deepLinkUrl ? ' (dipanggil dari taxio-coretax://)' : ''));
+    log('Taxio Pilot memulai...' + (deepLinkUrl ? ' (dipanggil dari taxio-coretax://)' : ''));
     try { require('./lib/chrome').clearDownloadTemp(); } catch (e) {}
     await tryRestoreSessions();
     try {
@@ -152,7 +153,7 @@ async function main(deepLinkUrl) {
         log('Dashboard lokal aktif di http://127.0.0.1:' + GUI_PORT + '/');
     } catch (e) {
         log('Gagal membuka server GUI di port ' + GUI_PORT + ': ' + e.message);
-        showErrorPopup('Coretax Agent gagal membuka dashboard lokal (port ' + GUI_PORT + ' mungkin dipakai aplikasi lain): ' + e.message);
+        showErrorPopup('Taxio Pilot gagal membuka dashboard lokal (port ' + GUI_PORT + ' mungkin dipakai aplikasi lain): ' + e.message);
         process.exit(1);
     }
     tray.start(GUI_PORT);
@@ -207,10 +208,10 @@ if (finishUpdateIdx !== -1) {
         // has the dashboard running and just clicked another button in Taxio) - forward to it
         // instead of trying to bind GUI_PORT a second time and failing.
         forwardDeepLinkToRunningInstance(rawArg).then((forwarded) => {
-            if (forwarded) { log('Diteruskan ke instance Coretax Agent yang sudah berjalan.'); process.exit(0); }
+            if (forwarded) { log('Diteruskan ke instance Taxio Pilot yang sudah berjalan.'); process.exit(0); }
             main(rawArg).catch((e) => {
                 log('Fatal error saat memulai (deep link): ' + (e.stack || e.message));
-                showErrorPopup('Coretax Agent gagal memulai: ' + e.message);
+                showErrorPopup('Taxio Pilot gagal memulai: ' + e.message);
                 process.exit(1);
             });
         });
@@ -223,13 +224,13 @@ if (finishUpdateIdx !== -1) {
         // is all that's needed) rather than trying to become a second primary instance.
         isPrimaryRunning().then(async (already) => {
             if (already) {
-                log('Coretax Agent sudah berjalan - membawa jendela dashboard yang ada ke depan (atau membukanya jika belum ada).');
+                log('Taxio Pilot sudah berjalan - membawa jendela dashboard yang ada ke depan (atau membukanya jika belum ada).');
                 await forwardOpenToRunningInstance();
                 process.exit(0);
             }
             main().catch((e) => {
                 log('Fatal error saat memulai: ' + (e.stack || e.message));
-                showErrorPopup('Coretax Agent gagal memulai: ' + e.message);
+                showErrorPopup('Taxio Pilot gagal memulai: ' + e.message);
                 process.exit(1);
             });
         });

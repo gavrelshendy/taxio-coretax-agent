@@ -534,12 +534,16 @@ async function runEbupotDownload(opts) {
     }
 
     try {
+        // Rencana kombinasi untuk dashboard (progres dan pil per masa) - tidak mengatur alur.
+        runcontrol.setPlan(combos.map((c) => ({ label: c.comboLabel, short: c.mmYY + (c.kode ? ' ' + c.kode : '') })));
         let i = 0;
         while (i < combos.length) {
+            runcontrol.markCombo(i, 'run');
+            const skippedBefore = stats.combosSkipped;
             const action = await runCombo(combos[i]);
             if (action === 'retry') continue;
-            else if (action === 'back') i = Math.max(0, i - 1);
-            else i++;
+            else if (action === 'back') { runcontrol.markCombo(i, 'wait'); i = Math.max(0, i - 1); }
+            else { runcontrol.markCombo(i, stats.combosSkipped > skippedBefore ? 'skip' : 'ok'); i++; }
         }
     } catch (e) {
         if (!(e && e.isStop)) throw e;

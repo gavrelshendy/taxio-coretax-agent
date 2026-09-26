@@ -68,7 +68,7 @@ function openWindow(url) {
  * -Command, avoiding this whole class of escaping bug entirely. */
 const HELPER_SCRIPT_PATH = path.join(os.tmpdir(), 'coretax-agent-winhelper.ps1');
 const HELPER_SCRIPT_CONTENT = `
-param([string]$Action, [string]$Title = 'Coretax Agent')
+param([string]$Action, [string]$Title = 'Taxio Pilot')
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -133,7 +133,7 @@ function isWindowOpen() {
 }
 
 /** Focuses the dashboard window if one's already open, instead of doing nothing - matched by
- *  its exact page title ("Coretax Agent", from index.html's <title>), NOT the broader
+ *  its exact page title ("Taxio Pilot", from index.html's <title>), NOT the broader
  *  `AppActivate('Chrome')` pattern lib/chrome.js uses for the automation windows (that would
  *  ambiguously match ANY open Chrome window, including a live Coretax automation session). Calls
  *  SetForegroundWindow() directly on the found handle rather than COM AppActivate()'s title
