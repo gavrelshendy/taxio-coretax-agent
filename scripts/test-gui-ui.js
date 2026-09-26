@@ -1,0 +1,509 @@
+/* Tes UI dashboard di Chrome headless (Playwright) terhadap server dashboard sungguhan dengan
+   Supabase, Chrome-Coretax, dan daftar entitas palsu (scripts/gui-test-fakes.js). Memeriksa alur
+   daftar/masuk, palet entitas satu-baris-per-entitas, form tiap fitur, login manual, tampilan
+   proses, dan mode Restricted. Tangkapan layar disimpan bila PILOT_SHOTS diisi. Jalankan:
+     node scripts/test-gui-ui.js */
+process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const { install } = require('./gui-test-fakes');
+const fakes = install();
+const { chromium } = require('playwright');
+const { createGuiServer } = require('../gui/server');
+
+const PORT = 52433;
+const BASE = 'http://127.0.0.1:' + PORT;
+const SHOTS = process.env.PILOT_SHOTS || '';
+if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+
+let passed = 0;
+async function test(name, fn) {
+    try { await fn(); passed++; console.log('  ok   ' + name); }
+    catch (e) { console.error('  FAIL ' + name + '\n       ' + (e && e.stack || e)); process.exitCode = 1; }
+}
+const now = new Date();
+const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.getFullYear() % 100).padStart(2, '0');
+
+(async () => {
+    await createGuiServer(PORT);
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.g|ERR_INTERNET|Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
+
+    // Aksi otomasi dicegat di browser: dicatat lalu dijawab 202, tidak sampai ke server.
+    const calls = [];
+    await page.route('**/api/actions/**', async (route) => {
+        const req = route.request();
+        const url = new URL(req.url()).pathname;
+        if (url.endsWith('/open-coretax')) return route.continue();
+        if (url.endsWith('/pick-file')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ canceled: false, fileName: 'faktur-uji.xlsx', fileBase64: 'AAAA' }) });
+        if (url.endsWith('/pick-folder')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ canceled: true }) });
+        calls.push({ url, body: req.postDataJSON() });
+        return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ started: true }) });
+    });
+    const shot = async (name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }); };
+    const text = (sel) => page.locator(sel).first().innerText();
+    const visible = (sel) => page.locator(sel).first().isVisible();
+    const lastCall = () => calls[calls.length - 1];
+    const pause = (ms) => page.waitForTimeout(ms);
+
+    console.log('gui ui');
+    await page.goto(BASE + '/');
+    await page.waitForSelector('.auth-form');
+
+    // ------------------------------------------------ masuk / daftar
+    await test('layar masuk: pesan otomasi, tanpa jalan masuk manual tanpa akun', async () => {
+        assert.strictEqual(await text('.hero-body h1'), 'Coretax berjalan sendiri.');
+        assert.ok(await visible('#au-email') && await visible('#au-pass'));
+        const html = await page.content();
+        assert.ok(!/Masuk Coretax manual/.test(html), 'tidak boleh ada masuk manual tanpa akun Taxio');
+        await shot('01-masuk');
+    });
+    await test('daftar: inisial, email, kata sandi; galat memakai kalimat Taxio Hub', async () => {
+        await page.click('[data-au="to-daftar"]');
+        await page.waitForSelector('#au-initial');
+        await page.click('[data-au="signup"]');
+        assert.strictEqual(await text('#au-error'), 'Inisial wajib diisi.');
+        await page.fill('#au-initial', 'sga');
+        assert.strictEqual(await page.inputValue('#au-initial'), 'SGA', 'inisial otomatis huruf besar');
+        await page.fill('#au-email', 'baru@contoh.com'); await page.fill('#au-pass', '123');
+        await page.click('[data-au="signup"]');
+        assert.strictEqual(await text('#au-error'), 'Kata sandi minimal 6 karakter.');
+        await shot('02-daftar');
+    });
+    await test('daftar sukses: layar cek email dengan langkah 2 berjalan', async () => {
+        await page.fill('#au-pass', '123456');
+        await page.click('[data-au="signup"]');
+        await page.waitForSelector('.progress-steps');
+        assert.ok((await text('.auth-form h2')).includes('Cek email Anda'));
+        assert.strictEqual(await page.locator('.pstep.done').count(), 1);
+        assert.ok((await page.locator('.pstep.now .tx b').innerText()).includes('Konfirmasi email'));
+        await shot('03-cek-email');
+    });
+    await test('setelah konfirmasi: kembali ke masuk dengan email terisi, lalu status menunggu admin', async () => {
+        await page.click('[data-au="to-masuk"]');
+        await page.waitForSelector('[data-au="login"]');
+        assert.strictEqual(await page.inputValue('#au-email'), 'baru@contoh.com');
+        await page.fill('#au-pass', 'benar');
+        await page.click('[data-au="login"]');
+        await page.waitForSelector('.progress-steps');
+        assert.ok((await text('.auth-form h2')).includes('Menunggu admin'));
+        assert.ok((await text('.auth-form .lead')).includes('assignment grup oleh admin'));
+        assert.ok((await text('.auth-form .lead')).includes('SGA'), 'inisial yang diajukan tampil');
+        assert.strictEqual(await page.locator('.pstep.done').count(), 2);
+        await shot('04-menunggu-admin');
+    });
+    await test('periksa status saat masih menunggu: tetap di layar status', async () => {
+        await page.click('[data-au="check"]');
+        await page.waitForSelector('#notice-stack .notice');
+        assert.ok((await text('#notice-stack .notice')).includes('Belum ada perubahan'));
+        assert.ok(await visible('.progress-steps'));
+    });
+    await test('setelah admin menempatkan ke grup: periksa status membuka aplikasi', async () => {
+        fakes.ctl.reg.active = true;
+        await page.click('[data-au="check"]');
+        await page.waitForSelector('#app .sidebar');
+        assert.ok(await visible('.topbar'));
+    });
+
+    // ------------------------------------------------ kerangka aplikasi
+    await test('sidebar: grup Unduh dan Otomasi; Billing di Otomasi dengan tanda BARU', async () => {
+        const titles = await page.locator('.nav-title').allInnerTexts();
+        assert.deepStrictEqual(titles, ['UNDUH', 'OTOMASI']);
+        const items = await page.locator('.nav-item[data-nav]').allInnerTexts();
+        assert.ok(items.join('|').includes('Kode Billing PPh 25'));
+        const billing = page.locator('.nav-item[data-nav="billing"]');
+        assert.ok((await billing.innerText()).includes('BARU'));
+        const otomasi = page.locator('.nav-group').nth(1);
+        assert.ok((await otomasi.innerText()).includes('Kode Billing PPh 25'));
+        assert.ok(!(await page.locator('.nav-group').nth(0).innerText()).includes('Billing'));
+        assert.ok((await page.locator('.nav-group').nth(0).innerText()).includes('SPT PPh 21 Setahun'), 'A1 tersedia untuk anggota biasa');
+    });
+    await test('tanpa entitas: kartu pilih entitas dan tombol mulai nonaktif', async () => {
+        assert.ok((await text('.col-main')).includes('Pilih entitas dulu'));
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
+        await shot('05-tanpa-entitas');
+    });
+
+    // ------------------------------------------------ palet entitas
+    await test('palet Grup: satu baris per entitas, yang tanpa PIC disembunyikan, ada keterangan', async () => {
+        await page.keyboard.press('Control+k');
+        await page.waitForSelector('#palette .ent');
+        const names = await page.locator('#pal-body .ent .ent-tx b').allInnerTexts();
+        assert.deepStrictEqual(names, ['Budi Contoh Santoso', 'CV Sample Niaga Mandiri', 'MITRA KARYA ABADI, PT', 'PT Contoh Sejahtera Abadi']);
+        assert.strictEqual(names.filter((n) => n.startsWith('MITRA KARYA')).length, 1, 'MKA hanya sekali walau 2 PIC');
+        assert.ok((await text('#pal-body')).includes('2 PIC Coretax'));
+        assert.ok((await text('#pal-body .pal-note')).includes('disembunyikan'));
+        assert.ok(!(await text('#pal-body')).includes('MITRA LESTARI'), 'entitas tanpa PIC tidak di daftar awal');
+        await shot('06-palet-grup');
+    });
+    await test('palet: pencarian menampilkan entitas tanpa PIC dengan keterangan, tidak bisa dipilih', async () => {
+        await page.fill('#pal-q', 'mitra');
+        const names = await page.locator('#pal-body .ent .ent-tx b').allInnerTexts();
+        assert.deepStrictEqual(names, ['MITRA KARYA ABADI, PT', 'MITRA LESTARI UTAMA, PT']);
+        const unlinked = page.locator('#pal-body .ent.unlinked');
+        assert.ok((await unlinked.innerText()).includes('BELUM ADA PIC'));
+        assert.ok((await unlinked.innerText()).includes('Manage Coretax PIC'));
+        assert.ok((await unlinked.innerText()).includes('Pakai login manual'));
+        assert.strictEqual(await unlinked.locator('.ent-main').getAttribute('aria-disabled'), 'true');
+        await unlinked.locator('.ent-main').click({ force: true });
+        assert.ok(await visible('#palette'), 'klik pada baris tanpa PIC tidak memilih');
+        assert.ok(!(await text('#entity-chip')).includes('LESTARI'), 'entitas tanpa PIC tidak terpilih');
+        await shot('07-palet-cari');
+    });
+    await test('palet: entitas 2 PIC membuka pilihan PIC; memilih PIC menutup palet dan mengisi topbar', async () => {
+        await page.locator('#pal-body .ent', { hasText: 'MITRA KARYA ABADI' }).locator('.ent-main').click();
+        const radios = page.locator('#pal-body .radio-row');
+        assert.strictEqual(await radios.count(), 2);
+        assert.ok((await radios.first().innerText()).includes('UTAMA'));
+        assert.strictEqual(await radios.first().getAttribute('aria-checked'), 'true', 'PIC utama terpilih bawaan');
+        await shot('08-palet-pic');
+        await radios.nth(1).click();
+        await page.waitForSelector('#palette', { state: 'detached' });
+        const chip = await text('#entity-chip');
+        assert.ok(chip.includes('MITRA KARYA ABADI'));
+        assert.ok(chip.includes('PIC RINA WIJAYA'));
+        assert.ok(chip.includes('OTOMATIS'));
+        assert.ok((await text('.status-pill')).includes('Belum masuk Coretax'));
+    });
+    await test('pilihan PIC terakhir diingat untuk entitas itu', async () => {
+        await page.click('#entity-chip');
+        await page.locator('#pal-body .ent', { hasText: 'MITRA KARYA ABADI' }).locator('.ent-main').click();
+        assert.strictEqual(await page.locator('#pal-body .radio-row').nth(1).getAttribute('aria-checked'), 'true');
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#palette', { state: 'detached' });
+    });
+    await test('palet: navigasi keyboard, Enter memakai PIC bawaan', async () => {
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'sejahtera');
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
+        assert.ok((await text('#entity-chip')).includes('PIC ANDI PRATAMA'));
+    });
+
+    // ------------------------------------------------ halaman SPT
+    await test('SPT: bawaan PPh 21/26 dan bulan lalu, ringkasan menghitung kombinasi', async () => {
+        assert.strictEqual(await page.locator('.tile[data-val="pph21"]').getAttribute('aria-pressed'), 'true');
+        assert.strictEqual(await page.locator('.chip[data-val="' + PREV_MMYY + '"]').getAttribute('aria-pressed'), 'true');
+        assert.strictEqual(await text('#rail .big-num b'), '1');
+        assert.ok((await text('#rail')).includes('Otomatis · PIC ANDI PRATAMA'));
+        await shot('09-spt');
+    });
+    await test('SPT: pilih beberapa jenis dan masa memperbarui hitungan; kode diketik memilih chip', async () => {
+        await page.click('.tile[data-val="ppn"]');
+        await page.click('.pp [data-pp="quick"][data-val="q1"]');
+        assert.strictEqual(await text('#rail .big-num b'), '6', '2 jenis x 3 masa');
+        await page.click('.pp [data-pp="text"]');
+        await page.fill('.pp [data-pp-input]', '0126-0326;0526');
+        assert.ok((await text('.pp .summary-line')).includes('4 masa'));
+        assert.ok((await text('.pp .code-chip')).includes('0126-0326;0526'));
+        await page.fill('.pp [data-pp-input]', '1326');
+        assert.ok((await text('.pp [data-pp-error]')).includes('Masa tidak valid'));
+        await page.fill('.pp [data-pp-input]', '0126-0326');
+    });
+    await test('SPT: tahunan eksklusif, memakai chip tahun; OP terkunci untuk Badan', async () => {
+        assert.ok(await page.locator('.tile[data-val="spt_op"]').isDisabled());
+        await page.click('.tile[data-val="badan"]');
+        assert.strictEqual(await page.locator('.tile[data-val="pph21"]').getAttribute('aria-pressed'), 'false');
+        assert.strictEqual(await page.locator('.tile[data-val="badan"]').getAttribute('aria-pressed'), 'true');
+        assert.strictEqual(await page.locator('.pp .chip').count(), 6);
+        assert.ok((await text('.col-main')).includes('Tahun pajak'));
+        assert.ok(!(await text('.col-main')).includes('Cek juga status PPh 25'), 'PPh 25 hanya untuk masa');
+        await shot('10-spt-tahunan');
+        await page.click('.tile[data-val="badan"]');
+    });
+    await test('SPT: lampiran membuka opsi; Rahasia hanya bila PPh 21/26 saja', async () => {
+        await page.click('.tile[data-val="pph21"]');
+        await page.click('.tile[data-val="ppn"]');
+        await page.click('[data-act="lampiran"]');
+        assert.ok(await visible('.subpanel'));
+        const rahasia = page.locator('.subpanel [data-act="isi"][data-val="confidential"]');
+        assert.ok(await rahasia.isDisabled(), 'PPN dipilih, Rahasia terkunci');
+        await page.click('.tile[data-val="ppn"]'); // tinggal PPh 21/26 saja
+        assert.ok(!(await rahasia.isDisabled()), 'hanya PPh 21/26: Rahasia terbuka');
+        await page.click('[data-act="fmt"][data-val="excel"]');
+        assert.ok(!(await visible('.subpanel [data-act="isi"]')), 'Excel menyembunyikan opsi PDF');
+        await page.click('[data-act="fmt"][data-val="both"]');
+        assert.ok(await visible('.subpanel [data-act="isi"]'), 'PDF + Excel menampilkan opsi PDF');
+        await page.click('[data-act="fmt"][data-val="pdf"]');
+        await page.click('[data-act="isi"][data-val="confidential"]');
+        await shot('11-spt-lampiran');
+    });
+    await test('SPT: mulai mengirim permintaan dengan PIC terpilih dan bentuk yang sama seperti dulu', async () => {
+        await page.click('[data-act="start"]');
+        await pause(300);
+        const c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/download-spt');
+        assert.strictEqual(c.body.entity.pic_id, 'p-andi');
+        assert.strictEqual(c.body.entity.entity_id, 'CSA');
+        assert.strictEqual(c.body.entity.project, 'taxio_hub');
+        assert.ok(!('pics' in c.body.entity));
+        assert.deepStrictEqual(c.body.jenisPajakKeys, ['pph21']);
+        assert.strictEqual(c.body.masaInput, '0126-0326');
+        assert.strictEqual(c.body.includeLampiran, true);
+        assert.strictEqual(c.body.lampiranMode, 'confidential');
+        assert.strictEqual(c.body.lampiranFormat, 'pdf');
+        assert.strictEqual(c.body.outputLayout, 'combined');
+        assert.strictEqual(c.body.checkPph25, false);
+        assert.strictEqual(c.body.layoutStyle, 'coretax');
+    });
+
+    // ------------------------------------------------ halaman lain (entitas Hub)
+    await test('e-Bupot: BPMP mengunci PDF; kode objek hanya untuk BP21/BPPU; antrean per jenis', async () => {
+        await page.click('.nav-item[data-nav="ebupot"]');
+        await page.waitForSelector('.tile[data-val="bp21"]');
+        assert.ok(await visible('#eb-kode'));
+        await page.click('.tile[data-val="bp21"]'); await page.click('.tile[data-val="bpmp"]');
+        assert.ok(!(await visible('#eb-kode')), 'tanpa BP21/BPPU kode objek tidak relevan');
+        assert.ok(await page.locator('.doc-row [data-act="pdf"]').isDisabled(), 'BPMP saja: PDF terkunci');
+        await page.click('.tile[data-val="bp21"]');
+        await page.fill('#eb-kode', '21-100-35');
+        await page.click('.pp [data-pp="quick"][data-val="q1"]');
+        await page.click('[data-act="start"]');
+        await pause(2800); // jenis kedua baru dikirim setelah jenis pertama selesai (polling 1,2 dtk)
+        const eb = calls.filter((x) => x.url === '/api/actions/download-ebupot');
+        assert.deepStrictEqual(eb.map((x) => x.body.bupotType).sort(), ['bp21', 'bpmp'], 'satu permintaan per jenis, berurutan');
+        assert.ok(eb.some((x) => x.body.bupotType === 'bp21' && x.body.kodeInput === '21-100-35' && x.body.outputMode === 'pdf_excel'));
+        assert.ok(eb.some((x) => x.body.bupotType === 'bpmp' && x.body.kodeInput === '' && x.body.outputMode === 'excel_only'));
+        await shot('12-ebupot');
+    });
+    await test('Bukti Potong Saya: jenis milik PIC pribadi terkunci untuk entitas Badan', async () => {
+        await page.click('.nav-item[data-nav="bpsaya"]');
+        await page.waitForSelector('.tile[data-val="bppu"]');
+        for (const k of ['bpmp', 'bp21', 'bpa1', 'bpa2']) assert.ok(await page.locator('.tile[data-val="' + k + '"]').isDisabled(), k + ' terkunci');
+        for (const k of ['bppu', 'bpnr', 'bp26', 'bpatc']) assert.ok(!(await page.locator('.tile[data-val="' + k + '"]').isDisabled()), k + ' terbuka');
+        assert.ok((await text('.tile[data-val="bpa1"]')).includes('BP A1'));
+    });
+    await test('Unduh Faktur Masukan: kirim entitas dan masa', async () => {
+        await page.click('.nav-item[data-nav="faktur"]');
+        await page.waitForSelector('.pp');
+        await page.click('[data-act="start"]'); await pause(300);
+        assert.strictEqual(lastCall().url, '/api/actions/download-pajak-masukan');
+        assert.strictEqual(lastCall().body.masaInput, PREV_MMYY);
+        assert.strictEqual(lastCall().body.entity.pic_id, 'p-andi');
+    });
+    await test('Billing: nominal berformat ribuan, masa satu bulan, tombol aktif hanya bila lengkap', async () => {
+        await page.click('.nav-item[data-nav="billing"]');
+        await page.waitForSelector('#bl-nominal');
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'nominal kosong');
+        await page.fill('#bl-nominal', '1500000');
+        assert.strictEqual(await page.inputValue('#bl-nominal'), '1.500.000');
+        assert.ok(!(await page.locator('#rail [data-act="start"]').isDisabled()));
+        assert.ok((await text('#rail .big-num')).includes('1.500.000'));
+        await shot('13-billing');
+        await page.click('[data-act="start"]'); await pause(300);
+        const c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/billing-pph25');
+        assert.strictEqual(c.body.nominal, '1500000');
+        assert.ok(/^(0[1-9]|1[0-2])\d{2}$/.test(c.body.masaInput));
+        assert.strictEqual(c.body.entity.pic_id, 'p-andi');
+    });
+    await test('Billing di Otomasi: satu bulan saja yang bisa dipilih', async () => {
+        assert.strictEqual(await page.locator('.pp .chip[aria-pressed="true"]').count(), 1);
+    });
+
+    // ------------------------------------------------ entitas manual (tab Saya) dan login manual
+    await test('tambah entitas Badan: wajib menautkan PIC; PIC baru bisa dibuat langsung di dialog', async () => {
+        await page.click('#entity-chip');
+        await page.click('#pal-tabs [data-tab="personal"]');
+        assert.ok(await visible('.pal-add'));
+        assert.ok((await text('#pal-body')).includes('Budi Contoh Santoso'), 'entitas pribadi dari Hub ada di Saya');
+        await page.click('.pal-add');
+        await page.waitForSelector('#entity-dialog');
+        assert.strictEqual(await page.locator('#entity-dialog [data-act="led-type"][data-val="badan"]').getAttribute('aria-pressed'), 'true');
+        assert.ok((await text('#entity-dialog')).includes('WAJIB UNTUK BADAN'));
+        await page.fill('#led-name', 'CV Klien Baru Sejahtera');
+        await page.click('#entity-dialog [data-act="save"]');
+        assert.ok((await text('#led-error')).includes('Pilih minimal satu PIC'));
+        await page.click('#entity-dialog [data-act="pic-new"]');
+        await page.fill('#led-newname', 'Ani Sample Wijaya');
+        await page.click('#entity-dialog [data-act="pic-new-save"]');
+        await page.waitForSelector('#entity-dialog .pic-cand[aria-checked="true"]');
+        assert.ok((await text('#entity-dialog .pic-cand[aria-checked="true"]')).includes('Ani Sample Wijaya'));
+        assert.ok((await text('#entity-dialog .pic-list')).includes('Budi Contoh Santoso'), 'PIC dari Hub jadi kandidat');
+        await shot('14-tambah-entitas');
+    });
+    await test('simpan entitas: terpilih, tag MANUAL, PIC tampil; halaman menuntun login manual', async () => {
+        await page.click('#entity-dialog [data-act="save"]');
+        await page.waitForSelector('#entity-dialog', { state: 'detached' });
+        const chip = await text('#entity-chip');
+        assert.ok(chip.includes('CV Klien Baru Sejahtera') && chip.includes('MANUAL') && chip.includes('PIC Ani Sample Wijaya'));
+        await page.click('.nav-item[data-nav="spt"]');
+        const banner = await text('.banner');
+        assert.ok(banner.includes('Login sebagai PIC Ani Sample Wijaya'));
+        assert.ok(banner.includes('impersonate CV Klien Baru Sejahtera'));
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
+        assert.ok((await text('#rail')).includes('Menunggu login manual'));
+        assert.ok((await text('.status-pill')).includes('Belum membuka Coretax'));
+        assert.ok(await visible('#btn-open-coretax') && await visible('#btn-check-session'));
+        await shot('15-manual-menunggu');
+    });
+    await test('buka Coretax: status menjadi menunggu login; setelah login terdeteksi tombol aktif', async () => {
+        await page.click('#btn-open-coretax');
+        await page.waitForFunction(() => /Menunggu login manual/.test(document.querySelector('.status-pill').innerText), null, { timeout: 5000 });
+        fakes.ctl.manual.loggedIn = true; fakes.ctl.manual.identity = '067890123456000 · ANI SAMPLE WIJAYA';
+        await page.click('#btn-check-session');
+        await page.waitForFunction(() => /Login manual aktif/.test(document.querySelector('.status-pill').innerText), null, { timeout: 5000 });
+        assert.ok((await text('.banner.ok')).includes('ANI SAMPLE WIJAYA'));
+        assert.ok(!(await page.locator('#rail [data-act="start"]').isDisabled()));
+        await shot('16-manual-aktif');
+    });
+    await test('semua fitur berjalan lewat entitas manual: SPT, Kreditkan Faktur, Billing mengirim entitas lokal', async () => {
+        await page.click('[data-act="start"]'); await pause(300);
+        let c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/download-spt');
+        assert.strictEqual(c.body.entity.project, 'local');
+        assert.ok(c.body.entity.local_id);
+        assert.strictEqual(c.body.entity.individual, false);
+
+        await page.click('.nav-item[data-nav="kredit"]');
+        await page.waitForSelector('.dropzone');
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'belum ada file');
+        await page.click('[data-act="pick-file"]');
+        await page.waitForSelector('.dropzone.filled');
+        assert.ok((await text('.dropzone')).includes('faktur-uji.xlsx'));
+        await page.click('[data-act="kmode"][data-val="fixed"]');
+        await page.click('[data-act="start"]'); await pause(300);
+        c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/import-pajak-masukan');
+        assert.strictEqual(c.body.entity.project, 'local');
+        assert.strictEqual(c.body.fileBase64, 'AAAA');
+        assert.strictEqual(c.body.targetMasaInput, PREV_MMYY);
+        await shot('17-kredit');
+
+        await page.click('.nav-item[data-nav="billing"]');
+        await page.fill('#bl-nominal', '250000');
+        await page.click('[data-act="start"]'); await pause(300);
+        c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/billing-pph25');
+        assert.strictEqual(c.body.entity.project, 'local');
+        assert.strictEqual(c.body.nominal, '250000');
+    });
+    await test('Dividen: hanya butuh sesi manual, tanpa entitas; impor mengirim file', async () => {
+        await page.click('.nav-item[data-nav="dividen"]');
+        await page.waitForSelector('.dropzone');
+        assert.ok(!(await text('.col-main')).includes('Pilih entitas dulu'));
+        assert.ok(await page.locator('[data-act="import"]').isDisabled(), 'belum ada file');
+        await page.click('[data-act="pick-file"]');
+        await page.waitForSelector('.dropzone.filled');
+        assert.ok(!(await page.locator('[data-act="import"]').isDisabled()));
+        await page.click('[data-act="import"]'); await pause(300);
+        assert.strictEqual(lastCall().url, '/api/actions/import-dividen');
+        assert.strictEqual(lastCall().body.fileName, 'faktur-uji.xlsx');
+    });
+    await test('pilihan entitas manual tersimpan lokal dan dapat diubah lewat dialog yang sama', async () => {
+        await page.click('#entity-chip');
+        await page.click('#pal-tabs [data-tab="personal"]');
+        const row = page.locator('#pal-body .ent', { hasText: 'CV Klien Baru Sejahtera' });
+        assert.ok((await row.innerText()).includes('PIC Ani Sample Wijaya'));
+        await row.hover();
+        await row.locator('[data-act="edit"]').click();
+        await page.waitForSelector('#entity-dialog');
+        assert.strictEqual(await page.inputValue('#led-name'), 'CV Klien Baru Sejahtera');
+        await page.waitForSelector('#entity-dialog .pic-cand');
+        assert.strictEqual(await page.locator('#entity-dialog .pic-cand[aria-checked="true"]').count(), 1);
+        await page.click('#entity-dialog [data-act="close"]');
+    });
+    await test('entitas tanpa PIC di Hub bisa dipakai lewat login manual dari hasil pencarian', async () => {
+        await page.click('#entity-chip');
+        await page.click('#pal-tabs [data-tab="group"]'); // entitas terpilih adalah entitas lokal, palet membuka tab Saya
+        await page.fill('#pal-q', 'lestari');
+        await page.click('[data-act="use-manual"]');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        const chip = await text('#entity-chip');
+        assert.ok(chip.includes('MITRA LESTARI UTAMA') && chip.includes('MANUAL'));
+    });
+
+    // ------------------------------------------------ tampilan proses
+    await test('proses berjalan: antrean per masa, progres, kontrol; keputusan saat ditahan', async () => {
+        fakes.ctl.run = {
+            active: true, paused: true, label: 'SPT pph21 · CV Klien Baru Sejahtera', currentPageSize: 50, coretaxAs: '067890123456000 · ANI SAMPLE WIJAYA',
+            jenisRequested: ['pph21', 'unifikasi'], jenisTally: { pph21: { ok: 5, fail: 0 }, unifikasi: { ok: 1, fail: 1 } },
+            holdReason: 'Tabel lampiran tidak terbaca sebelum batas waktu',
+            plan: { items: ['0126', '0226', '0326', '0426', '0526'].map((m) => ({ label: 'PPh 21/26 / ' + m, short: m })), states: ['ok', 'ok', 'hold', 'wait', 'wait'], index: 2 }
+        };
+        await page.waitForSelector('.qpill', { timeout: 5000 });
+        assert.strictEqual(await page.locator('.qpill').count(), 5);
+        assert.strictEqual(await page.locator('.qpill.ok').count(), 2);
+        assert.strictEqual(await page.locator('.qpill.hold').count(), 1);
+        assert.ok((await text('.banner.warn')).includes('Proses ditahan'));
+        assert.ok((await text('.banner.warn')).includes('Tabel lampiran tidak terbaca'));
+        assert.strictEqual(await text('.big-num b'), '2');
+        assert.ok((await text('.big-num')).includes('/ 5'));
+        assert.ok((await text('.tally')).includes('PPh Unifikasi · 1 ok, 1 gagal'));
+        assert.strictEqual(await page.locator('[data-run-size="50"]').getAttribute('aria-pressed'), 'true');
+        assert.ok((await text('.status-pill')).includes('Sedang berjalan'));
+        await shot('18-berjalan');
+    });
+    await test('kontrol proses: Ulang, Lewati, Mundur, Jeda/Lanjut dan Hentikan menghubungi server', async () => {
+        fakes.ctl.runCalls.length = 0;
+        await page.click('.banner.warn [data-run="retry"]'); await pause(150);
+        await page.click('.banner.warn [data-run="skip"]'); await pause(150);
+        await page.click('.banner.warn [data-run="back"]'); await pause(150);
+        await page.click('.ctl-grid [data-run="pause"]'); await pause(150); // paused=true -> Lanjut -> resume
+        page.once('dialog', (d) => d.accept());
+        await page.click('.rail [data-run="stop"]'); await pause(200);
+        assert.deepStrictEqual(fakes.ctl.runCalls, ['retry', 'skip', 'back', 'resume', 'stop']);
+    });
+    await test('proses selesai: kembali ke halaman dengan ringkasan hasil yang bisa ditutup', async () => {
+        fakes.ctl.run = { active: false, paused: false, label: '', jenisRequested: ['pph21'], jenisTally: { pph21: { ok: 5, fail: 0 } }, plan: { items: [{ label: 'a', short: '0126' }, { label: 'b', short: '0226' }], states: ['ok', 'skip'], index: 1 } };
+        await page.waitForSelector('.qpill', { state: 'detached', timeout: 5000 });
+        await page.waitForSelector('.banner [data-dismiss-run]', { timeout: 5000 });
+        assert.ok((await text('.content .banner')).includes('1 selesai, 1 dilewati'));
+        await page.click('[data-dismiss-run]');
+        assert.ok(!(await visible('[data-dismiss-run]')));
+        fakes.ctl.run = null;
+    });
+
+    // ------------------------------------------------ log
+    await test('log aktivitas: dock terlipat memuat baris terakhir, dapat dibuka', async () => {
+        assert.ok((await text('#dock-last')).length > 0);
+        await page.click('#dock-toggle');
+        assert.ok(await page.locator('#dock.open').isVisible());
+        assert.ok(await page.locator('#log-view .log-line').count() > 0);
+        await shot('19-log');
+        await page.click('#dock-toggle');
+    });
+
+    // ------------------------------------------------ Restricted Editor
+    await test('Restricted Editor: tanpa A1, PPh 21 dan BPMP/BPA1 terkunci, tanpa entitas manual dan Buka Coretax', async () => {
+        await page.evaluate(() => fetch('/api/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"project":"taxio_hub"}' }));
+        fakes.ctl.role = 'restricted_editor'; fakes.ctl.manual = { open: false, loggedIn: false, identity: '' };
+        await page.evaluate(() => { try { localStorage.clear(); } catch (e) { /* */ } });
+        await page.reload();
+        await page.waitForSelector('.auth-form');
+        await page.fill('#au-email', 'baru@contoh.com'); await page.fill('#au-pass', 'benar');
+        await page.click('[data-au="login"]');
+        await page.waitForSelector('#app .sidebar');
+        assert.ok(!(await text('.sidebar')).includes('SPT PPh 21 Setahun'), 'A1 disembunyikan');
+        assert.ok((await text('.sidebar')).includes('Restricted Editor'));
+        assert.ok(!(await visible('#btn-open-coretax')), 'tanpa Buka Coretax');
+        await page.click('#entity-chip');
+        await page.click('#pal-tabs [data-tab="personal"]');
+        assert.ok(!(await visible('.pal-add')), 'tanpa tambah entitas manual');
+        await page.keyboard.press('Escape');
+        await page.locator('#entity-chip').click();
+        await page.fill('#pal-q', 'sejahtera');
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok(await page.locator('.tile[data-val="pph21"]').isDisabled());
+        assert.strictEqual(await page.locator('.tile[data-val="pph21"]').getAttribute('aria-pressed'), 'false', 'PPh 21 tidak terpilih untuk Restricted');
+        await page.click('.nav-item[data-nav="ebupot"]');
+        assert.ok(await page.locator('.tile[data-val="bpmp"]').isDisabled());
+        assert.ok(await page.locator('.tile[data-val="bpa1"]').isDisabled());
+        await shot('20-restricted');
+    });
+
+    await test('tidak ada error JavaScript selama seluruh alur', async () => { assert.deepStrictEqual(errors, []); });
+
+    await browser.close();
+    console.log('\n' + passed + ' tes lulus' + (process.exitCode ? ', ADA YANG GAGAL' : '.'));
+    fs.rmSync(process.env.TAXIO_PILOT_DATA_DIR, { recursive: true, force: true });
+    process.exit(process.exitCode || 0);
+})().catch((e) => { console.error(e); process.exit(1); });

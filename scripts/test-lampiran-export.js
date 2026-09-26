@@ -23,20 +23,10 @@ const {typed}=require('../lib/lampiran-export');
  await p.evaluate(()=>{let page=0;const draw=()=>{document.querySelector('tbody').innerHTML=Array.from({length:page===2?1:10},(_,i)=>'<tr><td>'+(i+1)+'</td><td>'+((page*10)+i+1)+'</td></tr>').join('');document.querySelector('.p-paginator span').textContent='Menampilkan '+(page*10+1)+' dari 21 entri';document.querySelector('.p-paginator-first').disabled=page===0;document.querySelector('.p-paginator-next').disabled=page===2;};document.querySelector('.p-paginator-first').onclick=()=>{page=0;draw()};document.querySelector('.p-paginator-next').onclick=()=>{page++;draw()};draw();});
  const tab=await collectTab(p,'#root','Fixture');assert.equal(tab.tables[0].collectedRows,21);assert.equal(tab.tables[0].expected,21);
  await p.evaluate(()=>{document.querySelector('.p-paginator span').textContent='dari 22 entri';document.querySelector('.p-paginator-next').disabled=true;});await assert.rejects(collectTab(p,'#root','Fixture'),/belum lengkap/);
- const html=fs.readFileSync(path.join(__dirname,'../gui/public/index.html'),'utf8');
- await p.setContent(html.replace(/<script[\s\S]*?<\/script>/g,''));
- const app=fs.readFileSync(path.join(__dirname,'../gui/public/app.js'),'utf8');const start=app.indexOf('  function updateSptLampiranOptions() {'),end=app.indexOf("  document.querySelectorAll('.spt-jenis').forEach",start);
- await p.evaluate('const $=id=>document.getElementById(id);'+app.slice(start,end)+';window.updateSptLampiranOptions=updateSptLampiranOptions;');
- await p.evaluate(()=>{document.getElementById('spt-download-lampiran').checked=true;document.getElementById('spt-lampiran-format').value='excel';});await p.evaluate(()=>window.updateSptLampiranOptions());assert.equal(await p.locator('#spt-pdf-options').evaluate(n=>n.style.display),'none');
- await p.evaluate(()=>document.getElementById('spt-lampiran-format').value='both');await p.evaluate(()=>window.updateSptLampiranOptions());assert.equal(await p.locator('#spt-pdf-options').evaluate(n=>n.style.display),'block');
- assert.deepStrictEqual(await p.locator('#feature-tabs-download button').allTextContents(),['SPT','e-Bupot','Pajak Masukan','Bukti Potong Saya']);
- await p.evaluate("var sessionSummary={};var PROJECT_ORDER=['taxio_hub'];const $=id=>document.getElementById(id);"+app.slice(app.indexOf('  function isA1Restricted()'),app.indexOf('  // ---------- Connections bar'))+app.slice(app.indexOf("  let activeMode = 'download';"),app.indexOf('  // ---------- Dividen import'))+";window.setA1TestRole=role=>{sessionSummary={taxio_hub:{connected:true,role}};applyA1Access();};");
- await p.evaluate(()=>{document.getElementById('main-layout').style.display='grid';document.getElementById('action-form-body').style.display='block';});
- await p.locator('[data-mode="import"]').click();await p.locator('[data-feature="a1"]').click();
- assert(await p.locator('#feature-a1').isVisible());assert(await p.locator('#dl-fields').isVisible());await p.locator('#a1-year').fill('2026');
- await p.evaluate("window.setA1TestRole('restricted_editor');");assert(!(await p.locator('[data-feature=\"a1\"]').isVisible()));assert(!(await p.locator('#feature-a1').isVisible()));assert(await p.locator('.spt-jenis[value=\"pph21\"]').isDisabled());assert(!(await p.locator('.spt-jenis[value=\"pph21\"]').isChecked()));
- await p.evaluate("window.setA1TestRole('admin');");assert(await p.locator('[data-feature=\"a1\"]').isVisible());
- await p.locator('[data-mode="download"]').click();assert(await p.locator('#feature-spt').isVisible());assert(!(await p.locator('#feature-a1').isVisible()));
+﻿ // Pemeriksaan tampilan yang dulu ada di sini (opsi PDF lampiran tersembunyi saat format Excel, tombol A1 dan PPh 21
+ // untuk Restricted, tab fitur) terikat ke id elemen dashboard lama. Sejak dashboard ditulis ulang (Taxio Pilot)
+ // pemeriksaan yang sama dijalankan di scripts/test-gui-ui.js terhadap tampilan yang sebenarnya.
+
  // Remove only the PDF description column, retaining codes, totals and empty-row spans.
  await p.setContent('<table><colgroup><col style="width:20%"><col style="width:40%"><col style="width:40%"></colgroup><thead><tr><th>Kode Objek Pajak</th><th>Objek Pajak</th><th>Nilai (Rp)</th></tr></thead><tbody><tr><td>28-403-02</td><td>Land and/or building rental</td><td>1.000</td></tr><tr><td colspan="3">Tidak ada data</td></tr></tbody><tfoot><tr><td colspan="2">Total</td><td>1.000</td></tr></tfoot></table>');
  await p.evaluate(require('../lib/lampiran-pdf-unifikasi'));
