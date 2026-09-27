@@ -114,23 +114,38 @@
         return pics.find((p) => p.pic_id === wantedPicId) || pics.find((p) => p.is_primary) || pics[0] || null;
     }
 
-    /** Bentuk entitas datar yang diterima API aksi (sama dengan baris lama entitas x PIC). */
+    /** Bentuk entitas datar yang diterima API aksi (sama dengan baris lama entitas x PIC).
+     *  'manual' (sesi Coretax polos, tanpa PIC) dikirim apa adanya. Entitas lain (Taxio Hub
+     *  ATAU lokal berkredensial - keduanya login otomatis) memakai pics[] untuk memilih PIC bila
+     *  ada; yang pics-nya kosong (Orang Pribadi, baik Hub maupun lokal) mempertahankan pic_id
+     *  bawaannya sendiri, KECUALI entitas Hub yang memang belum tertaut PIC sama sekali
+     *  (linked===false), yang secara eksplisit ditandai 'unlinked' supaya server memberi pesan
+     *  yang tepat ("tautkan dulu ..."), bukan sekadar "PIC belum dipilih". */
     function flattenSelection(entity, picId) {
         if (!entity) return null;
-        if (entity.project === 'local' || entity.project === 'manual') return entity;
-        const pic = pickPic(entity, picId);
+        if (entity.project === 'manual') return entity;
         const flat = Object.assign({}, entity);
         delete flat.pics; delete flat.linked;
-        return Object.assign(flat, pic ? { pic_id: pic.pic_id, pic_name: pic.pic_name, pic_is_mine: pic.pic_is_mine, is_primary: pic.is_primary } : { pic_id: 'unlinked', pic_name: '' });
+        if (entity.pics && entity.pics.length) {
+            const pic = pickPic(entity, picId);
+            Object.assign(flat, pic ? { pic_id: pic.pic_id, pic_name: pic.pic_name, pic_is_mine: pic.pic_is_mine, is_primary: pic.is_primary } : { pic_id: 'unlinked', pic_name: '' });
+        } else if (entity.linked === false) {
+            flat.pic_id = 'unlinked'; flat.pic_name = '';
+        }
+        return flat;
     }
-    const isManualLike = (e) => !!e && (e.project === 'manual' || e.project === 'local');
+    /** Sesi Coretax polos yang dibuka lewat "Buka Coretax" dan di-login sendiri - BUKAN entitas
+     *  lokal (yang sejak kredensial disimpan, login otomatis persis seperti entitas Taxio Hub). */
+    const isManualLike = (e) => !!e && e.project === 'manual';
     const entityKey = (e) => (e ? (e.project || '') + '|' + e.entity_id : '');
 
+    /** NPWP resmi sejak integrasi NIK (2024): 16 digit, TANPA titik atau strip (dikonfirmasi
+     *  dari Taxio Hub sendiri). Ditampilkan dikelompokkan per 4 digit dengan spasi supaya mudah
+     *  dibaca - spasi bukan tanda baca, beda dari format lama yang salah (titik+strip, 15
+     *  digit) yang tidak lagi dipakai di mana pun. */
     function formatNpwp(v) {
         const d = digits(v);
-        if (d.length === 15) return d.slice(0, 2) + '.' + d.slice(2, 5) + '.' + d.slice(5, 8) + '.' + d.slice(8, 9) + '-' + d.slice(9, 12) + '.' + d.slice(12);
-        if (d.length === 16) return d.replace(/(\d{4})(?=\d)/g, '$1 ');
-        return d;
+        return d.length === 16 ? d.replace(/(\d{4})(?=\d)/g, '$1 ') : d;
     }
     function rupiah(n) {
         const d = digits(n);

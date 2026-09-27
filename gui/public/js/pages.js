@@ -28,7 +28,8 @@
     function loginText(ent) {
         if (!ent) return '-';
         if (ent.project === 'manual') return 'Manual · sesi yang terbuka';
-        if (ent.project === 'local') return 'Manual' + (ent.pics && ent.pics.length && !ent.individual ? ' · PIC ' + ent.pics.map((p) => p.pic_name).join(', ') : '');
+        // Lokal (kredensial tersimpan) login otomatis persis seperti Taxio Hub - ent sudah
+        // diratakan (flattenSelection) jadi pic_name-nya sudah PIC yang benar-benar terpilih.
         return 'Otomatis' + (ent.pic_name ? ' · PIC ' + ent.pic_name : '');
     }
     function readiness(ent) {
@@ -48,22 +49,17 @@
             + (why ? '<div class="hint" style="text-align:center;margin-top:-8px">' + esc(why) + '</div>' : '')
             + (o.notes || []).map((n) => P.note(n[0], n[1], n[2])).join('') + '</div>';
     }
-    /** Banner login manual: menuntun pengguna untuk login sendiri di jendela Coretax. */
+    /** Banner login manual: menuntun pengguna untuk login sendiri di jendela Coretax. Hanya
+     *  untuk sesi Coretax POLOS (project 'manual') - entitas lokal berkredensial (tab Saya)
+     *  login otomatis persis seperti Taxio Hub, tidak pernah lewat sini. */
     function manualBanner(ent) {
         if (!ent || !L.isManualLike(ent)) return '';
         const m = P.state.manual;
-        let who = '';
-        if (ent.project === 'local') {
-            who = ent.individual
-                ? 'Login dengan akun <b>' + esc(ent.entity_name) + '</b>.'
-                : 'Login sebagai PIC <b>' + esc((ent.pics || []).map((p) => p.pic_name).join(' atau ')) + '</b>, lalu impersonate <b>' + esc(ent.entity_name) + '</b>.';
-        } else who = 'Sesi Coretax yang sedang terbuka dipakai apa adanya.';
+        const who = 'Sesi Coretax yang sedang terbuka dipakai apa adanya.';
         if (m.loggedIn) {
             return '<div class="banner ok"><span class="ico">' + P.icon('check', 20, '', 2.4) + '</span><div class="body"><b>Sesi Coretax terdeteksi</b><span>' + esc(m.identity || 'Sudah masuk ke Coretax.') + ' Pastikan ini akun yang benar sebelum memulai.</span></div></div>';
         }
-        const steps = ent.project === 'local' && !ent.individual
-            ? [['1', 'Buka Coretax'], ['2', 'Login sebagai PIC'], ['3', 'Impersonate entitas'], ['4', 'Periksa sesi']]
-            : [['1', 'Buka Coretax'], ['2', 'Login'], ['3', 'Periksa sesi']];
+        const steps = [['1', 'Buka Coretax'], ['2', 'Login'], ['3', 'Periksa sesi']];
         return '<div class="banner ' + (m.open ? 'warn' : 'info') + '"><span class="ico">' + P.icon('globe', 22) + '</span><div class="body"><b>' + (m.open ? 'Menunggu login manual di jendela Coretax' : 'Coretax dibuka di jendela terpisah') + '</b><span>' + who + ' Agen menunggu, dan lanjut begitu sesi terdeteksi.</span>'
             + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-coretax" style="box-shadow:none">' + P.icon('globe', 15) + (m.open ? 'Tampilkan jendela' : 'Buka Coretax') + '</button><button type="button" class="btn btn-sm" data-act="check-session">' + P.icon('shield', 15) + 'Periksa sesi</button></div></div>'
             + '<div class="banner-steps">' + steps.map(([n, t]) => '<span><i>' + n + '</i>' + t + '</span>').join('') + '</div></div>';

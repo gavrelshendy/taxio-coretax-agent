@@ -308,8 +308,28 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.strictEqual(await page.locator('.pp .chip[aria-pressed="true"]').count(), 1);
     });
 
-    // ------------------------------------------------ entitas manual (tab Saya) dan login manual
-    await test('tambah entitas Badan: wajib menautkan PIC; PIC baru bisa dibuat langsung di dialog', async () => {
+    // ------------------------------------------------ entitas lokal berkredensial (tab Saya) - login OTOMATIS
+    await test('Alt+K membuka palet yang sama seperti Ctrl+K', async () => {
+        await page.keyboard.press('Alt+k');
+        await page.waitForSelector('#palette');
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#palette', { state: 'detached' });
+    });
+    await test('memilih PIC pada entitas Hub ber-PIC banyak langsung memicu login otomatis (tanpa klik Masuk Coretax terpisah)', async () => {
+        calls.length = 0;
+        await page.keyboard.press('Control+k');
+        await page.waitForSelector('#palette');
+        await page.locator('#pal-body .ent', { hasText: 'MITRA KARYA ABADI' }).locator('.ent-main').click();
+        await page.locator('#pal-body .radio-row').nth(0).click();
+        await page.waitForSelector('#palette', { state: 'detached' });
+        await pause(200);
+        assert.ok(calls.some((c) => c.url === '/api/actions/login-entity' && c.body.entity.pic_id === 'p-andi'), 'login-entity terpicu otomatis setelah memilih PIC');
+        // kembalikan pilihan ke PT Contoh Sejahtera Abadi untuk tes-tes berikutnya
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+    });
+    await test('tambah entitas Badan: PIC berkredensial sendiri (nama, NPWP, kata sandi); bisa tambah PIC lagi', async () => {
         await page.click('#entity-chip');
         await page.click('#pal-tabs [data-tab="personal"]');
         assert.ok(await visible('.pal-add'));
@@ -317,44 +337,57 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('.pal-add');
         await page.waitForSelector('#entity-dialog');
         assert.strictEqual(await page.locator('#entity-dialog [data-act="led-type"][data-val="badan"]').getAttribute('aria-pressed'), 'true');
-        assert.ok((await text('#entity-dialog')).includes('WAJIB UNTUK BADAN'));
+        assert.ok((await text('#entity-dialog')).includes('WAJIB, BOLEH LEBIH DARI SATU'));
+        assert.strictEqual(await page.locator('.pic-form-row').count(), 1, 'satu baris PIC kosong tersedia sejak dialog dibuka');
         await page.fill('#led-name', 'CV Klien Baru Sejahtera');
+        await page.fill('#led-npwp', '0678901234560000');
         await page.click('#entity-dialog [data-act="save"]');
-        assert.ok((await text('#led-error')).includes('Pilih minimal satu PIC'));
-        await page.click('#entity-dialog [data-act="pic-new"]');
-        await page.fill('#led-newname', 'Ani Sample Wijaya');
-        await page.click('#entity-dialog [data-act="pic-new-save"]');
-        await page.waitForSelector('#entity-dialog .pic-cand[aria-checked="true"]');
-        assert.ok((await text('#entity-dialog .pic-cand[aria-checked="true"]')).includes('Ani Sample Wijaya'));
-        assert.ok((await text('#entity-dialog .pic-list')).includes('Budi Contoh Santoso'), 'PIC dari Hub jadi kandidat');
+        assert.ok((await text('#led-error')).length > 0, 'PIC kosong ditolak server');
+        await page.fill('[data-pic-field="name"][data-idx="0"]', 'Ani Sample Wijaya');
+        await page.fill('[data-pic-field="npwp"][data-idx="0"]', '1111222233334444');
+        await page.fill('[data-pic-field="password"][data-idx="0"]', 'sandiAni');
+        await page.click('#entity-dialog [data-act="pic-add"]');
+        assert.strictEqual(await page.locator('.pic-form-row').count(), 2);
+        await page.fill('[data-pic-field="name"][data-idx="1"]', 'Budi Kedua');
+        await page.fill('[data-pic-field="npwp"][data-idx="1"]', '5555666677778888');
+        await page.fill('[data-pic-field="password"][data-idx="1"]', 'sandiBudi');
         await shot('14-tambah-entitas');
     });
-    await test('simpan entitas: terpilih, tag MANUAL, PIC tampil; halaman menuntun login manual', async () => {
+    await test('simpan entitas: terpilih dengan tag OTOMATIS (kredensial tersimpan, bukan lagi MANUAL)', async () => {
         await page.click('#entity-dialog [data-act="save"]');
         await page.waitForSelector('#entity-dialog', { state: 'detached' });
         const chip = await text('#entity-chip');
-        assert.ok(chip.includes('CV Klien Baru Sejahtera') && chip.includes('MANUAL') && chip.includes('PIC Ani Sample Wijaya'));
+        assert.ok(chip.includes('CV Klien Baru Sejahtera') && chip.includes('OTOMATIS') && chip.includes('PIC Ani Sample Wijaya'));
         await page.click('.nav-item[data-nav="spt"]');
-        const banner = await text('.banner');
-        assert.ok(banner.includes('Login sebagai PIC Ani Sample Wijaya'));
-        assert.ok(banner.includes('impersonate CV Klien Baru Sejahtera'));
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
-        assert.ok((await text('#rail')).includes('Menunggu login manual'));
-        assert.ok((await text('.status-pill')).includes('Belum membuka Coretax'));
-        assert.ok(await visible('#btn-open-coretax') && await visible('#btn-check-session'));
-        await shot('15-manual-menunggu');
-    });
-    await test('buka Coretax: status menjadi menunggu login; setelah login terdeteksi tombol aktif', async () => {
-        await page.click('#btn-open-coretax');
-        await page.waitForFunction(() => /Menunggu login manual/.test(document.querySelector('.status-pill').innerText), null, { timeout: 5000 });
-        fakes.ctl.manual.loggedIn = true; fakes.ctl.manual.identity = '067890123456000 · ANI SAMPLE WIJAYA';
-        await page.click('#btn-check-session');
-        await page.waitForFunction(() => /Login manual aktif/.test(document.querySelector('.status-pill').innerText), null, { timeout: 5000 });
-        assert.ok((await text('.banner.ok')).includes('ANI SAMPLE WIJAYA'));
+        assert.ok(!(await visible('.banner')), 'tidak ada banner login manual untuk entitas lokal berkredensial');
         assert.ok(!(await page.locator('#rail [data-act="start"]').isDisabled()));
-        await shot('16-manual-aktif');
+        assert.ok((await text('.status-pill')).includes('Belum masuk Coretax'), 'status login umum, bukan status jendela manual');
+        await shot('15-entitas-lokal-otomatis');
     });
-    await test('semua fitur berjalan lewat entitas manual: SPT, Kreditkan Faktur, Billing mengirim entitas lokal', async () => {
+    await test('palet Saya: entitas lokal ber-PIC banyak menampilkan tag OTOMATIS berdampingan dengan pemilih PIC', async () => {
+        await page.click('#entity-chip');
+        await page.click('#pal-tabs [data-tab="personal"]');
+        const row = page.locator('#pal-body .ent', { hasText: 'CV Klien Baru Sejahtera' });
+        assert.ok((await row.locator('.tag.auto').first().innerText()).includes('OTOMATIS'));
+        assert.ok(await row.locator('.pic-chip').isVisible(), 'pemilih PIC tampil berdampingan, bukan menggantikan tag');
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#palette', { state: 'detached' });
+    });
+    await test('memilih entitas lokal (Enter) langsung memicu login otomatis', async () => {
+        calls.length = 0;
+        await page.click('#entity-chip');
+        await page.click('#pal-tabs [data-tab="personal"]');
+        await page.fill('#pal-q', 'klien baru');
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        await pause(200);
+        const loginCall = calls.find((c) => c.url === '/api/actions/login-entity');
+        assert.ok(loginCall, 'login-entity terpicu otomatis');
+        assert.strictEqual(loginCall.body.entity.project, 'local');
+        assert.ok(/^lp_[0-9a-f]+$/.test(loginCall.body.entity.pic_id), 'PIC utama (id PIC asli) terpilih otomatis, Enter tanpa membuka pemilih PIC');
+    });
+    await test('semua fitur berjalan lewat entitas lokal (login otomatis): SPT, Kreditkan Faktur, Billing', async () => {
+        await page.click('.nav-item[data-nav="spt"]');
         await page.click('[data-act="start"]'); await pause(300);
         let c = lastCall();
         assert.strictEqual(c.url, '/api/actions/download-spt');
@@ -385,7 +418,29 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.strictEqual(c.body.entity.project, 'local');
         assert.strictEqual(c.body.nominal, '250000');
     });
-    await test('Dividen: hanya butuh sesi manual, tanpa entitas; impor mengirim file', async () => {
+    await test('login manual POLOS (Buka Coretax) tetap ada, terpisah dari entitas lokal berkredensial', async () => {
+        fakes.ctl.manual.loggedIn = false; fakes.ctl.manual.identity = '';
+        await page.evaluate(() => window.Pilot.manual.poll());
+        await page.click('#entity-chip');
+        await page.click('#pal-tabs [data-tab="group"]');
+        await page.fill('#pal-q', 'lestari');
+        await page.click('[data-act="use-manual"]');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        const chip = await text('#entity-chip');
+        assert.ok(chip.includes('MITRA LESTARI UTAMA') && chip.includes('MANUAL'), 'sesi manual polos tetap memakai tag MANUAL, bukan OTOMATIS');
+        assert.ok(await visible('#btn-open-coretax') && await visible('#btn-check-session'), 'tombol Buka Coretax/Periksa sesi (login manual lama) tetap ada');
+        await page.click('.nav-item[data-nav="spt"]');
+        await page.waitForFunction(() => /Belum membuka Coretax/.test(document.querySelector('.status-pill')?.innerText || ''), null, { timeout: 3000 });
+        const banner = await text('.banner');
+        assert.ok(banner.includes('Coretax dibuka di jendela terpisah'), 'banner login manual polos tetap ada untuk jalur ini');
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
+    });
+    await test('Dividen: hanya butuh sesi manual polos, tanpa entitas; impor mengirim file', async () => {
+        // Dividen selalu memakai jendela Coretax manual (bukan entitas terpilih) - simulasikan
+        // pengguna sudah login di sana, terlepas dari entitas apa pun yang sedang dipilih.
+        fakes.ctl.manual.loggedIn = true; fakes.ctl.manual.identity = '0678901234560000 · SESI MANUAL UJI';
+        await page.evaluate(() => window.Pilot.manual.poll());
+        await page.waitForFunction(() => /Login manual aktif/.test(document.querySelector('.status-pill')?.innerText || ''), null, { timeout: 3000 });
         await page.click('.nav-item[data-nav="dividen"]');
         await page.waitForSelector('.dropzone');
         assert.ok(!(await text('.col-main')).includes('Pilih entitas dulu'));
@@ -397,27 +452,19 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.strictEqual(lastCall().url, '/api/actions/import-dividen');
         assert.strictEqual(lastCall().body.fileName, 'faktur-uji.xlsx');
     });
-    await test('pilihan entitas manual tersimpan lokal dan dapat diubah lewat dialog yang sama', async () => {
+    await test('entitas lokal dapat diubah lewat dialog yang sama; NPWP tiap PIC ikut ditampilkan (bukan rahasia)', async () => {
         await page.click('#entity-chip');
         await page.click('#pal-tabs [data-tab="personal"]');
         const row = page.locator('#pal-body .ent', { hasText: 'CV Klien Baru Sejahtera' });
-        assert.ok((await row.innerText()).includes('PIC Ani Sample Wijaya'));
         await row.hover();
         await row.locator('[data-act="edit"]').click();
         await page.waitForSelector('#entity-dialog');
         assert.strictEqual(await page.inputValue('#led-name'), 'CV Klien Baru Sejahtera');
-        await page.waitForSelector('#entity-dialog .pic-cand');
-        assert.strictEqual(await page.locator('#entity-dialog .pic-cand[aria-checked="true"]').count(), 1);
+        assert.strictEqual(await page.locator('.pic-form-row').count(), 2);
+        assert.strictEqual(await page.inputValue('[data-pic-field="name"][data-idx="0"]'), 'Ani Sample Wijaya');
+        assert.strictEqual(await page.inputValue('[data-pic-field="npwp"][data-idx="0"]'), '1111222233334444');
+        assert.strictEqual(await page.inputValue('[data-pic-field="password"][data-idx="0"]'), '', 'kata sandi lama tidak pernah ditampilkan ulang');
         await page.click('#entity-dialog [data-act="close"]');
-    });
-    await test('entitas tanpa PIC di Hub bisa dipakai lewat login manual dari hasil pencarian', async () => {
-        await page.click('#entity-chip');
-        await page.click('#pal-tabs [data-tab="group"]'); // entitas terpilih adalah entitas lokal, palet membuka tab Saya
-        await page.fill('#pal-q', 'lestari');
-        await page.click('[data-act="use-manual"]');
-        await page.waitForSelector('#palette', { state: 'detached' });
-        const chip = await text('#entity-chip');
-        assert.ok(chip.includes('MITRA LESTARI UTAMA') && chip.includes('MANUAL'));
     });
 
     // ------------------------------------------------ tampilan proses

@@ -302,8 +302,11 @@ select.input { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg
 .ent-actions { display: none; gap: 4px; }
 .ent:hover .ent-actions, .ent.hover .ent-actions { display: flex; }
 .ent-actions button { width: 30px; height: 30px; border-radius: 8px; background: #fff; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted); }
-.pal-add { display: flex; align-items: center; justify-content: center; gap: 10px; height: 48px; margin-top: 8px; border-radius: 12px; border: 1.5px dashed var(--line-strong); background: none; color: var(--accent); font-size: 14px; font-weight: 600; width: 100%; }
-.pal-add:hover { background: var(--accent-soft); }
+/* Ditata seperti baris ".ent-main" biasa (ikon + teks rata kiri) supaya menyatu dengan daftar
+   entitas di atasnya, bukan tombol besar terpisah yang berdiri sendiri di ujung bawah. */
+.pal-add { display: flex; align-items: center; gap: 14px; height: 44px; margin-top: 2px; padding: 0 12px; border-radius: 12px; border: 0; background: none; color: var(--accent); font-size: 14px; font-weight: 600; width: 100%; text-align: left; }
+.pal-add:hover { background: var(--surface-2); }
+.row-right { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 .pal-note { display: flex; align-items: center; gap: 10px; margin: 8px 12px 2px; padding: 10px 12px; border-radius: 10px; background: var(--canvas); font-size: 12.5px; color: var(--muted); }
 .pal-empty { padding: 28px 12px; text-align: center; color: var(--muted); font-size: 13.5px; }
 .pal-foot { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--canvas); border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
