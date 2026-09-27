@@ -44,18 +44,26 @@ function install() {
 
     const r = (o) => Object.assign({ npwp: '', individual: false, pic_is_mine: true, is_primary: false }, o);
     const GROUP_ROWS = [
-        r({ entity_id: 'MKA', entity_name: 'MITRA KARYA ABADI, PT', npwp: '031792709354100', pic_id: 'p-andi', pic_name: 'ANDI PRATAMA', is_primary: true }),
-        r({ entity_id: 'MKA', entity_name: 'MITRA KARYA ABADI, PT', npwp: '031792709354100', pic_id: 'p-rina', pic_name: 'RINA WIJAYA' }),
-        r({ entity_id: 'CSA', entity_name: 'PT Contoh Sejahtera Abadi', npwp: '012345678091000', pic_id: 'p-andi', pic_name: 'ANDI PRATAMA', is_primary: true }),
+        r({ entity_id: 'MKA', entity_name: 'MITRA KARYA ABADI, PT', npwp: '0317927093541000', pic_id: 'p-andi', pic_name: 'ANDI PRATAMA', is_primary: true }),
+        r({ entity_id: 'MKA', entity_name: 'MITRA KARYA ABADI, PT', npwp: '0317927093541000', pic_id: 'p-rina', pic_name: 'RINA WIJAYA' }),
+        r({ entity_id: 'CSA', entity_name: 'PT Contoh Sejahtera Abadi', npwp: '0123456780910000', pic_id: 'p-andi', pic_name: 'ANDI PRATAMA', is_primary: true }),
         r({ entity_id: 'SNM', entity_name: 'CV Sample Niaga Mandiri', pic_id: 'p-rina', pic_name: 'RINA WIJAYA', is_primary: true }),
         r({ entity_id: 'MLU', entity_name: 'MITRA LESTARI UTAMA, PT', pic_id: 'unlinked', pic_name: 'Belum Taut PIC Coretax', is_primary: true }),
-        r({ entity_id: 'BUDI', entity_name: 'Budi Contoh Santoso', npwp: '045678901234000', pic_id: 'p-budi', pic_name: 'Budi Contoh Santoso', individual: true, is_primary: true })
+        r({ entity_id: 'BUDI', entity_name: 'Budi Contoh Santoso', npwp: '0456789012340000', pic_id: 'p-budi', pic_name: 'Budi Contoh Santoso', individual: true, is_primary: true })
     ];
     entitiesLib.listAutomatableEntities = async (client, org, uid, owner, mode) => (mode === 'personal' ? [GROUP_ROWS[5]] : GROUP_ROWS).map((x) => Object.assign({}, x));
 
     chrome.getManualPage = () => null;
     chrome.getManualStatus = async () => Object.assign({}, ctl.manual);
     chrome.openCoretaxManual = async () => { ctl.manual.open = true; return true; };
+    // Entitas lokal (tab Saya) sekarang benar-benar mencoba login OTOMATIS lewat jalur yang sama
+    // dengan Taxio Hub (lib/local-auth-client.js) - tanpa penyamar ini, memilihnya di UI akan
+    // mencoba membuka Chrome sungguhan. Setiap panggilan gagal cepat di langkah berikutnya
+    // (halaman tiruan bukan Coretax sungguhan), cukup untuk mengetes bahwa proses dimulai.
+    chrome.isLoggedOut = () => false;
+    const fakePage = { isClosed: () => false, url: () => '', goto: async () => { throw new Error('halaman tiruan: tidak ada Coretax sungguhan di tes ini'); } };
+    chrome.launchOrReuseContext = async () => ({ context: {}, page: fakePage, reused: false, userDataDir: '/tmp/fake' });
+    chrome.loginAndImpersonate = async () => true;
 
     const realStatus = runcontrol.status;
     runcontrol.status = () => (ctl.run ? ctl.run : realStatus());

@@ -66,10 +66,15 @@ test('initials: tanpa bentuk badan hukum, satu kata memakai dua huruf', () => {
 
 const E = (o) => Object.assign({ project: 'taxio_hub', project_label: 'Taxio Hub', npwp: '', pics: [], linked: true }, o);
 const LIST = [
-    E({ entity_id: 'MKA', entity_name: 'MITRA KARYA ABADI, PT', npwp: '031792709354100', pics: [{ pic_id: 'a', pic_name: 'ANDI PRATAMA', is_primary: true }, { pic_id: 'r', pic_name: 'RINA WIJAYA' }] }),
+    E({ entity_id: 'MKA', entity_name: 'MITRA KARYA ABADI, PT', npwp: '0317927093541000', pics: [{ pic_id: 'a', pic_name: 'ANDI PRATAMA', is_primary: true }, { pic_id: 'r', pic_name: 'RINA WIJAYA' }] }),
     E({ entity_id: 'CSA', entity_name: 'PT Contoh Sejahtera Abadi', pics: [{ pic_id: 'a', pic_name: 'ANDI PRATAMA', is_primary: true }] }),
     E({ entity_id: 'MLU', entity_name: 'MITRA LESTARI UTAMA, PT', linked: false })
 ];
+// Entitas lokal berkredensial (tab Saya) - sejak menyimpan kredensial asli, login otomatis
+// PERSIS seperti Taxio Hub: Badan bisa >1 PIC (dipilih sama seperti Hub), Orang Pribadi tidak
+// punya PIC sama sekali (pic_id bawaannya sendiri 'op', bukan 'unlinked').
+const LOCAL_BADAN = E({ project: 'local', project_label: 'Lokal', entity_id: 'local:le1', entity_name: 'CV Klien Baru Sejahtera', individual: false, pic_id: 'lp1', pic_name: 'Ani Wijaya', pics: [{ pic_id: 'lp1', pic_name: 'Ani Wijaya', is_primary: true }, { pic_id: 'lp2', pic_name: 'Budi Kedua' }], linked: undefined });
+const LOCAL_OP = E({ project: 'local', project_label: 'Lokal', entity_id: 'local:le2', entity_name: 'Ani Sample Wijaya', individual: true, pic_id: 'op', pic_name: 'Ani Sample Wijaya', pics: [], linked: undefined });
 test('visibleEntities: tanpa pencarian hanya yang PIC-nya tertaut', () => {
     assert.deepStrictEqual(L.visibleEntities(LIST, '').map((e) => e.entity_id), ['MKA', 'CSA']);
     assert.strictEqual(L.hiddenUnlinkedCount(LIST), 1);
@@ -77,7 +82,7 @@ test('visibleEntities: tanpa pencarian hanya yang PIC-nya tertaut', () => {
 test('visibleEntities: pencarian memunculkan yang belum tertaut (nama, kode, NPWP, nama PIC)', () => {
     assert.deepStrictEqual(L.visibleEntities(LIST, 'mitra').map((e) => e.entity_id), ['MKA', 'MLU']);
     assert.deepStrictEqual(L.visibleEntities(LIST, 'mlu').map((e) => e.entity_id), ['MLU']);
-    assert.deepStrictEqual(L.visibleEntities(LIST, '03.179.270').map((e) => e.entity_id), ['MKA']);
+    assert.deepStrictEqual(L.visibleEntities(LIST, '0317 9270').map((e) => e.entity_id), ['MKA']);
     assert.deepStrictEqual(L.visibleEntities(LIST, 'rina').map((e) => e.entity_id), ['MKA']);
     assert.deepStrictEqual(L.visibleEntities(LIST, 'tidak-ada'), []);
 });
@@ -93,18 +98,35 @@ test('flattenSelection: bentuk datar untuk API, PIC terpilih ikut, tanpa pics/li
     assert.strictEqual(f.pic_id, 'r'); assert.strictEqual(f.pic_name, 'RINA WIJAYA');
     assert.strictEqual(f.entity_id, 'MKA'); assert.strictEqual(f.project, 'taxio_hub');
     assert.ok(!('pics' in f) && !('linked' in f));
-    const local = { project: 'local', entity_id: 'local:x', pics: [{}] };
-    assert.strictEqual(L.flattenSelection(local), local, 'entitas lokal dikirim apa adanya');
+});
+test('flattenSelection: entitas Hub tanpa PIC tertaut ditandai "unlinked"', () => {
+    assert.strictEqual(L.flattenSelection(LIST[2]).pic_id, 'unlinked');
+});
+test('flattenSelection: Badan lokal memilih PIC persis seperti Hub (kredensial asli, login otomatis)', () => {
+    const f1 = L.flattenSelection(LOCAL_BADAN, 'lp2');
+    assert.strictEqual(f1.pic_id, 'lp2'); assert.strictEqual(f1.pic_name, 'Budi Kedua'); assert.strictEqual(f1.project, 'local');
+    assert.strictEqual(L.flattenSelection(LOCAL_BADAN).pic_id, 'lp1', 'tanpa pilihan eksplisit -> PIC utama');
+});
+test('flattenSelection: Orang Pribadi lokal tidak berubah jadi "unlinked" (tidak punya PIC sama sekali)', () => {
+    const f = L.flattenSelection(LOCAL_OP);
+    assert.strictEqual(f.pic_id, 'op'); assert.strictEqual(f.pic_name, 'Ani Sample Wijaya');
+});
+test('flattenSelection: sesi manual polos dikirim apa adanya', () => {
+    const manual = { project: 'manual', entity_id: 'MANUAL' };
+    assert.strictEqual(L.flattenSelection(manual), manual);
     assert.strictEqual(L.flattenSelection(null), null);
 });
-test('isManualLike dan entityKey', () => {
-    assert.ok(L.isManualLike({ project: 'local' })); assert.ok(L.isManualLike({ project: 'manual' }));
+test('isManualLike: hanya sesi Coretax polos - entitas lokal berkredensial BUKAN manual (login otomatis)', () => {
+    assert.ok(L.isManualLike({ project: 'manual' }));
+    assert.ok(!L.isManualLike({ project: 'local' }), 'entitas lokal sekarang otomatis, bukan manual');
     assert.ok(!L.isManualLike({ project: 'taxio_hub' })); assert.ok(!L.isManualLike(null));
+});
+test('entityKey', () => {
     assert.strictEqual(L.entityKey({ project: 'local', entity_id: 'local:1' }), 'local|local:1');
 });
-test('formatNpwp dan rupiah', () => {
-    assert.strictEqual(L.formatNpwp('031792709354100'), '03.179.270.9-354.100');
-    assert.strictEqual(L.formatNpwp('1234567890123456'), '1234 5678 9012 3456');
+test('formatNpwp: 16 digit tanpa titik/strip (format resmi sejak integrasi NIK); NPWP 15 digit lama tidak diformat', () => {
+    assert.strictEqual(L.formatNpwp('0317927093541000'), '0317 9270 9354 1000');
+    assert.strictEqual(L.formatNpwp('031792709354100'), '031792709354100', 'format lama 15 digit tidak lagi diberi titik/strip');
     assert.strictEqual(L.rupiah('Rp 1500000'), '1.500.000');
     assert.strictEqual(L.rupiah('0012'), '12');
     assert.strictEqual(L.rupiah(''), '');
@@ -119,11 +141,14 @@ test('loginPill: entitas Hub aktif hanya bila login terakhir memang entitas itu'
     assert.strictEqual(L.loginPill({ entity: LIST[1], manual: {}, last }).kind, 'off');
     assert.strictEqual(L.loginPill({ entity: LIST[0], manual: {}, last: null }).text, 'Belum masuk Coretax');
 });
-test('loginPill: entitas manual mengikuti jendela Coretax manual', () => {
-    const loc = { project: 'local', entity_name: 'CV X' };
-    assert.deepStrictEqual(L.loginPill({ entity: loc, manual: { open: false, loggedIn: false } }), { kind: 'off', text: 'Belum membuka Coretax' });
-    assert.deepStrictEqual(L.loginPill({ entity: loc, manual: { open: true, loggedIn: false } }), { kind: 'wait', text: 'Menunggu login manual' });
-    assert.deepStrictEqual(L.loginPill({ entity: loc, manual: { open: true, loggedIn: true } }), { kind: 'manual', text: 'Login manual aktif' });
+test('loginPill: sesi manual polos mengikuti jendela Coretax manual', () => {
+    const manual = { project: 'manual', entity_name: 'Sesi Manual' };
+    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: false, loggedIn: false } }), { kind: 'off', text: 'Belum membuka Coretax' });
+    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: true, loggedIn: false } }), { kind: 'wait', text: 'Menunggu login manual' });
+    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: true, loggedIn: true } }), { kind: 'manual', text: 'Login manual aktif' });
+});
+test('loginPill: entitas lokal (kredensial asli) memakai jalur otomatis, bukan lagi status manual', () => {
+    assert.strictEqual(L.loginPill({ entity: LOCAL_BADAN, manual: { open: true, loggedIn: true } }).kind, 'off', 'sesi manual terbuka tidak dianggap sebagai login entitas lokal ini');
 });
 test('loginPill: tanpa entitas', () => {
     assert.strictEqual(L.loginPill({ entity: null, manual: {} }).text, 'Pilih entitas');

@@ -1,5 +1,15 @@
 /* Taxio Pilot - entitas: memuat daftar (Taxio Hub + entitas lokal), pilihan entitas/PIC yang aktif,
-   palet pencarian, dan dialog tambah/ubah entitas lokal. */
+   palet pencarian, dan dialog tambah/ubah entitas lokal.
+
+   Tiga jenis baris di sini:
+   - Taxio Hub (project 'taxio_hub'): PIC tertaut, login OTOMATIS lewat kredensial Taxio Hub.
+   - Lokal (project 'local', tab Saya): kredensial Coretax ASLI disimpan di komputer ini, login
+     OTOMATIS lewat jalur yang identik (lib/local-auth-client.js di sisi server) - dari sudut
+     pandang tampilan ini, entitas lokal diperlakukan SAMA seperti Taxio Hub (bisa 1 atau banyak
+     PIC, tag OTOMATIS yang sama), hanya beda sumber kredensialnya.
+   - Manual (project 'manual'): sesi Coretax POLOS yang dibuka lewat "Buka Coretax" dan di-login
+     sendiri oleh pengguna, tanpa kredensial tersimpan apa pun - ini yang satu-satunya memakai
+     tag MANUAL dan tidak pernah mengenal PIC. */
 (function () {
     'use strict';
     const P = window.Pilot;
@@ -30,11 +40,13 @@
     const findByKey = (key) => all().find((e) => L.entityKey(e) === key) || null;
 
     // ---------- Pilihan aktif ----------
+    // Preferensi PIC diingat untuk entitas apa pun yang punya lebih dari satu PIC (Taxio Hub
+    // ATAU Badan lokal) - keduanya login otomatis, jadi keduanya berhak mengingat pilihan.
     const picPrefs = () => P.store.get('picPref', {});
     E.pickFor = (entity) => L.pickPic(entity, picPrefs()[L.entityKey(entity)]);
     E.current = () => (E.selected ? L.flattenSelection(E.selected.entity, E.selected.picId) : null);
     E.select = function (entity, picId) {
-        if (entity.project === 'taxio_hub' && picId) { const p = picPrefs(); p[L.entityKey(entity)] = picId; P.store.set('picPref', p); }
+        if (entity.project !== 'manual' && picId) { const p = picPrefs(); p[L.entityKey(entity)] = picId; P.store.set('picPref', p); }
         E.selected = { entity, picId: picId || null };
         P.store.set('sel', { key: L.entityKey(entity), picId: picId || null, name: entity.entity_name });
         P.emit('entity');
@@ -46,7 +58,7 @@
             // tetap pada pilihan sekarang bila masih ada (data segar), kalau tidak lepas
             const sel = E.selected.entity;
             if (sel.project === 'manual') {
-                // entitas manual bernama ("Pakai login manual") dibiarkan; hanya sesi terdeteksi yang mengikuti jendela Coretax
+                // entitas manual bernama ("Pakai login manual") dibiarkan; hanya sesi terdeteksi mengikuti jendela Coretax
                 if (sel.session) { const s = E.manualEntity(); E.selected = s ? { entity: s, picId: null } : null; }
                 return;
             }
@@ -67,20 +79,32 @@
         else if (!me && onSession) { E.selected = null; P.emit('entity'); }
     });
 
+    /** Login otomatis segera setelah entitas (dan PIC-nya, bila ada) selesai dipilih di palet -
+     *  menghindari langkah tambahan "Masuk Coretax" terpisah. Tidak berlaku untuk sesi manual
+     *  (tidak ada yang bisa di-login-kan) atau entitas Hub yang belum tertaut PIC. Diam-diam
+     *  gagal (tombol "Masuk Coretax" di topbar tetap ada sebagai cadangan) - kegagalan login
+     *  sudah punya jalur pelaporannya sendiri lewat log aktivitas. */
+    function autoLoginAfterSelect() {
+        const flat = E.current();
+        if (!flat || flat.project === 'manual' || flat.pic_id === 'unlinked') return;
+        if (P.state.run && P.state.run.active) return;
+        P.post('/api/actions/login-entity', { entity: flat }).then(() => P.run.poll()).catch(() => { /* tombol Masuk Coretax di topbar tetap tersedia */ });
+    }
+
     // ---------- Potongan tampilan bersama ----------
     E.typeLabel = (e) => (e.individual ? 'Orang Pribadi' : 'Badan');
     E.chipHtml = function () {
         const cur = E.selected ? E.selected.entity : null;
-        if (!cur) return '<button type="button" class="entity-chip empty" id="entity-chip" aria-haspopup="dialog"><span class="av">' + P.icon('search', 16) + '</span><span class="tx"><b>Pilih entitas</b><span>Cari nama atau NPWP · Ctrl K</span></span>' + P.icon('down', 16) + '</button>';
+        if (!cur) return '<button type="button" class="entity-chip empty" id="entity-chip" aria-haspopup="dialog"><span class="av">' + P.icon('search', 16) + '</span><span class="tx"><b>Pilih entitas</b><span>Cari nama atau NPWP · Ctrl K / Alt K</span></span>' + P.icon('down', 16) + '</button>';
         const flat = E.current();
-        const tag = cur.project === 'taxio_hub' ? '<span class="tag auto">OTOMATIS</span>' : '<span class="tag manual">MANUAL</span>';
+        const tag = cur.project === 'manual' ? '<span class="tag manual">MANUAL</span>' : '<span class="tag auto">OTOMATIS</span>';
         const bits = [];
         if (cur.session) bits.push('Sesi Coretax yang sedang terbuka');
         else {
             // ID internal (mis. local:le_...) tidak untuk ditampilkan; kode entitas hanya bermakna untuk Taxio Hub
             bits.push(cur.npwp ? L.formatNpwp(cur.npwp) : (cur.project === 'taxio_hub' ? cur.entity_id : 'NPWP belum diisi'));
             bits.push(E.typeLabel(cur));
-            const pic = cur.project === 'local' ? (cur.pics && cur.pics.length ? cur.pics.map((p) => p.pic_name).join(', ') : '') : (cur.project === 'taxio_hub' ? (flat && flat.pic_name) : '');
+            const pic = (cur.project === 'local' || cur.project === 'taxio_hub') ? (flat && flat.pic_name) : '';
             if (pic && !cur.individual) bits.push('PIC ' + pic);
         }
         const name = cur.session ? (P.state.manual.identity || 'Sesi manual') : cur.entity_name;
@@ -110,19 +134,27 @@
         const key = L.entityKey(e);
         const cur = E.selected && L.entityKey(E.selected.entity) === key;
         const unlinked = e.project === 'taxio_hub' && e.linked === false;
-        const multi = e.project === 'taxio_hub' && (e.pics || []).length > 1;
+        // Punya PIC lebih dari satu berlaku sama untuk Taxio Hub maupun Badan lokal - keduanya
+        // login otomatis, jadi keduanya butuh pemilih PIC yang sama.
+        const multi = !unlinked && (e.pics || []).length > 1;
         const open = multi && pal.expanded === key;
         const chosen = multi ? E.pickFor(e) : null;
-        let right = '';
-        if (unlinked) right = '<span class="tag warn lg">BELUM ADA PIC</span>';
-        else if (multi) right = '<span class="pic-chip">' + P.esc((chosen ? chosen.pic_name : '').split(' ')[0]) + P.icon(open ? 'up' : 'down', 15) + '</span>';
-        else if (e.project === 'local') right = '<span class="ent-actions"><button type="button" aria-label="Ubah entitas" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Hapus entitas" data-act="del" data-key="' + P.esc(key) + '" style="color:var(--red)">' + P.icon('trash', 15) + '</button></span><span class="tag lg manual" style="margin-left:0">MANUAL</span>';
-        else if (e.project === 'manual') right = '<span class="tag lg manual" style="margin-left:0">TERDETEKSI</span>';
-        else right = '<span class="tag lg auto" style="margin-left:0">OTOMATIS</span>';
-        const av = e.project === 'manual' ? 'SM' : L.initials(e.entity_name);
+        const isLocal = e.project === 'local';
+        const isManualRow = e.project === 'manual';
+        // Tag OTOMATIS/MANUAL/BELUM ADA PIC SELALU tampil, di posisi yang sama - sebelumnya
+        // entitas dengan >1 PIC kehilangan tag ini (digantikan pemilih PIC), membuatnya terlihat
+        // beda kelas padahal sama-sama otomatis. Pemilih PIC sekarang tampil BERDAMPINGAN.
+        let tag;
+        if (unlinked) tag = '<span class="tag warn lg">BELUM ADA PIC</span>';
+        else if (isManualRow) tag = '<span class="tag lg manual" style="margin-left:0">TERDETEKSI</span>';
+        else tag = '<span class="tag lg auto" style="margin-left:0">OTOMATIS</span>';
+        const picChip = multi ? '<span class="pic-chip">' + P.esc((chosen ? chosen.pic_name : '').split(' ')[0]) + P.icon(open ? 'up' : 'down', 15) + '</span>' : '';
+        const actions = isLocal ? '<span class="ent-actions"><button type="button" aria-label="Ubah entitas" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Hapus entitas" data-act="del" data-key="' + P.esc(key) + '" style="color:var(--red)">' + P.icon('trash', 15) + '</button></span>' : '';
+        const right = '<span class="row-right">' + actions + picChip + tag + '</span>';
+        const av = isManualRow ? 'SM' : L.initials(e.entity_name);
         let html = '<div class="ent' + (cur ? ' current' : '') + (idx === pal.hover && !unlinked ? ' hover' : '') + (unlinked ? ' unlinked' : '') + '" data-idx="' + idx + '">'
             + '<button type="button" class="ent-main" data-act="ent" data-key="' + P.esc(key) + '"' + (unlinked ? ' aria-disabled="true"' : '') + '>'
-            + '<span class="ent-av">' + P.esc(av) + '</span><span class="ent-tx"><b>' + P.esc(e.project === 'manual' ? (P.state.manual.identity || 'Sesi manual') : e.entity_name) + '</b><span>' + metaFor(e) + '</span></span>' + right
+            + '<span class="ent-av">' + P.esc(av) + '</span><span class="ent-tx"><b>' + P.esc(isManualRow ? (P.state.manual.identity || 'Sesi manual') : e.entity_name) + '</b><span>' + metaFor(e) + '</span></span>' + right
             + (cur ? P.icon('check', 18, '', 2.6).replace('<svg ', '<svg style="color:var(--accent)" ') : '') + '</button>';
         if (open) {
             html += '<div class="pic-panel"><div class="cap">Login memakai PIC</div>' + e.pics.map((p) =>
@@ -154,8 +186,10 @@
             if (me) html += '<div class="pal-sec">SESI YANG SEDANG TERBUKA</div>' + rowHtml(me, push(me));
             if (hubs.length) html += '<div class="pal-sec">DARI TAXIO HUB</div>' + hubs.map((e) => rowHtml(e, push(e))).join('');
             if (!P.isRestricted()) {
-                html += '<div class="pal-sec">DITAMBAHKAN DI SINI</div>' + (locals.length ? locals.map((e) => rowHtml(e, push(e))).join('') : '<div class="pal-empty" style="padding:12px">' + (q ? 'Tidak ada yang cocok.' : 'Belum ada. Tambahkan klien yang belum ada di Taxio Hub.') + '</div>');
-                html += '<button type="button" class="pal-add" data-act="add">' + P.icon('plus', 18, '', 2.2) + 'Tambah entitas baru</button>';
+                html += '<div class="pal-sec">DITAMBAHKAN DI SINI</div>' + (locals.length ? locals.map((e) => rowHtml(e, push(e))).join('') : '<div class="pal-empty" style="padding:12px">' + (q ? 'Tidak ada yang cocok.' : 'Belum ada. Tambahkan klien yang belum ada di Taxio Hub.') + '</div>')
+                    // Ditata seperti baris entitas biasa (ikon + teks rata kiri), bukan sebagai
+                    // tombol besar terpisah di ujung bawah - supaya menyatu dengan daftar.
+                    + '<button type="button" class="pal-add" data-act="add"><span class="ent-av" style="background:var(--accent-soft);color:var(--accent)">' + P.icon('plus', 18, '', 2.2) + '</span><span>Tambah entitas baru</span></button>';
             } else if (!hubs.length && !me) html = '<div class="pal-empty">Belum ada entitas pribadi.</div>';
         }
         if (pal.hover >= palNav.length) pal.hover = Math.max(0, palNav.length - 1);
@@ -165,8 +199,8 @@
     function paintPalette() {
         const body = P.$('pal-body'); if (body) body.innerHTML = bodyHtml();
         const foot = P.$('pal-foot');
-        if (foot) foot.innerHTML = '<span style="display:flex;gap:6px;align-items:center"><kbd>↑</kbd><kbd>↓</kbd> pilih</span><span style="display:flex;gap:6px;align-items:center"><kbd>Enter</kbd> gunakan</span><span class="grow"></span>'
-            + (pal.tab === 'group' ? '<span><b style="color:var(--accent-ink)">OTOMATIS</b> login dari Taxio Hub</span>' : '<span><b style="color:var(--accent-ink)">OTOMATIS</b> Taxio Hub · <b style="color:var(--text)">MANUAL</b> Anda login sendiri</span>');
+        if (foot) foot.innerHTML = '<span style="display:flex;gap:6px;align-items:center"><kbd>↑</kbd><kbd>↓</kbd> pilih</span><span style="display:flex;gap:6px;align-items:center"><kbd>Enter</kbd> gunakan &amp; login</span><span class="grow"></span>'
+            + (pal.tab === 'group' ? '<span><b style="color:var(--accent-ink)">OTOMATIS</b> login dari Taxio Hub</span>' : '<span><b style="color:var(--accent-ink)">OTOMATIS</b> Taxio Hub &amp; lokal · <b style="color:var(--text)">MANUAL</b> Anda login sendiri</span>');
         document.querySelectorAll('#pal-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === pal.tab)));
     }
 
@@ -195,7 +229,7 @@
             const act = t.dataset.act;
             const ent = t.dataset.key ? (findByKey(t.dataset.key) || (E.manualEntity() && L.entityKey(E.manualEntity()) === t.dataset.key ? E.manualEntity() : null)) : null;
             if (act === 'ent' && ent) activate(ent, true);
-            else if (act === 'pic' && ent) { E.select(ent, t.dataset.pic); E.closePalette(); }
+            else if (act === 'pic' && ent) { E.select(ent, t.dataset.pic); E.closePalette(); autoLoginAfterSelect(); }
             else if (act === 'use-manual' && ent) { useManualFor(ent); E.closePalette(); }
             else if (act === 'add') { E.closePalette(); E.openDialog(null); }
             else if (act === 'edit' && ent) { E.closePalette(); E.openDialog(ent); }
@@ -214,14 +248,17 @@
     function scrollHover() { const el = document.querySelector('#pal-body .ent.hover'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); }
     E.closePalette = function () { pal.open = false; if (palKey) { document.removeEventListener('keydown', palKey); palKey = null; } const s = P.$('palette'); if (s) s.remove(); };
 
-    /** Klik: entitas dengan lebih dari satu PIC membuka pilihan PIC; Enter langsung memakai PIC bawaan. */
+    /** Klik pada baris ber-PIC banyak (Hub atau Badan lokal) membuka pilihan PIC; Enter (atau
+     *  klik pada baris ber-PIC tunggal/tanpa PIC) langsung memakai PIC bawaan dan LOGIN OTOMATIS -
+     *  menghindari langkah tambahan klik "Masuk Coretax" secara terpisah. */
     function activate(e, fromClick) {
         if (e.project === 'taxio_hub' && e.linked === false) return;
-        const multi = e.project === 'taxio_hub' && (e.pics || []).length > 1;
+        const multi = (e.pics || []).length > 1;
         if (multi && fromClick) { const key = L.entityKey(e); pal.expanded = pal.expanded === key ? null : key; paintPalette(); return; }
-        const pic = e.project === 'taxio_hub' ? E.pickFor(e) : null;
+        const pic = (e.pics || []).length ? E.pickFor(e) : null;
         E.select(e, pic ? pic.pic_id : null);
         E.closePalette();
+        autoLoginAfterSelect();
     }
     function useManualFor(e) {
         E.select({ project: 'manual', project_label: 'Manual', entity_id: 'MANUAL', entity_name: e.entity_name, npwp: e.npwp || '', individual: !!e.individual, pic_id: 'manual', pic_name: 'Login manual', pic_is_mine: true, pics: [], linked: true }, null);
@@ -237,9 +274,25 @@
     }
 
     // ---------- Dialog tambah / ubah entitas lokal ----------
-    const dlg = { id: null, name: '', npwp: '', type: 'badan', picKeys: new Set(), cands: [], newOpen: false, newName: '', newNpwp: '', error: '', busy: false };
-    E.openDialog = async function (existing) {
-        Object.assign(dlg, { id: existing ? existing.local_id : null, name: existing ? existing.entity_name : '', npwp: existing ? existing.npwp || '' : '', type: existing ? existing.type : 'badan', picKeys: new Set(existing && existing.pics ? existing.pics.map((p) => p.source + ':' + p.pic_id.split(':').slice(1).join(':')) : []), cands: [], newOpen: false, newName: '', newNpwp: '', error: '', busy: false });
+    // Kredensial Coretax ASLI: Orang Pribadi login dengan NPWP+kata sandi miliknya sendiri;
+    // Badan tidak pernah login langsung - PIC-nya (>=1) yang punya kredensial, lalu impersonate
+    // ke entitas ini. Kata sandi/passphrase yang lama TIDAK PERNAH dikirim balik ke sini (server
+    // tidak pernah membocorkannya) - field-nya selalu kosong saat mengubah entitas, dan
+    // dikosongkan berarti "jangan diganti" (lib/local-entities.js yang menegakkan aturan ini).
+    const blankPic = () => ({ id: null, name: '', npwp: '', password: '', passphrase: '' });
+    const dlg = { id: null, name: '', npwp: '', type: 'badan', password: '', passphrase: '', pics: [blankPic()], error: '', busy: false };
+    E.openDialog = function (existing) {
+        Object.assign(dlg, {
+            id: existing ? existing.local_id : null,
+            name: existing ? existing.entity_name : '',
+            npwp: existing ? existing.npwp || '' : '',
+            type: existing ? (existing.individual ? 'op' : 'badan') : 'badan',
+            password: '', passphrase: '',
+            pics: existing && !existing.individual && existing.pics && existing.pics.length
+                ? existing.pics.map((p) => ({ id: p.pic_id, name: p.pic_name, npwp: p.pic_npwp || '', password: '', passphrase: '' }))
+                : [blankPic()],
+            error: '', busy: false
+        });
         const scrim = document.createElement('div');
         scrim.className = 'scrim'; scrim.id = 'entity-dialog';
         scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="' + (existing ? 'Ubah entitas' : 'Tambah entitas') + '"></div>';
@@ -250,72 +303,80 @@
         scrim.addEventListener('click', onDialogClick);
         scrim.addEventListener('input', onDialogInput);
         paintDialog();
-        loadCandidates();
         const n = P.$('led-name'); if (n) n.focus();
     };
     function closeDialog() { if (dlgKey) { document.removeEventListener('keydown', dlgKey); dlgKey = null; } const s = P.$('entity-dialog'); if (s) s.remove(); }
-    async function loadCandidates() {
-        try { dlg.cands = (await P.api('/api/local-entities/pic-candidates' + (dlg.id ? '?exclude=' + encodeURIComponent(dlg.id) : ''))).candidates || []; }
-        catch (e) { dlg.error = e.message; }
-        paintDialog();
+
+    function picRowHtml(p, i) {
+        const passHint = p.id ? 'Kosongkan agar tidak berubah' : 'Wajib diisi';
+        const passphraseHint = p.id ? 'Kosongkan agar tidak berubah' : 'Opsional';
+        return '<div class="pic-form-row" style="border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px">'
+            + '<div class="row" style="justify-content:space-between"><b style="font-size:13px;color:var(--ink)">PIC ' + (i + 1) + (i === 0 ? '<span class="tag auto" style="margin-left:8px">UTAMA</span>' : '') + '</b>'
+            + (dlg.pics.length > 1 ? '<button type="button" class="icon-btn" data-act="pic-remove" data-idx="' + i + '" aria-label="Hapus PIC ini">' + P.icon('trash', 15) + '</button>' : '<span></span>') + '</div>'
+            + '<div class="field"><label>Nama PIC</label><input class="input sm" data-pic-field="name" data-idx="' + i + '" value="' + P.esc(p.name) + '" placeholder="mis. Ani Sample Wijaya"></div>'
+            + '<div class="field"><label>NPWP PIC</label><input class="input sm mono" data-pic-field="npwp" data-idx="' + i + '" value="' + P.esc(p.npwp) + '" placeholder="16 digit, tanpa titik/strip" maxlength="20" inputmode="numeric"></div>'
+            + '<div class="field"><label>Kata sandi Coretax</label><input class="input sm" type="password" data-pic-field="password" data-idx="' + i + '" value="' + P.esc(p.password) + '" placeholder="' + passHint + '" autocomplete="new-password"></div>'
+            + '<div class="field"><label>Passphrase tanda tangan <span class="hint" style="font-weight:400">(opsional)</span></label><input class="input sm" type="password" data-pic-field="passphrase" data-idx="' + i + '" value="' + P.esc(p.passphrase) + '" placeholder="' + passphraseHint + '" autocomplete="new-password"></div>'
+            + '</div>';
     }
     function paintDialog() {
         const box = document.querySelector('#entity-dialog .dialog'); if (!box) return;
         const keep = document.activeElement && document.activeElement.id;
+        const keepPicField = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.picField : null;
+        const keepPicIdx = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.idx : null;
         const isBadan = dlg.type === 'badan';
-        const cand = (c) => {
-            const key = c.source + ':' + c.id; const on = dlg.picKeys.has(key);
-            return '<button type="button" class="pic-cand" role="checkbox" aria-checked="' + on + '" data-act="pic-toggle" data-key="' + P.esc(key) + '"><span class="check" aria-checked="' + on + '">' + P.icon('check', 13, '', 3) + '</span>'
-                + '<span class="t"><b>' + P.esc(c.name) + '</b><span>Orang Pribadi · ' + (c.source === 'hub' ? 'dari Taxio Hub' : 'ditambahkan di sini') + '</span></span>'
-                + '<span class="tag lg ' + (c.source === 'hub' ? 'auto' : 'manual') + '" style="margin-left:0">' + (c.source === 'hub' ? 'OTOMATIS' : 'MANUAL') + '</span></button>';
-        };
-        const newForm = dlg.newOpen
-            ? '<div class="pic-newform"><div class="field"><label for="led-newname">Nama PIC (orang pribadi)</label><input id="led-newname" class="input sm" value="' + P.esc(dlg.newName) + '" placeholder="mis. Ani Sample Wijaya"></div><div class="field"><label for="led-newnpwp">NPWP PIC (opsional)</label><input id="led-newnpwp" class="input sm mono" value="' + P.esc(dlg.newNpwp) + '" placeholder="00.000.000.0-000.000"></div><div class="row"><button type="button" class="btn btn-sm btn-primary" data-act="pic-new-save"' + (dlg.busy ? ' disabled' : '') + '>Simpan PIC</button><button type="button" class="btn btn-sm" data-act="pic-new-cancel">Batal</button></div></div>'
-            : '<button type="button" class="pic-add" data-act="pic-new">' + P.icon('plus', 17, '', 2.2) + 'Tambah PIC baru (orang pribadi)</button>';
+        const passHint = dlg.id ? 'Kosongkan agar tidak berubah' : 'Wajib diisi';
+        const passphraseHint = dlg.id ? 'Kosongkan agar tidak berubah' : 'Opsional';
+        const opFields = '<div class="field"><label for="led-pass">Kata sandi Coretax</label><input id="led-pass" class="input" type="password" value="' + P.esc(dlg.password) + '" placeholder="' + passHint + '" autocomplete="new-password"></div>'
+            + '<div class="field"><label for="led-passphrase">Passphrase tanda tangan <span class="hint" style="font-weight:400">(opsional)</span></label><input id="led-passphrase" class="input" type="password" value="' + P.esc(dlg.passphrase) + '" placeholder="' + passphraseHint + '" autocomplete="new-password"></div>';
+        const badanFields = '<div class="field" style="gap:10px"><span class="label">PIC (akun Orang Pribadi)<span class="req">WAJIB, BOLEH LEBIH DARI SATU</span></span>'
+            + '<span class="hint">Coretax membuka akun Badan lewat akun Orang Pribadi penanggung jawabnya. Saat otomasi berjalan, agen login sebagai PIC ini, lalu memilih entitas ini.</span>'
+            + '<div class="stack-lg">' + dlg.pics.map(picRowHtml).join('') + '</div>'
+            + '<button type="button" class="pic-add" data-act="pic-add">' + P.icon('plus', 17, '', 2.2) + 'Tambah PIC</button></div>';
         box.innerHTML = '<div class="dialog-head"><h2>' + (dlg.id ? 'Ubah entitas' : 'Tambah entitas') + '</h2><button type="button" class="icon-btn" aria-label="Tutup" data-act="close">' + P.icon('x', 18) + '</button></div>'
-            + '<div class="dialog-body"><p class="hint" style="font-size:13.5px">Untuk klien yang belum ada di Taxio Hub. Disimpan di komputer ini saja dan tidak mengubah data Taxio Hub.</p>'
+            + '<div class="dialog-body"><p class="hint" style="font-size:13.5px">Kredensial Coretax disimpan di komputer ini saja, dan dipakai untuk login otomatis - sama seperti entitas Taxio Hub.</p>'
             + '<div class="field"><span class="label">Jenis wajib pajak</span>' + P.seg('led-type', [{ value: 'badan', label: 'Badan' }, { value: 'op', label: 'Orang Pribadi' }], dlg.type)
-            + '<span class="hint">' + (isBadan ? 'Badan dibuka lewat akun orang pribadi penanggung jawabnya (PIC).' : 'Orang Pribadi login dengan akunnya sendiri, tanpa PIC. Bisa membuka SPT Tahunan PPh OP dan Bukti Potong Saya.') + '</span></div>'
+            + '<span class="hint">' + (isBadan ? 'Login lewat akun PIC, lalu impersonate ke entitas ini.' : 'Login langsung dengan NPWP dan kata sandi entitas ini sendiri.') + '</span></div>'
             + '<div class="field"><label for="led-name">Nama entitas</label><input id="led-name" class="input" value="' + P.esc(dlg.name) + '" placeholder="' + (isBadan ? 'mis. CV Contoh Makmur' : 'mis. Budi Santoso') + '" maxlength="100"></div>'
-            + '<div class="field"><label for="led-npwp">NPWP (opsional)</label><input id="led-npwp" class="input mono" value="' + P.esc(dlg.npwp) + '" placeholder="00.000.000.0-000.000"><span class="hint">Dipakai agen untuk mencocokkan sesi Coretax yang Anda buka.</span></div>'
-            + (isBadan ? '<div class="field" style="gap:8px"><span class="label">Akun PIC untuk impersonate<span class="req">WAJIB UNTUK BADAN</span></span><span class="hint">Coretax membuka akun badan lewat akun orang pribadi penanggung jawabnya (PIC). Saat otomasi berjalan, agen meminta Anda login sebagai PIC ini, lalu memilih entitas ini. Boleh lebih dari satu PIC.</span>'
-                + '<div class="pic-list">' + (dlg.cands.length ? dlg.cands.map(cand).join('') : '<div class="pal-empty" style="padding:14px">Belum ada orang pribadi. Tambahkan PIC di bawah.</div>') + newForm + '</div></div>' : '')
+            + '<div class="field"><label for="led-npwp">NPWP' + (isBadan ? ' entitas' : '') + '</label><input id="led-npwp" class="input mono" value="' + P.esc(dlg.npwp) + '" placeholder="16 digit, tanpa titik/strip" maxlength="20" inputmode="numeric"></div>'
+            + (isBadan ? badanFields : opFields)
             + '<div class="form-error" id="led-error">' + P.esc(dlg.error) + '</div></div>'
-            + '<div class="dialog-foot"><span class="grow">' + (isBadan ? dlg.picKeys.size + ' PIC dipilih' : '') + '</span><button type="button" class="btn" data-act="close">Batal</button><button type="button" class="btn btn-primary" data-act="save"' + (dlg.busy ? ' disabled' : '') + '>' + (dlg.busy ? 'Menyimpan…' : 'Simpan entitas') + '</button></div>';
-        if (keep) { const el = P.$(keep); if (el) { el.focus(); if (el.setSelectionRange && el.value !== undefined) { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (e) { /* bukan input teks */ } } } }
+            + '<div class="dialog-foot"><span class="grow"></span><button type="button" class="btn" data-act="close">Batal</button><button type="button" class="btn btn-primary" data-act="save"' + (dlg.busy ? ' disabled' : '') + '>' + (dlg.busy ? 'Menyimpan…' : 'Simpan entitas') + '</button></div>';
+        if (keepPicField) {
+            const el = document.querySelector('[data-pic-field="' + keepPicField + '"][data-idx="' + keepPicIdx + '"]');
+            if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* bukan input teks */ } }
+        } else if (keep) {
+            const el = P.$(keep);
+            if (el) { el.focus(); if (el.setSelectionRange && el.value !== undefined) { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (e) { /* bukan input teks */ } } }
+        }
     }
     function onDialogInput(e) {
         const id = e.target.id;
-        if (id === 'led-name') dlg.name = e.target.value; else if (id === 'led-npwp') dlg.npwp = e.target.value;
-        else if (id === 'led-newname') dlg.newName = e.target.value; else if (id === 'led-newnpwp') dlg.newNpwp = e.target.value;
+        if (id === 'led-name') dlg.name = e.target.value;
+        else if (id === 'led-npwp') dlg.npwp = e.target.value;
+        else if (id === 'led-pass') dlg.password = e.target.value;
+        else if (id === 'led-passphrase') dlg.passphrase = e.target.value;
+        else if (e.target.dataset && e.target.dataset.picField) {
+            const i = Number(e.target.dataset.idx);
+            if (dlg.pics[i]) dlg.pics[i][e.target.dataset.picField] = e.target.value;
+        }
     }
     async function onDialogClick(e) {
         const t = e.target.closest('[data-act]'); if (!t) return;
         const act = t.dataset.act;
         if (act === 'close') return closeDialog();
         if (act === 'led-type') { dlg.type = t.dataset.val; dlg.error = ''; return paintDialog(); }
-        if (act === 'pic-toggle') { const k = t.dataset.key; if (dlg.picKeys.has(k)) dlg.picKeys.delete(k); else dlg.picKeys.add(k); dlg.error = ''; return paintDialog(); }
-        if (act === 'pic-new') { dlg.newOpen = true; paintDialog(); const n = P.$('led-newname'); if (n) n.focus(); return; }
-        if (act === 'pic-new-cancel') { dlg.newOpen = false; dlg.newName = ''; dlg.newNpwp = ''; return paintDialog(); }
-        if (act === 'pic-new-save') {
-            if (!dlg.newName.trim()) { dlg.error = 'Nama PIC wajib diisi.'; return paintDialog(); }
-            dlg.busy = true; dlg.error = ''; paintDialog();
-            try {
-                const r = await P.post('/api/local-entities/save', { name: dlg.newName, npwp: dlg.newNpwp, type: 'op' });
-                dlg.picKeys.add('local:' + r.entity.local_id);
-                dlg.newOpen = false; dlg.newName = ''; dlg.newNpwp = '';
-                await loadCandidates();
-                E.load();
-            } catch (err) { dlg.error = err.message; }
-            dlg.busy = false; return paintDialog();
+        if (act === 'pic-add') {
+            dlg.pics.push(blankPic()); dlg.error = ''; paintDialog();
+            const last = document.querySelector('[data-pic-field="name"][data-idx="' + (dlg.pics.length - 1) + '"]'); if (last) last.focus();
+            return;
         }
+        if (act === 'pic-remove') { dlg.pics.splice(Number(t.dataset.idx), 1); dlg.error = ''; return paintDialog(); }
         if (act === 'save') {
             if (!dlg.name.trim()) { dlg.error = 'Nama entitas wajib diisi.'; return paintDialog(); }
-            const body = { id: dlg.id || undefined, name: dlg.name, npwp: dlg.npwp, type: dlg.type, pics: [] };
-            if (dlg.type === 'badan') {
-                if (!dlg.picKeys.size) { dlg.error = 'Pilih minimal satu PIC (akun orang pribadi) untuk impersonate.'; return paintDialog(); }
-                body.pics = Array.from(dlg.picKeys).map((k) => { const i = k.indexOf(':'); const c = dlg.cands.find((x) => x.source + ':' + x.id === k); return { source: k.slice(0, i), id: k.slice(i + 1), name: c ? c.name : '' }; });
-            }
+            const body = { id: dlg.id || undefined, name: dlg.name, npwp: dlg.npwp, type: dlg.type };
+            if (dlg.type === 'op') { body.password = dlg.password; body.passphrase = dlg.passphrase; }
+            else { body.pics = dlg.pics.map((p) => ({ id: p.id || undefined, name: p.name, npwp: p.npwp, password: p.password, passphrase: p.passphrase })); }
             dlg.busy = true; dlg.error = ''; paintDialog();
             try {
                 const r = await P.post('/api/local-entities/save', body);
@@ -328,8 +389,9 @@
         }
     }
 
-    // Ctrl+K membuka palet dari mana saja di dalam aplikasi.
+    // Ctrl+K atau Alt+K membuka palet dari mana saja di dalam aplikasi.
     document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K') && P.isConnected() && !P.$('palette')) { e.preventDefault(); E.openPalette(); }
+        const combo = ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) || (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'k' || e.key === 'K'));
+        if (combo && P.isConnected() && !P.$('palette')) { e.preventDefault(); E.openPalette(); }
     });
 })();

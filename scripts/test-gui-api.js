@@ -1,7 +1,8 @@
 /* Tes integrasi API dashboard (gui/server.js) dengan Supabase, Chrome, dan daftar entitas
-   diganti data palsu: alur pendaftaran, daftar entitas satu baris per entitas, entitas lokal,
-   jalur login manual untuk semua fitur, dan blokir Restricted Editor. Tidak membuka Chrome,
-   tidak menghubungi Taxio Hub, dan memakai folder data sementara. Jalankan:
+   diganti data palsu: alur pendaftaran, daftar entitas satu baris per entitas, entitas lokal
+   BERKREDENSIAL (login OTOMATIS - bukan lagi manual), sesi manual polos yang tetap ada
+   terpisah, dan blokir Restricted Editor. Tidak membuka Chrome sungguhan, tidak menghubungi
+   Taxio Hub, dan memakai folder data sementara. Jalankan:
      node scripts/test-gui-api.js */
 const assert = require('assert');
 const fs = require('fs');
@@ -49,7 +50,18 @@ const GROUP_ROWS = [
 ];
 const PERSONAL_ROWS = [GROUP_ROWS[4]];
 entitiesLib.listAutomatableEntities = async (client, org, uid, owner, mode) => (mode === 'personal' ? PERSONAL_ROWS : GROUP_ROWS).map((x) => Object.assign({}, x));
-chrome.getManualPage = () => null; // tidak ada jendela Chrome sungguhan
+
+// Chrome/Playwright diganti penyamar cepat: entitas lokal sekarang benar-benar mencoba login
+// OTOMATIS (lewat lib/local-auth-client.js -> lib/entities.js -> lib/chrome.js), jadi handler-
+// handler memanggil fungsi-fungsi ini sungguhan. Tidak ada satu pun yang membuka browser asli -
+// setiap panggilan gagal cepat begitu menyentuh method yang tidak ditiru (mis. page.goto),
+// sehingga proses langsung berhenti (runcontrol.finish()) tanpa menunggu timeout jaringan.
+chrome.getManualPage = () => null;
+chrome.getManualStatus = async () => ({ open: false, loggedIn: false, identity: '' });
+chrome.isLoggedOut = () => false;
+const fakePage = { isClosed: () => false, url: () => '', goto: async () => { throw new Error('halaman tiruan: tidak ada Coretax sungguhan di tes ini'); } };
+chrome.launchOrReuseContext = async () => ({ context: {}, page: fakePage, reused: false, userDataDir: '/tmp/fake' });
+chrome.loginAndImpersonate = async () => true;
 
 const { createGuiServer } = require('../gui/server');
 const PORT = 52411;
@@ -62,6 +74,16 @@ async function call(method, url, body, headers) {
 }
 const GET = (u) => call('GET', u);
 const POST = (u, b, h) => call('POST', u, b === undefined ? {} : b, h);
+/** Proses berjalan di latar (fire-and-forget); tunggu sampai selesai supaya test berikutnya
+ *  tidak bentrok dengan runcontrol "masih ada proses lain yang berjalan". */
+async function waitIdle() {
+    for (let i = 0; i < 100; i++) {
+        const st = (await GET('/api/run/status')).json;
+        if (!st || !st.active) return;
+        await new Promise((res) => setTimeout(res, 15));
+    }
+    throw new Error('proses tidak kunjung selesai (kemungkinan bug pada tes, bukan pada aplikasi)');
+}
 
 let passed = 0;
 async function test(name, fn) {
@@ -162,35 +184,41 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         assert.deepStrictEqual(a.json.entities.map((e) => e.entity_id), ['BUDI']);
     });
 
+    // ---- entitas lokal: kredensial Coretax ASLI, login OTOMATIS ----
     let ani; let cv;
-    await test('entitas lokal: kandidat PIC berisi Orang Pribadi dari Hub', async () => {
-        const a = await GET('/api/local-entities/pic-candidates');
-        assert.deepStrictEqual(a.json.candidates.map((c) => c.source + ':' + c.id), ['hub:BUDI']);
+    await test('entitas lokal: NPWP wajib 16 digit; Orang Pribadi wajib kata sandi; Badan tanpa PIC ditolak', async () => {
+        const bad = await POST('/api/local-entities/save', { name: 'Ani Sample Wijaya', type: 'op', npwp: '123', password: 'x' });
+        assert.strictEqual(bad.status, 400); assert.ok(/16 digit/.test(bad.json.error));
+        const nopass = await POST('/api/local-entities/save', { name: 'Ani Sample Wijaya', type: 'op', npwp: '1234567890123456' });
+        assert.strictEqual(nopass.status, 400); assert.ok(/[Kk]ata sandi wajib diisi/.test(nopass.json.error));
+        const badan = await POST('/api/local-entities/save', { name: 'CV Klien Baru Sejahtera', type: 'badan', npwp: '0678901234560000', pics: [] });
+        assert.strictEqual(badan.status, 400); assert.ok(/wajib menautkan minimal satu PIC/.test(badan.json.error));
     });
 
-    await test('entitas lokal: Orang Pribadi disimpan; Badan tanpa PIC ditolak', async () => {
-        const a = await POST('/api/local-entities/save', { name: 'Ani Sample Wijaya', type: 'op', npwp: '' });
+    await test('entitas lokal: Orang Pribadi tersimpan; kata sandi tidak pernah bocor ke respons', async () => {
+        const a = await POST('/api/local-entities/save', { name: 'Ani Sample Wijaya', type: 'op', npwp: '1234-5678-9012-3456', password: 'rahasiaAni', passphrase: 'frasaAni' });
         assert.strictEqual(a.status, 200);
         ani = a.json.entity;
-        assert.strictEqual(ani.project, 'local'); assert.strictEqual(ani.individual, true);
-        const b = await POST('/api/local-entities/save', { name: 'CV Klien Baru Sejahtera', type: 'badan', pics: [] });
-        assert.strictEqual(b.status, 400); assert.ok(/wajib menautkan minimal satu PIC/.test(b.json.error));
+        assert.strictEqual(ani.project, 'local'); assert.strictEqual(ani.individual, true); assert.strictEqual(ani.pic_id, 'op');
+        assert.strictEqual(ani.npwp, '1234567890123456');
+        assert.ok(!JSON.stringify(a.json).includes('rahasiaAni'), 'kata sandi bocor ke klien');
+        assert.ok(!JSON.stringify(a.json).includes('frasaAni'), 'passphrase bocor ke klien');
     });
 
-    await test('entitas lokal: Badan menautkan PIC lokal dan PIC dari Hub (nama Hub dari server, bukan klien)', async () => {
+    await test('entitas lokal: Badan menautkan >1 PIC dengan kredensial masing-masing', async () => {
         const a = await POST('/api/local-entities/save', {
-            name: 'CV Klien Baru Sejahtera', type: 'badan', npwp: '06.789.012.3-456.000',
-            pics: [{ source: 'local', id: ani.local_id, name: 'x' }, { source: 'hub', id: 'BUDI', name: 'nama-palsu' }]
+            name: 'CV Klien Baru Sejahtera', type: 'badan', npwp: '0678901234560000',
+            pics: [
+                { name: 'PIC Utama', npwp: '1111222233334444', password: 'sandiUtama', passphrase: 'frasaUtama' },
+                { name: 'PIC Kedua', npwp: '5555666677778888', password: 'sandiKedua' }
+            ]
         });
         assert.strictEqual(a.status, 200);
         cv = a.json.entity;
-        assert.deepStrictEqual(cv.pics.map((p) => p.pic_name), ['Ani Sample Wijaya', 'Budi Contoh Santoso']);
+        assert.deepStrictEqual(cv.pics.map((p) => p.pic_name), ['PIC Utama', 'PIC Kedua']);
+        assert.strictEqual(cv.pics[0].is_primary, true);
         assert.strictEqual(cv.individual, false);
-    });
-
-    await test('entitas lokal: PIC Hub yang tidak dikenal ditolak', async () => {
-        const a = await POST('/api/local-entities/save', { name: 'PT Salah PIC', type: 'badan', pics: [{ source: 'hub', id: 'TIDAKADA', name: 'x' }] });
-        assert.strictEqual(a.status, 400); assert.ok(/bukan Orang Pribadi/.test(a.json.error));
+        assert.ok(!JSON.stringify(a.json).includes('sandiUtama'));
     });
 
     await test('entitas lokal: tampil di mode Saya bersama entitas Hub; tidak di mode Grup', async () => {
@@ -201,21 +229,14 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         assert.ok(!group.json.entities.some((e) => e.project === 'local'));
     });
 
-    await test('entitas lokal: PIC yang masih dipakai tidak bisa dihapus; Badan lalu PIC bisa', async () => {
-        const a = await POST('/api/local-entities/delete', { id: ani.local_id });
-        assert.strictEqual(a.status, 400); assert.ok(/masih dipakai sebagai PIC/.test(a.json.error));
-        assert.strictEqual((await POST('/api/local-entities/delete', { id: cv.local_id })).status, 200);
+    await test('entitas lokal: PIC sekarang bagian dari Badan itu sendiri - menghapus entitas lain tidak memblokirnya', async () => {
         assert.strictEqual((await POST('/api/local-entities/delete', { id: ani.local_id })).status, 200);
-        assert.strictEqual((await GET('/api/local-entities')).json.entities.length, 0);
+        assert.ok((await GET('/api/local-entities')).json.entities.some((e) => e.local_id === cv.local_id), 'CV tidak ikut terhapus/terganggu');
     });
 
-    // ---- semua fitur lewat login manual ----
-    let badan;
-    await test('siapkan entitas Badan lokal untuk uji jalur manual', async () => {
-        const a = await POST('/api/local-entities/save', { name: 'CV Manual Uji', type: 'badan', pics: [{ source: 'hub', id: 'BUDI' }] });
-        assert.strictEqual(a.status, 200); badan = a.json.entity;
-    });
-    const MANUAL_ERR = /Sesi manual belum ada/;
+    // ---- semua fitur: entitas lokal login OTOMATIS; sesi manual polos TETAP ADA terpisah ----
+    const localSelEntity = () => ({ project: 'local', local_id: cv.local_id, entity_id: cv.entity_id, entity_name: cv.entity_name, npwp: cv.npwp, individual: false, pic_id: cv.pics[0].pic_id, pic_name: cv.pics[0].pic_name });
+    const manualSelEntity = { project: 'manual', entity_name: 'Sesi Manual' };
     const routes = [
         ['e-Bupot', '/api/actions/download-ebupot', { bupotType: 'bp21', masaInput: '0126' }],
         ['Bukti Potong Saya', '/api/actions/download-mybupot', { buktiTypeKeys: ['bppu'], masaInput: '0126' }],
@@ -225,36 +246,49 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         ['Kode Billing PPh 25', '/api/actions/billing-pph25', { masaInput: '0726', nominal: 'Rp 1.500.000' }]
     ];
     for (const [label, url, extra] of routes) {
-        await test('login manual: ' + label + ' menerima entitas lokal dan meminta sesi manual (bukan lagi menolak)', async () => {
-            const a = await POST(url, Object.assign({ entity: badan }, extra));
-            assert.strictEqual(a.status, 401, JSON.stringify(a.json));
-            assert.ok(MANUAL_ERR.test(a.json.error), a.json.error);
+        await test('entitas lokal: ' + label + ' login OTOMATIS (bukan lagi ditolak sebagai manual)', async () => {
+            const a = await POST(url, Object.assign({ entity: localSelEntity() }, extra));
+            assert.strictEqual(a.status, 202, label + ': ' + JSON.stringify(a.json));
+            await waitIdle();
         });
-        await test('login manual: ' + label + ' menerima sesi manual polos', async () => {
-            const a = await POST(url, Object.assign({ entity: { project: 'manual', entity_name: 'Sesi Manual' } }, extra));
-            assert.strictEqual(a.status, 401); assert.ok(MANUAL_ERR.test(a.json.error));
+        await test('sesi manual polos: ' + label + ' tetap membutuhkan jendela Coretax yang sudah dibuka (perilaku lama, tidak berubah)', async () => {
+            const a = await POST(url, Object.assign({ entity: manualSelEntity }, extra));
+            assert.strictEqual(a.status, 401);
+            assert.ok(/Sesi manual belum ada/.test(a.json.error), label);
         });
     }
 
-    await test('entitas lokal yang tidak ada (mis. sudah dihapus) -> 404, dan data dibaca ulang dari penyimpanan', async () => {
-        const a = await POST('/api/actions/billing-pph25', { entity: Object.assign({}, badan, { local_id: 'le_tidakada' }), masaInput: '0726', nominal: '1000' });
+    await test('entitas lokal yang tidak ada (mis. sudah dihapus) -> 404', async () => {
+        const a = await POST('/api/actions/billing-pph25', { entity: Object.assign({}, localSelEntity(), { local_id: 'le_tidakada' }), masaInput: '0726', nominal: '1000' });
         assert.strictEqual(a.status, 404);
-        // jenis dipalsukan klien tidak dipercaya: server tetap sampai ke pemeriksaan sesi manual
-        const b = await POST('/api/actions/billing-pph25', { entity: Object.assign({}, badan, { individual: true }), masaInput: '0726', nominal: '1000' });
-        assert.strictEqual(b.status, 401);
+    });
+
+    await test('field entitas dipalsukan klien (individual, npwp, nama) diabaikan - server selalu membaca ulang dari penyimpanan', async () => {
+        const a = await POST('/api/actions/billing-pph25', { entity: Object.assign({}, localSelEntity(), { individual: true, npwp: '0000000000000000', entity_name: 'PALSU' }), masaInput: '0726', nominal: '1000' });
+        assert.strictEqual(a.status, 202, 'field palsu tidak berpengaruh; entitas tetap resolve normal dari penyimpanan');
+        await waitIdle();
+    });
+
+    await test('entitas lokal: PIC yang dipilih menentukan kredensial mana yang dipakai', async () => {
+        const withSecondPic = Object.assign({}, localSelEntity(), { pic_id: cv.pics[1].pic_id, pic_name: cv.pics[1].pic_name });
+        const a = await POST('/api/actions/login-entity', { entity: withSecondPic });
+        assert.strictEqual(a.status, 202);
+        await waitIdle();
+        const b = await POST('/api/actions/login-entity', { entity: Object.assign({}, localSelEntity(), { pic_id: 'lp_tidakada' }) });
+        assert.strictEqual(b.status, 404, 'PIC yang tidak ada di penyimpanan ditolak, bukan diteruskan begitu saja');
     });
 
     await test('Billing: validasi masa dan nominal', async () => {
-        const a = await POST('/api/actions/billing-pph25', { entity: badan, masaInput: '1326', nominal: '1000' });
+        const a = await POST('/api/actions/billing-pph25', { entity: localSelEntity(), masaInput: '1326', nominal: '1000' });
         assert.strictEqual(a.status, 400); assert.ok(/MMYY/.test(a.json.error));
-        const b = await POST('/api/actions/billing-pph25', { entity: badan, masaInput: '0726', nominal: '' });
+        const b = await POST('/api/actions/billing-pph25', { entity: localSelEntity(), masaInput: '0726', nominal: '' });
         assert.strictEqual(b.status, 400); assert.ok(/Nominal/.test(b.json.error));
         const c = await POST('/api/actions/billing-pph25', { masaInput: '0726', nominal: '1000' });
         assert.strictEqual(c.status, 400);
     });
 
-    await test('login otomatis untuk entitas manual ditolak dengan arahan yang jelas', async () => {
-        const a = await POST('/api/actions/login-entity', { entity: badan });
+    await test('login otomatis untuk sesi manual polos ditolak dengan arahan yang jelas (tombol khusus entitas otomatis)', async () => {
+        const a = await POST('/api/actions/login-entity', { entity: manualSelEntity });
         assert.strictEqual(a.status, 400); assert.ok(/login sendiri/.test(a.json.error));
     });
 
@@ -264,7 +298,7 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
     });
 
     // ---- Restricted Editor ----
-    await test('Restricted Editor: login manual dan entitas lokal diblokir, daftar Saya tanpa entitas lokal', async () => {
+    await test('Restricted Editor: entitas lokal dan login manual diblokir, daftar Saya tanpa entitas lokal', async () => {
         await POST('/api/disconnect', { project: 'taxio_hub' });
         S.role = 'restricted_editor';
         const c = await POST('/api/connect', { project: 'taxio_hub', email: 'baru@contoh.com', password: 'benar' });
@@ -272,9 +306,11 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         assert.strictEqual((await GET('/api/local-entities')).status, 403);
         assert.strictEqual((await POST('/api/local-entities/save', { name: 'X', type: 'op' })).status, 403);
         for (const [label, url, extra] of routes) {
-            const a = await POST(url, Object.assign({ entity: badan }, extra));
+            const a = await POST(url, Object.assign({ entity: localSelEntity() }, extra));
             assert.strictEqual(a.status, 403, label + ': ' + JSON.stringify(a.json));
             assert.ok(/Restricted Editor/.test(a.json.error), label);
+            const m = await POST(url, Object.assign({ entity: manualSelEntity }, extra));
+            assert.strictEqual(m.status, 403, 'manual · ' + label);
         }
         const personal = await GET('/api/entities?mode=personal');
         assert.ok(!personal.json.entities.some((e) => e.project === 'local'));

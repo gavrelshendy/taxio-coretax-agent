@@ -28,6 +28,7 @@ const { runBillingPph25 } = require('../automation/billing');
 const registration = require('../lib/registration');
 const connection = require('../lib/connection');
 const localEntities = require('../lib/local-entities');
+const localAuth = require('../lib/local-auth-client');
 const masaLib = require('../lib/masa');
 const deeplink = require('../lib/deeplink');
 const tray = require('../lib/tray');
@@ -301,48 +302,23 @@ async function handleEntities(req, res, mode) {
     // bisa menyembunyikannya dari daftar awal tapi tetap menampilkannya saat dicari.
     const grouped = entitiesLib.groupEntityRows(all);
     // Entitas yang ditambahkan sendiri hanya ada di "Saya", dan tidak untuk Restricted Editor
-    // karena mereka dilarang memakai login manual.
-    const locals = mode === 'personal' && !anyRestricted()
-        ? localEntities.listFor(currentUserId()).map(localEntities.toEntity) : [];
+    // karena mereka dilarang memakai login manual maupun entitas lokal.
+    const locals = mode === 'personal' && !anyRestricted() ? localEntities.listEntitiesFor(currentUserId()) : [];
     return sendJson(res, 200, { entities: grouped.concat(locals), errors });
 }
 
-// ---- Entitas lokal (tab "Saya") ----
+// ---- Entitas lokal (tab "Saya") - kredensial Coretax asli disimpan di komputer ini saja
+// (lib/local-entities.js), login OTOMATIS lewat jalur yang sama persis dengan PIC Taxio Hub
+// (lib/local-auth-client.js menyamar sebagai klien Supabase di depan lib/entities.js). ----
 function guardLocalEntities(res) {
     if (!state.connectedProjectIds().length) { sendJson(res, 401, { error: 'Belum terhubung ke akun manapun.' }); return false; }
-    if (anyRestricted()) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai entitas manual.' }); return false; }
+    if (anyRestricted()) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai entitas lokal.' }); return false; }
     return true;
-}
-
-/** Entitas Orang Pribadi dari Taxio Hub yang boleh dipilih sebagai PIC entitas Badan lokal.
- *  `ok` false = tidak ada satu pun daftar yang berhasil dimuat (mis. offline). */
-async function hubPersonEntities() {
-    const out = new Map();
-    let ok = false;
-    for (const projectId of state.connectedProjectIds()) {
-        const s = state.get(projectId);
-        for (const mode of ['group', 'personal']) {
-            try {
-                const rows = await entitiesLib.listAutomatableEntities(s.client, s.orgId, s.user.id, !!PROJECTS_WITH_OWNER_COLUMN[projectId], mode);
-                ok = true;
-                for (const g of entitiesLib.groupEntityRows(rows)) {
-                    if (g.individual && !out.has(g.entity_id)) out.set(g.entity_id, { entity_id: g.entity_id, entity_name: g.entity_name, npwp: g.npwp || '' });
-                }
-            } catch (e) { /* offline atau tidak berwenang: daftar ini dilewati */ }
-        }
-    }
-    return { list: Array.from(out.values()), ok };
 }
 
 async function handleLocalEntities(req, res) {
     if (!guardLocalEntities(res)) return;
-    return sendJson(res, 200, { entities: localEntities.listFor(currentUserId()).map(localEntities.toEntity) });
-}
-
-async function handleLocalEntityPicCandidates(req, res, url) {
-    if (!guardLocalEntities(res)) return;
-    const { list } = await hubPersonEntities();
-    return sendJson(res, 200, { candidates: localEntities.picCandidates(currentUserId(), list, url.searchParams.get('exclude') || null) });
+    return sendJson(res, 200, { entities: localEntities.listEntitiesFor(currentUserId()) });
 }
 
 async function handleLocalEntitySave(req, res) {
@@ -350,16 +326,9 @@ async function handleLocalEntitySave(req, res) {
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     const uid = currentUserId();
-    const { list, ok } = await hubPersonEntities();
-    const ctx = ok ? { hubPicIds: new Set(list.map((h) => h.entity_id)) } : null;
-    // Nama PIC dari Taxio Hub diambil dari daftar Hub, bukan dari isi permintaan.
-    const hubName = new Map(list.map((h) => [h.entity_id, h.entity_name]));
-    const input = Object.assign({}, body, {
-        pics: ((body && body.pics) || []).map((p) => (p && p.source === 'hub' && hubName.has(String(p.id)) ? Object.assign({}, p, { name: hubName.get(String(p.id)) }) : p))
-    });
     try {
-        const rec = body && body.id ? localEntities.update(uid, body.id, input, ctx) : localEntities.create(uid, input, ctx);
-        log((body && body.id ? 'Entitas manual diperbarui: ' : 'Entitas manual ditambahkan: ') + rec.name);
+        const rec = body && body.id ? localEntities.update(uid, body.id, body) : localEntities.create(uid, body);
+        log((body && body.id ? 'Entitas lokal diperbarui: ' : 'Entitas lokal ditambahkan: ') + rec.name);
         return sendJson(res, 200, { entity: localEntities.toEntity(rec) });
     } catch (e) {
         return sendJson(res, 400, { error: e.message });
@@ -379,8 +348,9 @@ async function handleLocalEntityDelete(req, res) {
 }
 
 /** Kode Billing PPh 25 dari dashboard. Sebelumnya hanya bisa dipicu lewat deep link dari Taxio
- *  Hub; sekarang juga langsung dari aplikasi, dengan login otomatis (PIC tertaut) atau sesi
- *  manual. Pemeriksaan "sudah dibayar" dan "kode aktif ganda" ada di runBillingPph25. */
+ *  Hub; sekarang juga langsung dari aplikasi, dengan login otomatis (PIC tertaut, atau entitas
+ *  lokal berkredensial) maupun sesi manual polos. Pemeriksaan "sudah dibayar" dan "kode aktif
+ *  ganda" ada di runBillingPph25. */
 async function handleBillingPph25(req, res) {
     if (rejectIfOutdated(res)) return;
     let body;
@@ -392,28 +362,14 @@ async function handleBillingPph25(req, res) {
     const amount = Number(String(nominal || '').replace(/[^\d]/g, ''));
     if (!amount || amount <= 0) return sendJson(res, 400, { error: 'Nominal PPh 25 wajib diisi.' });
 
-    let runOpts;
-    if (isManualLike(entity)) {
-        const m = prepareManual(res, entity);
-        if (!m) return;
-        runOpts = { manualPage: m.manualPage, entity: m.runEntity, masaInput: mmYY, nominal: amount, saveRoot };
-    } else {
-        if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
-        const s = state.get(entity.project);
-        if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
-        await sessionStore.refreshIfNeeded(s.client);
-        const restricted = isProjectRestricted(entity.project);
-        if (isIndividualEntityBlocked(restricted, entity)) return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
-        const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
-        const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
-        runOpts = {
-            client: s.client, orgId: s.orgId,
-            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, masaInput: mmYY, nominal: amount, saveRoot, restricted, allowedEbupotSections, passphrase
-        };
-    }
+    const src = await resolveEntitySource(res, entity);
+    if (!src) return;
+    const runOpts = src.kind === 'manual'
+        ? { manualPage: src.manualPage, entity: src.runEntity, masaInput: mmYY, nominal: amount, saveRoot }
+        : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, masaInput: mmYY, nominal: amount, saveRoot,
+            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
 
-    try { runcontrol.start('Kode Billing PPh 25 · ' + mmYY + ' · ' + runLabel(entity)); }
+    try { runcontrol.start('Kode Billing PPh 25 · ' + mmYY + ' · ' + src.label); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true });
     try {
@@ -433,64 +389,61 @@ async function handleManualStatus(req, res) {
 
 function sanitizeFolder(s) { return String(s || '').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 60) || 'Manual'; }
 
-// ---- Jalur login manual ----
-// 'manual' = sesi Coretax yang dibuka pengguna (nama diambil dari yang terdeteksi di jendela);
-// 'local'  = entitas yang ditambahkan sendiri di tab "Saya" (lib/local-entities.js). Keduanya
-// dijalankan di halaman Coretax yang sama, yang login-nya dilakukan pengguna sendiri.
-function isManualLike(entity) { return !!entity && (entity.project === 'manual' || entity.project === 'local'); }
 function anyRestricted() { return state.connectedProjectIds().some(isProjectRestricted); }
 function currentUserId() {
     const id = state.connectedProjectIds()[0];
     return id ? state.get(id).user.id : null;
 }
-/** Nama yang tampil di judul proses: sesi manual polos tidak punya nama entitas. */
-function runLabel(entity) { return entity.project === 'manual' ? 'Sesi Manual' : entity.entity_name; }
 
-/** Menyiapkan proses di halaman Coretax manual. Mengembalikan { manualPage, runEntity }, atau
- *  null setelah membalas galat. Untuk entitas lokal, datanya dibaca ulang dari penyimpanan
- *  (bukan dari isi permintaan) supaya jenis Badan/OP dan NPWP tidak bisa dipalsukan klien;
- *  jenis itu menentukan kode pajak Billing dan aturan Bukti Potong Saya. */
-function prepareManual(res, entity) {
+/** Menyiapkan proses di sesi Coretax manual POLOS - pengguna membuka Chrome sendiri lewat
+ *  "Buka Coretax" dan login dengan tangannya sendiri, tanpa kredensial tersimpan apa pun. Ini
+ *  jalur yang sudah ada sejak awal aplikasi; TETAP ADA berdampingan dengan entitas lokal
+ *  berkredensial (yang sekarang login otomatis, lihat resolveEntitySource). Mengembalikan
+ *  { manualPage, runEntity }, atau null setelah membalas galat. */
+function prepareManual(res) {
     if (anyRestricted()) {
         sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai login manual.' });
         return null;
-    }
-    let base = entity;
-    if (entity.project === 'local') {
-        const uid = currentUserId();
-        base = uid && entity.local_id ? localEntities.getEntity(uid, entity.local_id) : null;
-        if (!base) {
-            sendJson(res, 404, { error: 'Entitas manual tidak ditemukan. Muat ulang daftar entitas.' });
-            return null;
-        }
     }
     const manualPage = chrome.getManualPage();
     if (!manualPage) {
         sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Buka Coretax", login dulu, lalu coba lagi.' });
         return null;
     }
-    const folder = sanitizeFolder(base.entity_name || 'Manual');
-    const local = entity.project === 'local';
-    return {
-        manualPage,
-        runEntity: { entity_id: folder, entity_name: base.entity_name || 'Sesi Manual', npwp: local ? (base.npwp || '') : '', individual: local ? !!base.individual : false }
-    };
+    return { manualPage, runEntity: { entity_id: 'Manual', entity_name: 'Sesi Manual', npwp: '', individual: false } };
 }
 
-/** Untuk fitur yang bekerja pada satu `page` (Pajak Masukan): cara membuka halaman Coretax untuk
- *  entitas ini, baik lewat PIC tertaut (login otomatis) maupun sesi manual. Mengembalikan
- *  { label, folder, open() }, atau null setelah membalas galat. `open()` dipanggil SETELAH
- *  proses terdaftar di runcontrol, karena login otomatis bisa berlangsung lama. */
-async function prepareEntityPage(res, entity) {
-    if (isManualLike(entity)) {
-        const m = prepareManual(res, entity);
+/** SATU tempat yang menentukan bagaimana sebuah entitas terpilih dijalankan, dipakai semua
+ *  handler unduhan/impor di bawah - menghindari cabang manual/otomatis diduplikasi empat kali.
+ *  Tiga sumber:
+ *   - 'manual' (project==='manual'): sesi Coretax polos, pengguna login sendiri di jendela yang
+ *     dibuka lewat "Buka Coretax". TIDAK mengenal PIC atau kredensial.
+ *   - 'local' (project==='local'): entitas dari tab Saya, kredensial Coretax asli tersimpan di
+ *     komputer ini (lib/local-entities.js) - login OTOMATIS lewat lib/local-auth-client.js, yang
+ *     membuatnya terlihat identik dengan Taxio Hub bagi lib/entities.js dan seluruh automation/*.
+ *   - lainnya (project===id Taxio Hub): PIC tertaut, login otomatis seperti sebelumnya.
+ *  Mengembalikan null setelah membalas galat; kalau tidak, salah satu dari:
+ *   { kind:'manual', manualPage, runEntity, label }
+ *   { kind:'auto', client, orgId, picId, entity, restricted, allowedEbupotSections, passphrase,
+ *     fallbackPicIds, label } */
+async function resolveEntitySource(res, entity) {
+    if (entity.project === 'manual') {
+        const m = prepareManual(res);
         if (!m) return null;
+        return { kind: 'manual', manualPage: m.manualPage, runEntity: m.runEntity, label: 'Sesi Manual' };
+    }
+    if (entity.project === 'local') {
+        if (anyRestricted()) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai entitas lokal.' }); return null; }
+        const uid = currentUserId();
+        if (!entity.local_id || !entity.pic_id) { sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' }); return null; }
+        const resolved = uid ? localEntities.resolveLogin(uid, entity.local_id, entity.pic_id) : null;
+        if (!resolved) { sendJson(res, 404, { error: 'Entitas lokal tidak ditemukan atau kredensialnya belum lengkap. Buka lagi dialog entitas ini di tab Saya.' }); return null; }
+        const picId = localAuth.buildPicId(entity.local_id, entity.pic_id);
+        const fallbackPicIds = resolved.entity.individual ? [] : localEntities.otherPicRefs(uid, entity.local_id, entity.pic_id).map((r) => localAuth.buildPicId(entity.local_id, r));
         return {
-            label: runLabel(entity), folder: m.runEntity.entity_id,
-            open: async () => {
-                if (chrome.isLoggedOut(m.manualPage)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
-                return m.manualPage;
-            }
+            kind: 'auto', client: localAuth.client(uid), orgId: localAuth.ORG_ID, picId,
+            entity: resolved.entity, restricted: false, allowedEbupotSections: null,
+            passphrase: resolved.passphrase, fallbackPicIds, label: resolved.entity.entity_name
         };
     }
     if (!entity.entity_id || !entity.pic_id) { sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' }); return null; }
@@ -501,12 +454,35 @@ async function prepareEntityPage(res, entity) {
     if (isIndividualEntityBlocked(restricted, entity)) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' }); return null; }
     const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
     const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
+    const fallbackPicIds = await entitiesLib.getOtherLinkedPicIds(s.client, s.orgId, entity.entity_id, entity.pic_id).catch(() => []);
     return {
-        label: entity.entity_name, folder: entity.entity_id,
+        kind: 'auto', client: s.client, orgId: s.orgId, picId: entity.pic_id,
+        entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
+        restricted, allowedEbupotSections, passphrase, fallbackPicIds, label: entity.entity_name
+    };
+}
+
+/** Untuk fitur yang bekerja pada satu `page` (Pajak Masukan): membuka halaman Coretax untuk
+ *  entitas ini lewat resolveEntitySource, lalu login otomatis (jika bukan sesi manual).
+ *  Mengembalikan { label, folder, open() }, atau null setelah membalas galat. `open()` dipanggil
+ *  SETELAH proses terdaftar di runcontrol, karena login otomatis bisa berlangsung lama. */
+async function prepareEntityPage(res, entity) {
+    const src = await resolveEntitySource(res, entity);
+    if (!src) return null;
+    if (src.kind === 'manual') {
+        return {
+            label: src.label, folder: src.runEntity.entity_id,
+            open: async () => {
+                if (chrome.isLoggedOut(src.manualPage)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
+                return src.manualPage;
+            }
+        };
+    }
+    return {
+        label: src.label, folder: src.entity.entity_id,
         open: () => runLoginOnly({
-            client: s.client, orgId: s.orgId,
-            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, restricted, passphrase, allowedEbupotSections
+            client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
+            restricted: src.restricted, passphrase: src.passphrase, allowedEbupotSections: src.allowedEbupotSections
         })
     };
 }
@@ -521,37 +497,19 @@ async function handleDownloadEbupot(req, res) {
     if (!bupotType || !masaInput) return sendJson(res, 400, { error: 'Jenis bupot & masa wajib diisi.' });
     if (!['issued', 'not_issued'].includes(documentStatus)) return sendJson(res, 400, { error: 'Status dokumen e-Bupot tidak valid.' });
 
-    const isManual = isManualLike(entity);
-    let runOpts;
-    if (isManual) {
-        const m = prepareManual(res, entity);
-        if (!m) return;
-        runOpts = { manualPage: m.manualPage, entity: m.runEntity, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode };
-    } else {
-        if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
-        const s = state.get(entity.project);
-        if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
-        await sessionStore.refreshIfNeeded(s.client);
-        const restricted = isProjectRestricted(entity.project);
-        if (isIndividualEntityBlocked(restricted, entity)) {
-            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
-        }
-        const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
-        if (restricted && !isEbupotTypeAllowed(allowedEbupotSections, bupotType)) {
-            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis e-Bupot ini.' });
-        }
-        const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
-        runOpts = {
-            client: s.client, orgId: s.orgId, currentUserId: s.user.id,
-            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode,
-            restricted, allowedEbupotSections, passphrase
-        };
+    const src = await resolveEntitySource(res, entity);
+    if (!src) return;
+    if (src.kind === 'auto' && src.restricted && !isEbupotTypeAllowed(src.allowedEbupotSections, bupotType)) {
+        return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis e-Bupot ini.' });
     }
+    const runOpts = src.kind === 'manual'
+        ? { manualPage: src.manualPage, entity: src.runEntity, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode }
+        : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode,
+            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
 
     // Only one automation run at a time - the run-control (pause/skip/stop) model is built
     // around a single active run, and two runs would fight over the same Chrome window anyway.
-    try { runcontrol.start('e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + runLabel(entity)); }
+    try { runcontrol.start('e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + src.label); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     // Fire-and-forget: the run streams its own progress over /events. Respond immediately so
     // the GUI isn't blocked on a request that can legitimately take many minutes.
@@ -575,23 +533,10 @@ async function handleDownloadMyBupot(req, res) {
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!Array.isArray(buktiTypeKeys) || !buktiTypeKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis bukti potong & masa wajib diisi.' });
 
-    const isManual = isManualLike(entity);
-    let runOpts;
-    if (isManual) {
-        const m = prepareManual(res, entity);
-        if (!m) return;
-        runOpts = { manualPage: m.manualPage, entity: m.runEntity, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode };
-    } else {
-        if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
-        const s = state.get(entity.project);
-        if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
-        await sessionStore.refreshIfNeeded(s.client);
-        const restricted = isProjectRestricted(entity.project);
-        if (isIndividualEntityBlocked(restricted, entity)) {
-            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
-        }
-        const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
-        if (restricted && !isMyBupotAllowed(allowedEbupotSections)) {
+    const src = await resolveEntitySource(res, entity);
+    if (!src) return;
+    if (src.kind === 'auto' && src.restricted) {
+        if (!isMyBupotAllowed(src.allowedEbupotSections)) {
             return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses Bukti Potong Saya.' });
         }
         // Filters the blocked types OUT and proceeds with whatever's left, rather than
@@ -599,26 +544,21 @@ async function handleDownloadMyBupot(req, res) {
         // editor selecting BP21 together with BPMP/BPA1 in one batch had the entire request
         // (including the legitimately-allowed BP21) rejected outright, since the original
         // all-or-nothing check only asked "does this selection contain a blocked type at all".
-        if (restricted) {
-            const filtered = buktiTypeKeys.filter((k) => !ABSOLUTELY_BLOCKED_MYBUPOT_TYPES.includes(k));
-            if (filtered.length !== buktiTypeKeys.length) {
-                log('Restricted Editor: BPMP/BPA1 di Bukti Potong Saya dilewati (tidak diizinkan).');
-            }
-            buktiTypeKeys = filtered;
-            if (!buktiTypeKeys.length) {
-                return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis Bukti Potong Saya yang dipilih.' });
-            }
+        const filtered = buktiTypeKeys.filter((k) => !ABSOLUTELY_BLOCKED_MYBUPOT_TYPES.includes(k));
+        if (filtered.length !== buktiTypeKeys.length) {
+            log('Restricted Editor: BPMP/BPA1 di Bukti Potong Saya dilewati (tidak diizinkan).');
         }
-        const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
-        runOpts = {
-            client: s.client, orgId: s.orgId, currentUserId: s.user.id,
-            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode,
-            restricted, allowedEbupotSections, passphrase
-        };
+        buktiTypeKeys = filtered;
+        if (!buktiTypeKeys.length) {
+            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis Bukti Potong Saya yang dipilih.' });
+        }
     }
+    const runOpts = src.kind === 'manual'
+        ? { manualPage: src.manualPage, entity: src.runEntity, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode }
+        : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode,
+            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
 
-    try { runcontrol.start('Bukti Potong Saya · ' + runLabel(entity)); }
+    try { runcontrol.start('Bukti Potong Saya · ' + src.label); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true });
     try {
@@ -648,42 +588,22 @@ async function handleDownloadSpt(req, res) {
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!Array.isArray(jenisPajakKeys) || !jenisPajakKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis pajak & masa wajib diisi.' });
 
-    const isManual = isManualLike(entity);
-    let runOpts;
-    if (isManual) {
-        const m = prepareManual(res, entity);
-        if (!m) return;
-        runOpts = { manualPage: m.manualPage, entity: m.runEntity, jenisPajakKeys, masaInput, saveRoot, checkPph25,
+    const src = await resolveEntitySource(res, entity);
+    if (!src) return;
+    // Entitas dengan >1 PIC (Taxio Hub tertaut, atau Badan lokal dengan beberapa PIC): SPT cuma
+    // bisa digenerate sesuai penandatangan aslinya, jadi runSptDownload dikasih tahu PIC lain
+    // yang bisa dicoba otomatis bila baris di bawah PIC terpilih gagal.
+    const runOpts = src.kind === 'manual'
+        ? { manualPage: src.manualPage, entity: src.runEntity, jenisPajakKeys, masaInput, saveRoot, checkPph25,
             includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle,
+            onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) }
+        : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, jenisPajakKeys, masaInput, saveRoot, checkPph25,
+            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle,
+            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase, fallbackPicIds: src.fallbackPicIds,
             onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
-    } else {
-        if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
-        const s = state.get(entity.project);
-        if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
-        await sessionStore.refreshIfNeeded(s.client);
-        const restricted = isProjectRestricted(entity.project);
-        if (isIndividualEntityBlocked(restricted, entity)) {
-            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' });
-        }
-        const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
-        const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
-        // Entitas dengan >1 PIC tertaut (mis. Dion Farma Abadi - Fredi Setyawan & Ronald Tony):
-        // SPT cuma bisa digenerate sesuai penandatangan aslinya, jadi kasih tau runSptDownload
-        // PIC lain yang tertaut ke entitas ini supaya baris yang gagal di PIC terpilih otomatis
-        // dicoba ulang di bawah PIC lain itu sebelum benar-benar menyerah.
-        const fallbackPicIds = await entitiesLib.getOtherLinkedPicIds(s.client, s.orgId, entity.entity_id, entity.pic_id);
-        runOpts = {
-            client: s.client, orgId: s.orgId,
-            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, jenisPajakKeys, masaInput, saveRoot, checkPph25,
-            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle,
-            restricted, allowedEbupotSections, passphrase, fallbackPicIds,
-            onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok)
-        };
-    }
 
     runOpts.a1Year=body.a1Year;
-    try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + runLabel(entity)); }
+    try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     runcontrol.setJenisRequested(jenisPajakKeys);
     sendJson(res, 202, { started: true });
@@ -842,26 +762,17 @@ async function handleLoginEntity(req, res) {
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     const { entity } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
-    if (isManualLike(entity)) return sendJson(res, 400, { error: 'Entitas manual tidak memakai login otomatis - buka Coretax dan login sendiri.' });
-    if (!entity.entity_id || !entity.pic_id) return sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' });
-    const s = state.get(entity.project);
-    if (!s || !state.isConnected(entity.project)) return sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' });
-    await sessionStore.refreshIfNeeded(s.client);
-    const restricted = isProjectRestricted(entity.project);
-    if (isIndividualEntityBlocked(restricted, entity)) {
-        return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan login ke akun Individual.' });
-    }
-    const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
-    const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
+    if (entity.project === 'manual') return sendJson(res, 400, { error: 'Sesi manual sudah login sendiri - tombol ini khusus entitas dengan login otomatis.' });
+    const src = await resolveEntitySource(res, entity);
+    if (!src) return;
 
-    try { runcontrol.start('Login Coretax · ' + entity.entity_name); }
+    try { runcontrol.start('Login Coretax · ' + src.label); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true });
     try {
         await runLoginOnly({
-            client: s.client, orgId: s.orgId,
-            entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
-            picId: entity.pic_id, restricted, allowedEbupotSections, passphrase
+            client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
+            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase
         });
     } catch (e) {
         if (e && e.isStop) log('Login dibatalkan oleh pengguna.');
@@ -1052,7 +963,6 @@ function createGuiServer(port) {
             if (pathname === '/api/registration/check' && req.method === 'POST') return handleRegistrationCheck(req, res);
             if (pathname === '/api/registration/initial' && req.method === 'POST') return handleRegistrationInitial(req, res);
             if (pathname === '/api/local-entities' && req.method === 'GET') return handleLocalEntities(req, res);
-            if (pathname === '/api/local-entities/pic-candidates' && req.method === 'GET') return handleLocalEntityPicCandidates(req, res, url);
             if (pathname === '/api/local-entities/save' && req.method === 'POST') return handleLocalEntitySave(req, res);
             if (pathname === '/api/local-entities/delete' && req.method === 'POST') return handleLocalEntityDelete(req, res);
             if (pathname === '/api/actions/billing-pph25' && req.method === 'POST') return handleBillingPph25(req, res);

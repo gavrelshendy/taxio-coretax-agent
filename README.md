@@ -18,15 +18,23 @@ akun ke grup. Selama menunggu, sesi tetap tersimpan tapi akun belum dianggap ter
 
 ## Entitas dan login
 
-- **Otomatis**: entitas dari Taxio Hub. Entitas dengan 2 PIC tampil satu baris dan PIC dipilih di dalam
-  baris; entitas tanpa PIC tertaut tidak masuk daftar awal, tapi muncul saat dicari dengan keterangan.
-- **Manual**: semua fitur (SPT, e-Bupot, Bukti Potong Saya, Faktur Masukan, Dividen, Kreditkan Faktur
-  Masukan, Kode Billing PPh 25) juga bisa dijalankan di sesi Coretax yang di-login pengguna sendiri.
-  Restricted Editor tidak boleh memakai login manual.
-- **Entitas tambahan (tab Saya)**: klien yang belum ada di Taxio Hub bisa ditambahkan di komputer ini
-  (lib/local-entities.js, `~/.coretax-agent/local-entities.json`). Tidak menyimpan kredensial Coretax dan
-  tidak menulis apa pun ke Taxio Hub. Entitas Badan wajib menautkan >= 1 PIC (akun Orang Pribadi), karena
-  Coretax membuka akun badan lewat akun PIC-nya (impersonate).
+- **Otomatis (Taxio Hub)**: entitas dari Taxio Hub. Entitas dengan 2 PIC tampil satu baris dan PIC
+  dipilih di dalam baris; entitas tanpa PIC tertaut tidak masuk daftar awal, tapi muncul saat dicari
+  dengan keterangan.
+- **Otomatis (lokal, tab Saya)**: klien yang belum ada di Taxio Hub bisa ditambahkan sendiri di komputer
+  ini, dengan kredensial Coretax ASLI tersimpan lokal (lib/local-entities.js,
+  `~/.coretax-agent/local-entities.json` - plaintext dengan izin berkas 0600, sama seperti token sesi
+  session-store.js). Orang Pribadi login dengan NPWP+kata sandi miliknya sendiri; Badan wajib menautkan
+  >= 1 PIC (masing-masing dengan kredensial sendiri), karena Coretax membuka akun badan lewat akun
+  PIC-nya (impersonate) - boleh lebih dari satu PIC. Login berjalan OTOMATIS lewat jalur yang identik
+  dengan PIC Taxio Hub (lib/local-auth-client.js menyamar sebagai klien Supabase di depan
+  lib/entities.js), jadi semua fitur (termasuk Dividen dan Kreditkan Faktur Masukan) berjalan tanpa
+  campur tangan manual. Tidak menulis apa pun ke Taxio Hub. Restricted Editor tidak boleh memakainya.
+- **Manual (sesi Coretax polos)**: tombol "Buka Coretax" tetap ada terpisah dari entitas lokal di atas -
+  jendela Chrome dibuka dan pengguna login sendiri tanpa kredensial tersimpan apa pun. Semua fitur bisa
+  dijalankan di sesi ini juga. Restricted Editor tidak boleh memakainya.
+- **Pintasan**: Ctrl+K atau Alt+K membuka pencarian entitas dari mana saja; memilih entitas (dan PIC-nya
+  bila lebih dari satu) langsung memicu login otomatis, tanpa langkah tambahan klik "Masuk Coretax".
 
 ## Run in development
 
@@ -79,9 +87,10 @@ Semua tes berjalan tanpa jaringan dan tanpa akun asli (Supabase dan Chrome-Coret
 data lokal ke folder sementara):
 
 ```
-node scripts/test-registration.js     # alur pendaftaran
-node scripts/test-local-entities.js   # entitas lokal dan aturan PIC
-node scripts/test-entity-grouping.js  # satu baris per entitas
+node scripts/test-registration.js       # alur pendaftaran
+node scripts/test-local-entities.js     # entitas lokal, kredensial, dan aturan PIC
+node scripts/test-local-auth-client.js  # entitas lokal login OTOMATIS lewat jalur yang sama dengan Taxio Hub
+node scripts/test-entity-grouping.js    # satu baris per entitas
 node scripts/test-gui-logic.js        # parser masa, aturan daftar, status login
 node scripts/test-gui-api.js          # API dashboard, jalur login manual, Restricted
 node scripts/test-gui-ui.js           # UI di Chrome headless (Playwright); PILOT_SHOTS=<folder> untuk tangkapan layar
