@@ -85,8 +85,7 @@
         } else if (!P.isRestricted()) {
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button>';
         }
-        const clearBtn = ent ? '<button type="button" class="icon-btn" id="btn-clear-entity" title="Lepas pilihan entitas" aria-label="Lepas pilihan entitas"' + (busy ? ' disabled' : '') + '>' + P.icon('x', 16) + '</button>' : '';
-        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + clearBtn + buttons + '</header>';
+        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + buttons + '</header>';
     }
     function appHtml() {
         return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Periksa Pembaruan</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
@@ -177,7 +176,6 @@
         app.addEventListener('click', (e) => {
             const nav = e.target.closest('[data-nav]'); if (nav) return S.go(nav.dataset.nav);
             if (e.target.closest('#entity-chip')) return E.openPalette();
-            if (e.target.closest('#btn-clear-entity')) return E.clear();
             if (e.target.closest('#open-settings')) return openSettings();
             if (e.target.closest('#btn-open-coretax')) return P.manual.open();
             if (e.target.closest('#btn-check-session')) return P.manual.check(true);
