@@ -18,7 +18,8 @@ function install() {
         role: 'editor',
         manual: { open: false, loggedIn: false, identity: '' },
         run: null,          // bila diisi, /api/run/status mengembalikan ini
-        runCalls: []
+        runCalls: [],
+        sessions: []        // isi tes untuk mengetes bagian "Sesi Aktif" di palet entitas
     };
     const ok = (data) => Promise.resolve({ data, error: null });
     const fake = {
@@ -55,6 +56,9 @@ function install() {
 
     chrome.getManualPage = () => null;
     chrome.getManualStatus = async () => Object.assign({}, ctl.manual);
+    chrome.listLiveSessions = async () => ctl.sessions.map((s) => Object.assign({}, s));
+    chrome.bringSessionToFront = async () => true;
+    chrome.closeLiveSession = async (picId) => { ctl.sessions = ctl.sessions.filter((s) => s.picId !== picId); return true; };
     chrome.openCoretaxManual = async () => { ctl.manual.open = true; return true; };
     // Entitas lokal (tab Saya) sekarang benar-benar mencoba login OTOMATIS lewat jalur yang sama
     // dengan Taxio Hub (lib/local-auth-client.js) - tanpa penyamar ini, memilihnya di UI akan
