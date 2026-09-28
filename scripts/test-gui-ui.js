@@ -211,7 +211,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         // diam-diam ditangkap dan diarahkan ke logika kotak cari.
         await page.click('#entity-chip');
         await page.locator('#pal-q').focus();
-        await page.keyboard.press('Tab'); // -> baris entitas pertama (Budi Contoh Santoso), tanpa mengetik apa pun
+        await page.keyboard.press('Tab'); // -> "Tambah entitas baru" (aksi global, selalu di atas)
+        await page.keyboard.press('Tab'); // -> baris entitas pertama (Budi Contoh Santoso)
         await page.keyboard.press('Enter'); // harus memicu klik native baris yang fokus ini
         assert.ok((await text('#entity-chip')).includes('Budi Contoh Santoso'), 'Enter pada baris hasil Tab harus memicu baris itu sendiri, bukan diabaikan/diarahkan ke jalan pintas kotak cari');
         await page.click('#entity-chip'); // buka lagi untuk test berikutnya
