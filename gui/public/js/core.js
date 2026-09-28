@@ -39,7 +39,8 @@
         manual: { open: false, loggedIn: false, identity: '' },
         run: { active: false },
         lastLogin: null,
-        page: 'spt'
+        page: 'spt',
+        sessions: []
     };
     P.hub = () => P.state.session.taxio_hub || {};
     P.isConnected = () => !!P.hub().connected;
