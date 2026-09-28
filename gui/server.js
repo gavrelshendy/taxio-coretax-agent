@@ -387,6 +387,17 @@ async function handleManualStatus(req, res) {
     catch (e) { return sendJson(res, 200, { open: false, loggedIn: false, identity: '' }); }
 }
 
+/** Tombol "segarkan status" di topbar - baca ulang langsung dari jendela Chrome yang sedang
+ *  terbuka untuk PIC ini (kalau ada), bukan menebak dari histori login-status.js yang bisa basi
+ *  begitu pengguna berpindah entitas. Tidak membuka jendela apa pun sendiri. */
+async function handleSessionStatus(req, res) {
+    let body; try { body = await readJsonBody(req); } catch (e) { body = {}; }
+    const picId = body && body.picId;
+    if (!picId || picId === 'unlinked') return sendJson(res, 200, { open: false, loggedIn: false, identity: '' });
+    try { return sendJson(res, 200, await chrome.getEntityStatus(picId)); }
+    catch (e) { return sendJson(res, 200, { open: false, loggedIn: false, identity: '' }); }
+}
+
 function sanitizeFolder(s) { return String(s || '').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 60) || 'Manual'; }
 
 function anyRestricted() { return state.connectedProjectIds().some(isProjectRestricted); }
@@ -981,6 +992,7 @@ function createGuiServer(port) {
             if (pathname === '/api/actions/open-coretax' && req.method === 'POST') return handleOpenCoretaxManual(req, res);
             if (pathname === '/api/deeplink' && req.method === 'POST') return handleDeepLink(req, res);
             if (pathname === '/api/manual/status' && req.method === 'GET') return handleManualStatus(req, res);
+            if (pathname === '/api/session/status' && req.method === 'POST') return handleSessionStatus(req, res);
             if (pathname === '/api/run/status' && req.method === 'GET') return sendJson(res, 200, runcontrol.status());
             if (pathname === '/api/run/pause' && req.method === 'POST') { runcontrol.pause(); return sendJson(res, 200, runcontrol.status()); }
             if (pathname === '/api/run/resume' && req.method === 'POST') { runcontrol.resume(); return sendJson(res, 200, runcontrol.status()); }

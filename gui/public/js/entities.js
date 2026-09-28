@@ -113,7 +113,9 @@
     };
 
     // ---------- Palet ----------
-    const pal = { open: false, tab: 'group', q: '', hover: 0, expanded: null };
+    // picCursor: PIC yang sedang di-highlight (bukan berarti sudah dipilih/login) saat pic-panel
+    // suatu entitas sedang terbuka - digerakkan panah/Enter tanpa menyentuh mouse sama sekali.
+    const pal = { open: false, tab: 'group', q: '', hover: 0, expanded: null, picCursor: null };
     let palKey = null;
     let dlgKey = null;
     let palNav = []; // urutan baris yang bisa dipilih (untuk keyboard)
@@ -157,9 +159,14 @@
             + '<span class="ent-av">' + P.esc(av) + '</span><span class="ent-tx"><b>' + P.esc(isManualRow ? (P.state.manual.identity || 'Sesi manual') : e.entity_name) + '</b><span>' + metaFor(e) + '</span></span>' + right
             + (cur ? P.icon('check', 18, '', 2.6).replace('<svg ', '<svg style="color:var(--accent)" ') : '') + '</button>';
         if (open) {
+            // Baris yang di-highlight: picCursor (digerakkan panah ↑↓, dikonfirmasi Enter) kalau
+            // ada, kalau tidak jatuh ke PIC yang sudah pernah dipilih/utama - SAMA sekali tidak
+            // menyentuh mouse, supaya Enter dua kali (pilih entitas, lalu pilih PIC) benar-benar
+            // bisa dipakai dari keyboard, bukan cuma klik.
+            const cursorId = pal.picCursor || (chosen && chosen.pic_id);
             html += '<div class="pic-panel"><div class="cap">Login memakai PIC</div>' + e.pics.map((p) =>
-                '<button type="button" class="radio-row" role="radio" aria-checked="' + (chosen && chosen.pic_id === p.pic_id) + '" data-act="pic" data-key="' + P.esc(key) + '" data-pic="' + P.esc(p.pic_id) + '"><span class="rd"></span><span class="grow">' + P.esc(p.pic_name) + '</span>' + (p.is_primary ? '<span class="tag auto" style="margin-left:0">UTAMA</span>' : '') + '</button>').join('')
-                + '<div class="hint" style="padding:4px 2px 0">Jika SPT ditandatangani PIC lain, unduhan SPT otomatis dicoba dengan PIC tersebut.</div></div>';
+                '<button type="button" class="radio-row" role="radio" aria-checked="' + (cursorId === p.pic_id) + '" data-act="pic" data-key="' + P.esc(key) + '" data-pic="' + P.esc(p.pic_id) + '"><span class="rd"></span><span class="grow">' + P.esc(p.pic_name) + '</span>' + (p.is_primary ? '<span class="tag auto" style="margin-left:0">UTAMA</span>' : '') + '</button>').join('')
+                + '<div class="hint" style="padding:4px 2px 0">↑↓ pilih PIC, Enter konfirmasi &amp; login. Jika SPT ditandatangani PIC lain, unduhan SPT otomatis dicoba dengan PIC tersebut.</div></div>';
         }
         if (unlinked) {
             html += '<div class="unlinked-note">Belum ada PIC tertaut. Tautkan lewat <b style="color:var(--text)">Manage Coretax PIC</b> di Taxio Hub agar bisa dipakai otomatis.'
@@ -206,7 +213,7 @@
 
     E.openPalette = function (tab) {
         if (pal.open) return;
-        pal.open = true; pal.q = ''; pal.hover = 0; pal.expanded = null;
+        pal.open = true; pal.q = ''; pal.hover = 0; pal.expanded = null; pal.picCursor = null;
         pal.tab = tab || (E.selected && E.selected.entity.project !== 'taxio_hub' ? 'personal' : (E.selected && E.selected.entity.individual && E.personal.some((e) => L.entityKey(e) === L.entityKey(E.selected.entity)) ? 'personal' : 'group'));
         const scrim = document.createElement('div');
         scrim.className = 'scrim'; scrim.id = 'palette';
@@ -218,17 +225,17 @@
         const input = P.$('pal-q');
         const setHint = () => { const h = P.$('pal-hint'); if (h) h.textContent = pal.tab === 'group' ? 'Satu baris per entitas' : 'Entitas pribadi dan yang Anda tambah sendiri'; };
         paintPalette(); setHint(); input.focus();
-        input.addEventListener('input', () => { pal.q = input.value; pal.hover = 0; pal.expanded = null; paintPalette(); });
+        input.addEventListener('input', () => { pal.q = input.value; pal.hover = 0; pal.expanded = null; pal.picCursor = null; paintPalette(); });
         scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) E.closePalette(); });
         scrim.addEventListener('mouseover', (e) => { const row = e.target.closest('.ent'); if (row && row.dataset.idx !== undefined && Number(row.dataset.idx) >= 0 && Number(row.dataset.idx) !== pal.hover) { pal.hover = Number(row.dataset.idx); scrim.querySelectorAll('.ent.hover').forEach((n) => n.classList.remove('hover')); if (!row.classList.contains('unlinked')) row.classList.add('hover'); } });
         scrim.addEventListener('click', (e) => {
             const tabBtn = e.target.closest('#pal-tabs button');
-            if (tabBtn) { pal.tab = tabBtn.dataset.tab; pal.hover = 0; pal.expanded = null; paintPalette(); setHint(); return; }
+            if (tabBtn) { pal.tab = tabBtn.dataset.tab; pal.hover = 0; pal.expanded = null; pal.picCursor = null; paintPalette(); setHint(); return; }
             const t = e.target.closest('[data-act]');
             if (!t) return;
             const act = t.dataset.act;
             const ent = t.dataset.key ? (findByKey(t.dataset.key) || (E.manualEntity() && L.entityKey(E.manualEntity()) === t.dataset.key ? E.manualEntity() : null)) : null;
-            if (act === 'ent' && ent) activate(ent, true);
+            if (act === 'ent' && ent) activate(ent);
             else if (act === 'pic' && ent) { E.select(ent, t.dataset.pic); E.closePalette(); autoLoginAfterSelect(); }
             else if (act === 'use-manual' && ent) { useManualFor(ent); E.closePalette(); }
             else if (act === 'add') { E.closePalette(); E.openDialog(null); }
@@ -237,24 +244,58 @@
         });
         // Di level dokumen, bukan pada scrim: setelah baris diklik isi palet digambar ulang dan fokus
         // jatuh ke body, sehingga Esc/Enter tidak lagi sampai ke elemen di dalam palet.
+        // Saat pic-panel sebuah entitas sedang terbuka (pal.expanded), ↑↓/Enter pindah menguasai
+        // pilihan PIC di dalam panel itu, BUKAN lagi baris entitas - supaya "pilih entitas (Enter)
+        // lalu pilih PIC (↑↓, Enter)" benar-benar bisa selesai tanpa mouse sama sekali. Escape
+        // tetap menutup seluruh palet (bukan cuma menutup panel) di kedua mode, sama seperti dulu.
         palKey = (e) => {
-            if (e.key === 'Escape') { e.preventDefault(); E.closePalette(); }
-            else if (e.key === 'ArrowDown') { e.preventDefault(); pal.hover = Math.min(palNav.length - 1, pal.hover + 1); paintPalette(); scrollHover(); }
+            if (e.key === 'Escape') { e.preventDefault(); E.closePalette(); return; }
+            if (pal.expanded) {
+                const ent = findByKey(pal.expanded);
+                const pics = (ent && ent.pics) || [];
+                if (!pics.length) return;
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    let idx = pics.findIndex((p) => p.pic_id === pal.picCursor);
+                    if (idx < 0) idx = 0;
+                    idx = e.key === 'ArrowDown' ? Math.min(pics.length - 1, idx + 1) : Math.max(0, idx - 1);
+                    pal.picCursor = pics[idx].pic_id;
+                    paintPalette();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const pic = pics.find((p) => p.pic_id === pal.picCursor) || pics[0];
+                    E.select(ent, pic.pic_id);
+                    E.closePalette();
+                    autoLoginAfterSelect();
+                }
+                return;
+            }
+            if (e.key === 'ArrowDown') { e.preventDefault(); pal.hover = Math.min(palNav.length - 1, pal.hover + 1); paintPalette(); scrollHover(); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); pal.hover = Math.max(0, pal.hover - 1); paintPalette(); scrollHover(); }
-            else if (e.key === 'Enter') { e.preventDefault(); if (palNav[pal.hover]) activate(palNav[pal.hover], false); }
+            else if (e.key === 'Enter') { e.preventDefault(); if (palNav[pal.hover]) activate(palNav[pal.hover]); }
         };
         document.addEventListener('keydown', palKey);
     };
     function scrollHover() { const el = document.querySelector('#pal-body .ent.hover'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); }
     E.closePalette = function () { pal.open = false; if (palKey) { document.removeEventListener('keydown', palKey); palKey = null; } const s = P.$('palette'); if (s) s.remove(); };
 
-    /** Klik pada baris ber-PIC banyak (Hub atau Badan lokal) membuka pilihan PIC; Enter (atau
-     *  klik pada baris ber-PIC tunggal/tanpa PIC) langsung memakai PIC bawaan dan LOGIN OTOMATIS -
-     *  menghindari langkah tambahan klik "Masuk Coretax" secara terpisah. */
-    function activate(e, fromClick) {
+    /** Baris ber-PIC banyak (Hub atau Badan lokal) SELALU membuka pilihan PIC dulu - lewat klik
+     *  MAUPUN Enter - sama seperti mekanisme Taxio Hub sendiri (coretax.js loginToCoretax: >=2
+     *  PIC selalu lewat pemilih, cuma 1 PIC yang login langsung). Sebelumnya Enter diam-diam
+     *  memakai PIC utama dan langsung login tanpa kesempatan memilih PIC lain - dilaporkan
+     *  pengguna sebagai bug, bukan jalan pintas yang diinginkan. Baris ber-PIC tunggal/tanpa PIC
+     *  tetap langsung memakai PIC bawaan dan LOGIN OTOMATIS, menghindari langkah tambahan klik
+     *  "Masuk Coretax" terpisah. */
+    function activate(e) {
         if (e.project === 'taxio_hub' && e.linked === false) return;
         const multi = (e.pics || []).length > 1;
-        if (multi && fromClick) { const key = L.entityKey(e); pal.expanded = pal.expanded === key ? null : key; paintPalette(); return; }
+        if (multi) {
+            const key = L.entityKey(e);
+            if (pal.expanded === key) { pal.expanded = null; pal.picCursor = null; }
+            else { pal.expanded = key; const c = E.pickFor(e); pal.picCursor = c ? c.pic_id : ((e.pics[0] || {}).pic_id || null); }
+            paintPalette();
+            return;
+        }
         const pic = (e.pics || []).length ? E.pickFor(e) : null;
         E.select(e, pic ? pic.pic_id : null);
         E.closePalette();
