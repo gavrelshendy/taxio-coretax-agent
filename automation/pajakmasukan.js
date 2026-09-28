@@ -624,9 +624,12 @@ function cellText(cell) {
 }
 
 /** Proses SATU baris Excel: validasi kelengkapan+konsistensi, cari faktur, cross-check,
- *  lalu (bila semua lolos) panggil creditOne dengan masa tujuan dari kolom MASA PENGKREDITAN.
- *  Reuse penuh dari mesin yang sudah teruji live (findByNumber/crossCheck/creditOne/checkEligibility) -
- *  tidak ada jalur update baru yang ditulis khusus untuk Excel. */
+ *  lalu (bila semua lolos) panggil creditOne dengan masa tujuan dari kolom MASA PENGKREDITAN,
+ *  atau uncreditOne bila kolom PENGKREDITAN PPN diisi "TIDAK DIKREDITKAN" (baris itu tidak
+ *  butuh MASA PENGKREDITAN sama sekali, dan berlaku juga saat masa ditetapkan lewat aplikasi -
+ *  lihat targetOverride). Reuse penuh dari mesin yang sudah teruji live
+ *  (findByNumber/crossCheck/creditOne/uncreditOne/checkEligibility) - tidak ada jalur update baru
+ *  yang ditulis khusus untuk Excel. */
 async function processExcelRow(page, ctx, row, colMap, opts) {
     opts = opts || {};
     const noFakturRaw = cellText(row.getCell(colMap.noFaktur));
@@ -638,30 +641,35 @@ async function processExcelRow(page, ctx, row, colMap, opts) {
     const tanggal = colMap.tanggal ? cellDate(row.getCell(colMap.tanggal)) : null;
     const targetOverride = opts.targetPeriod || null;
     const jenis = (colMap.jenis ? cellText(row.getCell(colMap.jenis)) : '').toUpperCase().trim();
-    const masaKreditDate = !targetOverride && colMap.masaKredit ? cellDate(row.getCell(colMap.masaKredit)) : null;
+    const tidakKreditkan = jenis === 'TIDAK DIKREDITKAN';
+    const masaKreditDate = !targetOverride && !tidakKreditkan && colMap.masaKredit ? cellDate(row.getCell(colMap.masaKredit)) : null;
 
     if (!tanggal) return { hasil: 'GAGAL', keterangan: 'Tanggal Faktur kosong atau bukan tanggal yang valid' };
-    if (!targetOverride && jenis !== 'MASA SAMA' && jenis !== 'MASA TIDAK SAMA') {
-        return { hasil: 'GAGAL', keterangan: 'PENGKREDITAN PPN harus diisi "MASA SAMA" atau "MASA TIDAK SAMA" (isi Excel: "' + jenis + '")' };
-    }
-    if (!targetOverride && !masaKreditDate) return { hasil: 'GAGAL', keterangan: 'MASA PENGKREDITAN kosong atau bukan tanggal yang valid' };
 
-    // Validasi konsistensi Excel (brief: Masa PM dibandingkan Masa Pengkreditan menentukan
-    // MASA SAMA/TIDAK SAMA). Masa PM dihitung langsung dari Tanggal Faktur, bukan dari kolom F
-    // template (formula) - menghindari ketergantungan pada nilai cache formula yang belum tentu
-    // ter-hitung ulang oleh Excel.
-    const pmMonth = tanggal.getMonth() + 1, pmYear = tanggal.getFullYear();
-    const targetMonth = targetOverride ? targetOverride.month : masaKreditDate.getMonth() + 1;
-    const targetYear = targetOverride ? targetOverride.year : masaKreditDate.getFullYear();
-    const expected = (pmMonth === targetMonth && pmYear === targetYear) ? 'MASA SAMA' : 'MASA TIDAK SAMA';
-    if (!targetOverride && jenis !== expected) {
-        return { hasil: 'GAGAL',
-            keterangan: 'PENGKREDITAN PPN tidak konsisten dengan tanggal: Masa PM ' + MONTH_ID[pmMonth] + ' ' + pmYear +
-                ' vs Masa Pengkreditan ' + MONTH_ID[targetMonth] + ' ' + targetYear + ' seharusnya "' + expected +
-                '", Excel menulis "' + jenis + '" - baris TIDAK diproses' };
+    let targetCode = null, targetYear = null;
+    if (!tidakKreditkan) {
+        if (!targetOverride && jenis !== 'MASA SAMA' && jenis !== 'MASA TIDAK SAMA') {
+            return { hasil: 'GAGAL', keterangan: 'PENGKREDITAN PPN harus diisi "MASA SAMA", "MASA TIDAK SAMA", atau "TIDAK DIKREDITKAN" (isi Excel: "' + jenis + '")' };
+        }
+        if (!targetOverride && !masaKreditDate) return { hasil: 'GAGAL', keterangan: 'MASA PENGKREDITAN kosong atau bukan tanggal yang valid' };
+
+        // Validasi konsistensi Excel (brief: Masa PM dibandingkan Masa Pengkreditan menentukan
+        // MASA SAMA/TIDAK SAMA). Masa PM dihitung langsung dari Tanggal Faktur, bukan dari kolom F
+        // template (formula) - menghindari ketergantungan pada nilai cache formula yang belum tentu
+        // ter-hitung ulang oleh Excel.
+        const pmMonth = tanggal.getMonth() + 1, pmYear = tanggal.getFullYear();
+        const targetMonth = targetOverride ? targetOverride.month : masaKreditDate.getMonth() + 1;
+        targetYear = targetOverride ? targetOverride.year : masaKreditDate.getFullYear();
+        const expected = (pmMonth === targetMonth && pmYear === targetYear) ? 'MASA SAMA' : 'MASA TIDAK SAMA';
+        if (!targetOverride && jenis !== expected) {
+            return { hasil: 'GAGAL',
+                keterangan: 'PENGKREDITAN PPN tidak konsisten dengan tanggal: Masa PM ' + MONTH_ID[pmMonth] + ' ' + pmYear +
+                    ' vs Masa Pengkreditan ' + MONTH_ID[targetMonth] + ' ' + targetYear + ' seharusnya "' + expected +
+                    '", Excel menulis "' + jenis + '" - baris TIDAK diproses' };
+        }
+        targetCode = targetOverride ? targetOverride.code : PERIOD_CODE[targetMonth];
+        if (!targetCode) return { hasil: 'GAGAL', keterangan: 'Bulan pada MASA PENGKREDITAN tidak valid: ' + targetMonth };
     }
-    const targetCode = targetOverride ? targetOverride.code : PERIOD_CODE[targetMonth];
-    if (!targetCode) return { hasil: 'GAGAL', keterangan: 'Bulan pada MASA PENGKREDITAN tidak valid: ' + targetMonth };
 
     const inv = await findByNumber(page, ctx, noFakturRaw);
     if (!inv) return { hasil: 'GAGAL', keterangan: 'Faktur tidak ditemukan di Coretax (No Faktur: ' + normalizeFakturNo(noFakturRaw) + ')' };
@@ -672,7 +680,9 @@ async function processExcelRow(page, ctx, row, colMap, opts) {
             keterangan: 'DATA MISMATCH - tidak diupdate: ' + beda.join('; ') };
     }
 
-    const r = await creditOne(page, ctx, inv, targetCode, targetYear, { dryRun: opts.dryRun });
+    const r = tidakKreditkan
+        ? await uncreditOne(page, ctx, inv, { dryRun: opts.dryRun })
+        : await creditOne(page, ctx, inv, targetCode, targetYear, { dryRun: opts.dryRun });
     return {
         hasil: r.hasil,
         statusCoretax: r.inv ? r.inv.TaxInvoiceStatus : (inv.TaxInvoiceStatus || ''),

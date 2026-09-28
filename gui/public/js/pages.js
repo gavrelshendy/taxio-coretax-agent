@@ -19,7 +19,7 @@
         ] },
         { title: 'OTOMASI', items: [
             { id: 'dividen', label: 'Impor Dividen', icon: 'coins', crumb: 'Otomasi' },
-            { id: 'kredit', label: 'Kreditkan Faktur Masukan', icon: 'badge', crumb: 'Otomasi' },
+            { id: 'kredit', label: 'Pengkreditan Faktur Masukan', icon: 'badge', crumb: 'Otomasi' },
             { id: 'billing', label: 'Kode Billing PPh 25', icon: 'bank', crumb: 'Otomasi', badge: 'BARU' }
         ] }
     ];
@@ -418,10 +418,10 @@
         init(api) { return { file: null, mode: 'excel', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }) }; },
         afterDraw(st) { if (st.mode === 'fixed') st.pp.bind(); },
         main(st) {
-            return P.card(1, 'Template Excel', '', '<div class="doc-row"><span class="ico">' + P.icon('sheet', 18) + '</span><div class="t"><b>Template pengkreditan faktur masukan</b><span>Isi kolom A–J: tiap baris dicari lewat No Faktur.</span></div><a class="btn btn-sm" href="/assets/template-pajak-masukan.xlsx" download>' + P.icon('download', 15) + 'Unduh</a></div>')
+            return P.card(1, 'Template Excel', '', '<div class="doc-row"><span class="ico">' + P.icon('sheet', 18) + '</span><div class="t"><b>Template pengkreditan faktur masukan</b><span>Isi kolom A–J: tiap baris dicari lewat No Faktur. Kolom PENGKREDITAN PPN kini juga punya pilihan "TIDAK DIKREDITKAN".</span></div><a class="btn btn-sm" href="/assets/template-pajak-masukan.xlsx" download>' + P.icon('download', 15) + 'Unduh</a></div>')
                 + P.card(2, 'File Excel terisi', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Pilih file .xlsx yang sudah terisi</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>')
                 + P.card(3, 'Masa pengkreditan', '', '<div class="stack-lg">' + P.seg('kmode', [{ value: 'excel', label: 'Ikuti kolom di Excel' }, { value: 'fixed', label: 'Tetapkan satu masa' }], st.mode)
-                    + (st.mode === 'fixed' ? st.pp.html() : '') + '<div class="hint">Faktur yang sudah dilaporkan di SPT, dibatalkan, dibetulkan, atau melebihi batas 3 bulan tidak diubah. Otomatis dilewati, alasannya dicatat di kolom KETERANGAN.</div></div>');
+                    + (st.mode === 'fixed' ? st.pp.html() : '') + '<div class="hint">Baris ber-PENGKREDITAN PPN "TIDAK DIKREDITKAN" tetap diubah menjadi Tidak Dikreditkan meski masa ditetapkan di sini. Faktur yang sudah dilaporkan di SPT, dibatalkan, dibetulkan, atau melebihi batas 3 bulan tidak diubah. Otomatis dilewati, alasannya dicatat di kolom KETERANGAN.</div></div>');
         },
         async act(act, d, st, api) {
             if (act === 'kmode') { st.mode = d.val; return true; }
