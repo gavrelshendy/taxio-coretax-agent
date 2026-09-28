@@ -86,11 +86,7 @@
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button>';
         }
         const clearBtn = ent ? '<button type="button" class="icon-btn" id="btn-clear-entity" title="Lepas pilihan entitas" aria-label="Lepas pilihan entitas"' + (busy ? ' disabled' : '') + '>' + P.icon('x', 16) + '</button>' : '';
-        // Bisa lebih dari satu jendela Coretax terbuka bersamaan (satu per PIC/entitas, plus sesi
-        // manual) - independen dari entitas mana yang SEDANG dipilih di topbar, jadi tombolnya
-        // sendiri, selalu ada (bukan bagian dari Pengaturan yang sebenarnya soal akun/versi app).
-        const sessionsBtn = P.isRestricted() ? '' : '<button type="button" class="icon-btn" id="btn-sessions" title="Lihat jendela Coretax yang sedang terbuka" aria-label="Sesi Coretax aktif">' + P.icon('globe', 16) + '</button>';
-        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + sessionsBtn + E.chipHtml() + clearBtn + buttons + '</header>';
+        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + clearBtn + buttons + '</header>';
     }
     function appHtml() {
         return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Periksa Pembaruan</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
@@ -157,49 +153,8 @@
         });
     }
 
-    // ---------- Sesi Coretax aktif (dropdown dari topbar) ----------
-    // Independen dari entitas mana yang sedang dipilih - bisa lebih dari satu jendela Coretax
-    // terbuka bersamaan (satu per PIC yang pernah dipakai proses ini, plus sesi manual), jadi
-    // ditaruh sebagai dropdown ringan dari topbar sendiri, BUKAN di dalam Pengaturan (yang
-    // sebenarnya soal akun/versi app - tidak ada hubungannya dengan sesi Coretax yang aktif).
-    function openSessionsPanel(anchor) {
-        if (P.$('sessions-pop')) return;
-        const rect = anchor.getBoundingClientRect();
-        const catcher = document.createElement('div'); catcher.className = 'sessions-catcher'; catcher.id = 'sessions-catcher';
-        const pop = document.createElement('div'); pop.className = 'session-pop'; pop.id = 'sessions-pop';
-        pop.style.top = (rect.bottom + 8) + 'px';
-        pop.style.left = Math.max(12, Math.min(window.innerWidth - 372, rect.left)) + 'px';
-        pop.innerHTML = '<div class="session-pop-head">Sesi Coretax aktif</div><div class="session-pop-body" id="live-sessions"></div>';
-        document.body.appendChild(catcher);
-        document.body.appendChild(pop);
-        // Dipoll ringan selama panel terbuka - kalau jendelanya ditutup langsung (bukan lewat
-        // tombol Tutup di sini), barisnya ikut hilang tanpa perlu buka-tutup ulang panel ini.
-        async function renderSessions() {
-            const el = P.$('live-sessions'); if (!el) return;
-            let list = [];
-            try { list = (await P.api('/api/sessions/list')).sessions || []; } catch (e) { return; }
-            if (!list.length) { el.innerHTML = '<div class="hint" style="padding:4px 4px 8px">Tidak ada jendela Coretax yang terbuka saat ini.</div>'; return; }
-            el.innerHTML = list.map((s) => {
-                const label = s.kind === 'manual' ? 'Sesi manual' : 'PIC ' + s.picId;
-                const idText = s.identity || (s.loggedIn ? '(identitas belum terbaca)' : 'Belum login / masih di halaman masuk');
-                return '<div class="doc-row"><span class="ico">' + P.icon(s.kind === 'manual' ? 'user' : 'globe', 18) + '</span><div class="t"><b>' + esc(label) + '</b><span>' + esc(idText) + '</span></div>'
-                    + '<span class="row" style="gap:6px"><button type="button" class="btn btn-sm" data-x="front" data-pic="' + esc(s.picId) + '">Bawa ke depan</button>'
-                    + '<button type="button" class="btn btn-sm btn-danger" data-x="close-session" data-pic="' + esc(s.picId) + '">Tutup</button></span></div>';
-            }).join('');
-        }
-        renderSessions();
-        const timer = setInterval(renderSessions, 3000);
-        const onKey = (e) => { if (e.key === 'Escape') closeIt(); };
-        const closeIt = () => { document.removeEventListener('keydown', onKey); clearInterval(timer); catcher.remove(); pop.remove(); };
-        document.addEventListener('keydown', onKey);
-        catcher.addEventListener('mousedown', closeIt);
-        pop.addEventListener('click', async (e) => {
-            const b = e.target.closest('[data-x]'); if (!b) return;
-            const x = b.dataset.x;
-            if (x === 'front') { b.disabled = true; try { await P.post('/api/sessions/front', { picId: b.dataset.pic }); } finally { b.disabled = false; } }
-            else if (x === 'close-session') { b.disabled = true; try { await P.post('/api/sessions/close', { picId: b.dataset.pic }); } finally { renderSessions(); } }
-        });
-    }
+    // Sesi Coretax aktif kini digabung ke dalam palet entitas (Ctrl+K/Alt+K) sendiri, bukan
+    // dropdown/dialog terpisah - lihat entities.js (bodyHtml/sessionRowHtml/refreshSessions).
 
     // ---------- Tampilan tingkat atas ----------
     function showAuth() {
@@ -224,7 +179,6 @@
             if (e.target.closest('#entity-chip')) return E.openPalette();
             if (e.target.closest('#btn-clear-entity')) return E.clear();
             if (e.target.closest('#open-settings')) return openSettings();
-            if (e.target.closest('#btn-sessions')) return openSessionsPanel(e.target.closest('#btn-sessions'));
             if (e.target.closest('#btn-open-coretax')) return P.manual.open();
             if (e.target.closest('#btn-check-session')) return P.manual.check(true);
             if (e.target.closest('#btn-refresh-session')) return P.session.refresh();

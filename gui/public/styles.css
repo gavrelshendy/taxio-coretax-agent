@@ -272,14 +272,6 @@ select.input { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg
 .dialog-body { padding: 18px 24px 20px; display: flex; flex-direction: column; gap: 16px; }
 .dialog-foot { display: flex; align-items: center; gap: 10px; padding: 16px 24px; background: var(--canvas); border-top: 1px solid var(--line); }
 .dialog-foot .grow { flex: 1; font-size: 12.5px; color: var(--muted); }
-/* Panel "Sesi Coretax aktif" - dropdown ringan dari topbar, BUKAN dialog Pengaturan (independen
-   dari akun/versi app; bisa lebih dari satu jendela sekaligus, tidak berkaitan dengan entitas
-   mana yang sedang dipilih). position:fixed top/left diisi inline saat dibuka, mengikuti posisi
-   tombolnya - lihat shell.js openSessionsPanel(). */
-.sessions-catcher { position: fixed; inset: 0; z-index: 60; }
-.session-pop { position: fixed; width: 360px; max-width: calc(100vw - 24px); background: #fff; border-radius: 16px; box-shadow: 0 16px 40px rgba(11, 18, 48, .28), 0 0 0 1px rgba(11, 18, 48, .08); z-index: 61; overflow: hidden; }
-.session-pop-head { display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); font: 700 14px var(--font-head); color: var(--ink); }
-.session-pop-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
 .pal-search { display: flex; align-items: center; gap: 12px; padding: 0 20px; height: 64px; border-bottom: 1px solid var(--line); }
 .pal-search input { flex: 1; border: 0; outline: none; font-size: 16px; background: transparent; }
 .pal-bar { padding: 14px 20px 4px; display: flex; align-items: center; gap: 12px; }
@@ -297,6 +289,14 @@ select.input { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg
 .ent-tx b { font-size: 14.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ent.unlinked .ent-tx b { color: var(--text); }
 .ent-tx span { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Baris "Sesi Aktif" di atas palet - dipisah dari .ent/.ent-main (yang dipakai baris entitas)
+   karena di sini tombol Tutup (X) memang harus SELALU terlihat (bukan cuma saat hover) dan
+   harus jadi SIBLING dari tombol utamanya, bukan bersarang di dalamnya (nested <button> bikin
+   browser menutup paksa tag terluar lebih awal - itu yang bikin baris entitas pecah dulu). */
+.session-row { display: flex; align-items: center; gap: 4px; }
+.session-btn { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; padding: 10px 12px; border: 0; background: none; border-radius: 12px; text-align: left; }
+.session-row:hover .session-btn { background: var(--surface-2); }
+.session-row .icon-btn { flex: none; margin-right: 6px; }
 .pic-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--text); background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px 4px 10px; }
 .pic-panel { margin: 0 12px 12px 64px; padding: 10px 12px; border-radius: 12px; background: var(--canvas); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .pic-panel .cap { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 2px 4px; }

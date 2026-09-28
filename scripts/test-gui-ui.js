@@ -383,18 +383,20 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
-    await test('topbar: dropdown "Sesi Coretax aktif" tampil tanpa error, kosong bila tidak ada jendela terbuka, terpisah dari Pengaturan', async () => {
-        await page.click('#btn-sessions');
-        await page.waitForSelector('#sessions-pop');
-        assert.ok((await text('#sessions-pop')).includes('Sesi Coretax aktif'));
-        await page.waitForFunction(() => (document.querySelector('#live-sessions') || {}).textContent, null, { timeout: 3000 });
-        assert.ok((await text('#live-sessions')).includes('Tidak ada jendela Coretax yang terbuka'));
+    await test('palet: bagian "Sesi Aktif" digabung ke sini (bukan dropdown/dialog terpisah), kosong bila tidak ada jendela terbuka', async () => {
+        await page.click('#entity-chip');
+        await page.waitForSelector('#palette');
+        // Tidak ada sesi terbuka di lingkungan tes ini - bagian "SESI AKTIF" wajar tidak muncul
+        // sama sekali (bukan ditampilkan kosong), daftar entitas tetap tampil normal.
+        assert.ok(!(await text('#pal-body')).toUpperCase().includes('SESI AKTIF'));
+        assert.ok(await visible('#pal-body .ent'), 'daftar entitas tetap tampil seperti biasa');
         await page.keyboard.press('Escape');
-        await page.waitForSelector('#sessions-pop', { state: 'detached' });
-        // Dialog Pengaturan tidak lagi menyebut ini - itu murni soal akun/versi app.
+        await page.waitForSelector('#palette', { state: 'detached' });
+        // Dialog Pengaturan juga tidak lagi menyebut ini - itu murni soal akun/versi app.
         await page.click('#open-settings');
         await page.waitForSelector('#settings');
         assert.ok(!(await text('#settings')).toLowerCase().includes('sesi coretax aktif'));
+        assert.ok(!(await page.locator('#btn-sessions').count()), 'tombol topbar terpisah untuk ini sudah dihapus');
         await page.keyboard.press('Escape');
         await page.waitForSelector('#settings', { state: 'detached' });
     });
@@ -448,11 +450,11 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok((await text('.status-pill')).includes('Belum masuk Coretax'), 'status login umum, bukan status jendela manual');
         await shot('15-entitas-lokal-otomatis');
     });
-    await test('palet: entitas lokal ber-PIC banyak menampilkan tag OTOMATIS berdampingan dengan pemilih PIC', async () => {
+    await test('palet: entitas lokal ber-PIC banyak menampilkan pemilih PIC (tanpa label OTOMATIS - dianggap redundan, semua baris di sini otomatis)', async () => {
         await page.click('#entity-chip');
         const row = page.locator('#pal-body .ent', { hasText: 'CV Klien Baru Sejahtera' });
-        assert.ok((await row.locator('.tag.auto').first().innerText()).includes('OTOMATIS'));
-        assert.ok(await row.locator('.pic-chip').isVisible(), 'pemilih PIC tampil berdampingan, bukan menggantikan tag');
+        assert.ok(await row.locator('.pic-chip').isVisible(), 'pemilih PIC tetap tampil');
+        assert.strictEqual(await row.locator('.tag.auto').count(), 0, 'label OTOMATIS sudah dihapus dari baris palet');
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
