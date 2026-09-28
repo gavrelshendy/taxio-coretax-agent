@@ -19,7 +19,10 @@
         },
         async check(announce) {
             await P.manual.poll();
-            if (announce && !P.state.manual.loggedIn) P.info('Belum terdeteksi login. Pastikan sudah masuk ke Coretax di jendela yang terbuka, lalu periksa lagi.');
+            if (!announce) return;
+            const m = P.state.manual;
+            if (!m.loggedIn) P.info('Belum terdeteksi login. Pastikan sudah masuk ke Coretax di jendela yang terbuka, lalu periksa lagi.');
+            else P.info('Sedang login di Coretax sebagai: ' + (m.identity || '(tidak terbaca)'));
         },
         async poll() {
             if (!P.isConnected() || P.isRestricted()) return;
@@ -31,6 +34,26 @@
     async function pollLogin() {
         try { const st = await P.api('/api/login/status'); if (st && st.at && (!P.state.lastLogin || P.state.lastLogin.at !== st.at)) { P.state.lastLogin = st; P.emit('login'); } } catch (e) { /* diabaikan */ }
     }
+
+    // ---------- Segarkan status sesi (tombol di sebelah pill topbar) ----------
+    // Beda dari lib/login-status.js (histori "terakhir dikonfirmasi login sebagai X" yang
+    // ditulis server setiap aksi) - ini membaca ULANG jendela Chrome yang sedang terbuka SEKARANG
+    // lewat /api/session/status, supaya pengguna bisa mengecek kapan saja siapa yang aktif tanpa
+    // menunggu unduhan berikutnya. Sesi manual (POLOS) sudah punya jalur sendiri (P.manual.check).
+    P.session = {
+        async refresh() {
+            const ent = E.current();
+            if (!ent) return;
+            if (L.isManualLike(ent)) return P.manual.check(true);
+            if (!ent.pic_id || ent.pic_id === 'unlinked') return P.info('Entitas ini belum tertaut PIC Coretax.');
+            try {
+                const st = await P.post('/api/session/status', { picId: ent.pic_id });
+                if (!st.open) P.info('Belum ada jendela Coretax terbuka untuk entitas ini. Klik "Masuk Coretax" dulu.');
+                else if (!st.loggedIn) P.info('Jendela Coretax terbuka tapi belum login (masih di halaman masuk).');
+                else P.info('Sedang login di Coretax sebagai: ' + (st.identity || '(tidak terbaca)'));
+            } catch (e) { P.info('Gagal memeriksa sesi: ' + e.message); }
+        }
+    };
 
     // ---------- Kerangka ----------
     function roleLabel() {
@@ -56,7 +79,8 @@
         if (ent && L.isManualLike(ent)) {
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button><button type="button" class="btn" id="btn-check-session" style="background:var(--surface-2)">' + P.icon('shield', 17) + 'Periksa sesi</button>';
         } else if (ent) {
-            buttons = '<button type="button" class="btn" id="btn-login"' + (busy ? ' disabled' : '') + ' title="Login dan impersonate entitas ini, tanpa mengisi form">' + P.icon('globe', 17) + 'Masuk Coretax</button>';
+            buttons = '<button type="button" class="icon-btn" id="btn-refresh-session" title="Cek ulang siapa yang sedang login di Coretax sekarang" aria-label="Segarkan status sesi">' + P.icon('retry', 16) + '</button>'
+                + '<button type="button" class="btn" id="btn-login"' + (busy ? ' disabled' : '') + ' title="Login dan impersonate entitas ini, tanpa mengisi form">' + P.icon('globe', 17) + 'Masuk Coretax</button>';
         } else if (!P.isRestricted()) {
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button>';
         }
@@ -151,6 +175,7 @@
             if (e.target.closest('#open-settings')) return openSettings();
             if (e.target.closest('#btn-open-coretax')) return P.manual.open();
             if (e.target.closest('#btn-check-session')) return P.manual.check(true);
+            if (e.target.closest('#btn-refresh-session')) return P.session.refresh();
             if (e.target.closest('#btn-login')) return loginEntity(e.target.closest('#btn-login'));
             if (e.target.closest('#outdated-check')) return checkUpdateFromBanner();
         });

@@ -178,7 +178,37 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
-    await test('palet: navigasi keyboard, Enter memakai PIC bawaan', async () => {
+    await test('palet: Enter pada entitas 2 PIC membuka pilihan PIC juga, TIDAK langsung login dengan PIC utama', async () => {
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'mitra karya');
+        await page.keyboard.press('Enter');
+        assert.ok(await visible('#palette'), 'Enter pada entitas 2 PIC tidak boleh menutup palet');
+        const radios = page.locator('#pal-body .radio-row');
+        assert.strictEqual(await radios.count(), 2, 'Enter harus membuka pilihan PIC, sama seperti klik');
+        await radios.nth(1).click();
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok((await text('#entity-chip')).includes('PIC RINA WIJAYA'));
+    });
+    await test('palet: pilihan PIC bisa diselesaikan MURNI lewat keyboard (Enter buka, ↑↓ pindah, Enter konfirmasi) - tanpa klik mouse', async () => {
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'mitra karya');
+        await page.keyboard.press('Enter');
+        assert.ok(await visible('#palette'), 'Enter pertama membuka pilihan PIC');
+        // Highlight awal = pilihan PIC TERAKHIR yang diingat (RINA WIJAYA, dari test sebelumnya),
+        // bukan selalu PIC utama - konsisten dengan "pilihan PIC terakhir diingat" di atas.
+        assert.strictEqual(await page.locator('#pal-body .radio-row[aria-checked="true"]').innerText(), 'RINA WIJAYA', 'PIC terakhir dipakai ter-highlight duluan');
+        await page.keyboard.press('ArrowUp');
+        const hi = await page.locator('#pal-body .radio-row[aria-checked="true"]').innerText();
+        assert.ok(hi.includes('ANDI PRATAMA') && hi.includes('UTAMA'), '↑ memindah highlight ke PIC lain, belum login');
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok((await text('#entity-chip')).includes('PIC ANDI PRATAMA'), 'Enter kedua mengonfirmasi PIC yang di-highlight (bukan yang lama) dan login');
+    });
+    // Test berikut ini sengaja ditaruh TERAKHIR di blok palet: hasil akhirnya (entitas terpilih =
+    // PT Contoh Sejahtera Abadi / PIC ANDI PRATAMA, PIC tunggal) dipakai sebagai titik awal
+    // blok-blok pengujian halaman fitur (SPT dst.) di bawah - jangan tambah test palet baru
+    // SESUDAH ini tanpa memindahkan test ini kembali ke urutan terakhir.
+    await test('palet: navigasi keyboard, Enter pada PIC tunggal langsung login', async () => {
         await page.click('#entity-chip');
         await page.fill('#pal-q', 'sejahtera');
         await page.keyboard.press('Enter');
@@ -342,6 +372,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.fill('#led-name', 'CV Klien Baru Sejahtera');
         await page.fill('#led-npwp', '0678901234560000');
         await page.click('#entity-dialog [data-act="save"]');
+        await pause(200);
         assert.ok((await text('#led-error')).length > 0, 'PIC kosong ditolak server');
         await page.fill('[data-pic-field="name"][data-idx="0"]', 'Ani Sample Wijaya');
         await page.fill('[data-pic-field="npwp"][data-idx="0"]', '1111222233334444');
@@ -373,18 +404,22 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
-    await test('memilih entitas lokal (Enter) langsung memicu login otomatis', async () => {
+    await test('memilih entitas lokal ber-PIC banyak (Enter) membuka pilihan PIC juga; memilih PIC memicu login otomatis', async () => {
         calls.length = 0;
         await page.click('#entity-chip');
         await page.click('#pal-tabs [data-tab="personal"]');
         await page.fill('#pal-q', 'klien baru');
         await page.keyboard.press('Enter');
+        assert.ok(await visible('#palette'), 'Enter pada entitas lokal 2 PIC tidak boleh menutup palet - sama seperti entitas Hub');
+        const radios = page.locator('#pal-body .radio-row');
+        assert.strictEqual(await radios.count(), 2, 'Enter harus membuka pilihan PIC, bukan langsung memakai PIC utama');
+        await radios.first().click();
         await page.waitForSelector('#palette', { state: 'detached' });
         await pause(200);
         const loginCall = calls.find((c) => c.url === '/api/actions/login-entity');
-        assert.ok(loginCall, 'login-entity terpicu otomatis');
+        assert.ok(loginCall, 'memilih PIC memicu login otomatis');
         assert.strictEqual(loginCall.body.entity.project, 'local');
-        assert.ok(/^lp_[0-9a-f]+$/.test(loginCall.body.entity.pic_id), 'PIC utama (id PIC asli) terpilih otomatis, Enter tanpa membuka pemilih PIC');
+        assert.ok(/^lp_[0-9a-f]+$/.test(loginCall.body.entity.pic_id), 'PIC asli (id PIC lokal) terkirim ke login-entity');
     });
     await test('semua fitur berjalan lewat entitas lokal (login otomatis): SPT, Kreditkan Faktur, Billing', async () => {
         await page.click('.nav-item[data-nav="spt"]');

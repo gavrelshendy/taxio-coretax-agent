@@ -169,7 +169,7 @@
     const spt = createPage({
         id: 'spt',
         init(api) {
-            return { jenis: new Set([restricted() ? 'unifikasi' : 'pph21']), bpe: true, induk: true, lampiran: false, fmt: 'pdf', isi: 'print', sus: 'combined', pph25: false,
+            return { jenis: new Set([restricted() ? 'unifikasi' : 'pph21']), bpe: true, induk: true, lampiran: false, fmt: 'pdf', isi: 'print', sus: 'combined',
                 ppM: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }), ppY: P.period.create({ mode: 'tahun', onChange: () => api.updateRail() }) };
         },
         normalize(st, api) {
@@ -203,15 +203,14 @@
                 + P.card(3, 'Dokumen yang diunduh', '<span>BPE dan Induk = PDF asli Coretax</span>',
                     '<div class="stack">' + P.docRow('bpe', st.bpe, 'fileCheck', 'BPE', 'Bukti Penerimaan Elektronik')
                     + P.docRow('induk', st.induk, 'file', 'Induk', 'Formulir induk SPT')
-                    + P.docRow('lampiran', st.lampiran, 'sheet', 'Lampiran', 'Dicetak dari tampilan Coretax, termasuk yang tidak punya PDF resmi') + lamp
-                    + (annual ? '' : P.checkRow('pph25', st.pph25, 'Cek juga status PPh 25 (Buku Besar) untuk masa yang sama')) + '</div>');
+                    + P.docRow('lampiran', st.lampiran, 'sheet', 'Lampiran', 'Dicetak dari tampilan Coretax, termasuk yang tidak punya PDF resmi') + lamp + '</div>');
         },
         act(act, d, st, api) {
             if (act === 'jenis') {
                 const k = d.val;
                 if (ANNUAL_KEYS.includes(k)) { const had = st.jenis.has(k); st.jenis.clear(); if (!had) st.jenis.add(k); }
                 else { ANNUAL_KEYS.forEach((a) => st.jenis.delete(a)); if (st.jenis.has(k)) st.jenis.delete(k); else st.jenis.add(k); }
-            } else if (act === 'bpe' || act === 'induk' || act === 'lampiran' || act === 'pph25') st[act] = !st[act];
+            } else if (act === 'bpe' || act === 'induk' || act === 'lampiran') st[act] = !st[act];
             else if (act === 'fmt' || act === 'isi' || act === 'sus') st[act] = d.val;
             else return false;
             api.updateRail();
@@ -232,7 +231,7 @@
             if (restricted() && jenisPajakKeys.includes('pph21')) throw new Error('SPT PPh 21 tidak tersedia untuk pengguna Restricted.');
             if (!st.bpe && !st.induk && !st.lampiran) throw new Error('Pilih minimal satu dokumen untuk diunduh.');
             const lampiranMode = st.fmt === 'excel' ? 'full' : st.isi;
-            await P.post('/api/actions/download-spt', { entity: api.entity(), jenisPajakKeys, masaInput: pp.code(), saveRoot: P.saveRoot() || undefined, checkPph25: st.pph25 && !annual,
+            await P.post('/api/actions/download-spt', { entity: api.entity(), jenisPajakKeys, masaInput: pp.code(), saveRoot: P.saveRoot() || undefined, checkPph25: false,
                 includeLampiran: st.lampiran, includeBpe: st.bpe, includeInduk: st.induk, lampiranMode, lampiranFormat: st.fmt, outputLayout: st.sus, layoutStyle: 'coretax' });
         }
     });
