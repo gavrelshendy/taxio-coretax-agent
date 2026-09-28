@@ -383,14 +383,18 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
-    await test('Pengaturan: panel "Sesi Coretax aktif" tampil tanpa error, kosong bila tidak ada jendela terbuka', async () => {
-        await page.click('#open-settings');
-        await page.waitForSelector('#settings');
-        // .eyebrow pakai text-transform:uppercase - innerText() Playwright mengikuti CSS itu,
-        // jadi dicocokkan case-insensitive supaya tidak rapuh terhadap perubahan CSS semacam ini.
-        assert.ok((await text('#settings')).toLowerCase().includes('sesi coretax aktif'));
+    await test('topbar: dropdown "Sesi Coretax aktif" tampil tanpa error, kosong bila tidak ada jendela terbuka, terpisah dari Pengaturan', async () => {
+        await page.click('#btn-sessions');
+        await page.waitForSelector('#sessions-pop');
+        assert.ok((await text('#sessions-pop')).includes('Sesi Coretax aktif'));
         await page.waitForFunction(() => (document.querySelector('#live-sessions') || {}).textContent, null, { timeout: 3000 });
         assert.ok((await text('#live-sessions')).includes('Tidak ada jendela Coretax yang terbuka'));
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#sessions-pop', { state: 'detached' });
+        // Dialog Pengaturan tidak lagi menyebut ini - itu murni soal akun/versi app.
+        await page.click('#open-settings');
+        await page.waitForSelector('#settings');
+        assert.ok(!(await text('#settings')).toLowerCase().includes('sesi coretax aktif'));
         await page.keyboard.press('Escape');
         await page.waitForSelector('#settings', { state: 'detached' });
     });
