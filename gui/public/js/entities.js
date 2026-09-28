@@ -244,12 +244,20 @@
         });
         // Di level dokumen, bukan pada scrim: setelah baris diklik isi palet digambar ulang dan fokus
         // jatuh ke body, sehingga Esc/Enter tidak lagi sampai ke elemen di dalam palet.
-        // Saat pic-panel sebuah entitas sedang terbuka (pal.expanded), ↑↓/Enter pindah menguasai
-        // pilihan PIC di dalam panel itu, BUKAN lagi baris entitas - supaya "pilih entitas (Enter)
-        // lalu pilih PIC (↑↓, Enter)" benar-benar bisa selesai tanpa mouse sama sekali. Escape
-        // tetap menutup seluruh palet (bukan cuma menutup panel) di kedua mode, sama seperti dulu.
+        // Dua cara pakai keyboard, DUA-DUANYA harus tetap jalan:
+        // (1) ketik di kotak cari, lalu ↑↓/Enter - jalan pintas ala command palette di bawah ini.
+        //     Saat pic-panel sebuah entitas terbuka (pal.expanded), ↑↓/Enter pindah menguasai
+        //     pilihan PIC di panel itu, BUKAN lagi baris entitas - supaya "pilih entitas (Enter)
+        //     lalu pilih PIC (↑↓, Enter)" selesai tanpa mouse sama sekali.
+        // (2) Tab murni ke tombol APA PUN (baris entitas, radio PIC, tab Grup/Saya, edit/hapus,
+        //     dst.) lalu Enter/Space - itu perilaku NATIF <button> HTML biasa (memicu 'click',
+        //     ditangkap listener klik yang sama di bawah). Jalan pintas di atas HANYA aktif saat
+        //     fokus asli ada di kotak cari - begitu fokus pindah ke tombol lewat Tab, method ini
+        //     tidak boleh ikut campur sama sekali, supaya navigasi Tab standar (screen reader,
+        //     atau siapa pun yang tidak mengetik) tetap 100% berfungsi, bukan cuma jalur pintas ini.
         palKey = (e) => {
             if (e.key === 'Escape') { e.preventDefault(); E.closePalette(); return; }
+            if (document.activeElement !== input) return;
             if (pal.expanded) {
                 const ent = findByKey(pal.expanded);
                 const pics = (ent && ent.pics) || [];

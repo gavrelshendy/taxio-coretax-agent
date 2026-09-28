@@ -204,6 +204,20 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('#palette', { state: 'detached' });
         assert.ok((await text('#entity-chip')).includes('PIC ANDI PRATAMA'), 'Enter kedua mengonfirmasi PIC yang di-highlight (bukan yang lama) dan login');
     });
+    await test('palet: Tab murni ke tombol lalu Enter tetap jalan (native), bukan cuma jalan pintas kotak cari', async () => {
+        // Jalan pintas ↑↓/Enter di atas HANYA boleh aktif selagi fokus asli ada di kotak cari -
+        // begitu pengguna berpindah pakai Tab (cara screen reader/keyboard biasa, bukan mengetik),
+        // Enter pada tombol yang fokus harus tetap memicu tombol ITU secara native, tidak boleh
+        // diam-diam ditangkap dan diarahkan ke logika kotak cari.
+        await page.click('#entity-chip');
+        await page.locator('#pal-q').focus();
+        await page.keyboard.press('Tab'); // -> tombol tab "Grup"
+        await page.keyboard.press('Tab'); // -> tombol tab "Saya"
+        await page.keyboard.press('Enter'); // harus memicu klik native tombol yang fokus ini
+        assert.strictEqual(await page.locator('#pal-tabs [data-tab="personal"]').getAttribute('aria-pressed'), 'true', 'Enter pada tombol hasil Tab harus memicu tombol itu sendiri, bukan diabaikan/diarahkan ke jalan pintas');
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#palette', { state: 'detached' });
+    });
     // Test berikut ini sengaja ditaruh TERAKHIR di blok palet: hasil akhirnya (entitas terpilih =
     // PT Contoh Sejahtera Abadi / PIC ANDI PRATAMA, PIC tunggal) dipakai sebagai titik awal
     // blok-blok pengujian halaman fitur (SPT dst.) di bawah - jangan tambah test palet baru
