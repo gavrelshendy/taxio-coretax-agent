@@ -410,6 +410,23 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
+    await test('topbar: badge "N sesi lain" muncul saat ada sesi Coretax lain di luar entitas terpilih, klik membuka palet', async () => {
+        // Entitas terpilih saat ini: PT Contoh Sejahtera Abadi / PIC p-andi. p-andi sendiri TIDAK
+        // dihitung (itu sesi entitas yang sedang aktif dipakai) - hanya p-rina yang dihitung "lain".
+        fakes.ctl.sessions = [
+            { picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT CONTOH SEJAHTERA ABADI' },
+            { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }
+        ];
+        await page.waitForSelector('#btn-other-sessions', { timeout: 6000 });
+        assert.ok((await text('#btn-other-sessions')).includes('1 sesi lain'));
+        await page.click('#btn-other-sessions');
+        await page.waitForSelector('#palette');
+        await page.waitForFunction(() => (document.querySelector('#pal-body') || {}).textContent.includes('SESI AKTIF'), null, { timeout: 3000 });
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        fakes.ctl.sessions = [];
+        await page.waitForSelector('#btn-other-sessions', { state: 'detached', timeout: 6000 });
+    });
     await test('memilih PIC pada entitas Hub ber-PIC banyak langsung memicu login otomatis (tanpa klik Masuk Coretax terpisah)', async () => {
         calls.length = 0;
         await page.keyboard.press('Control+k');

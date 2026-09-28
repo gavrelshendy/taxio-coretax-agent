@@ -35,6 +35,21 @@
         try { const st = await P.api('/api/login/status'); if (st && st.at && (!P.state.lastLogin || P.state.lastLogin.at !== st.at)) { P.state.lastLogin = st; P.emit('login'); } } catch (e) { /* diabaikan */ }
     }
 
+    // ---------- Sesi Coretax aktif (badge "+N sesi lain" di topbar) ----------
+    // Daftar lengkapnya sendiri dirender di dalam palet entitas (entities.js) saat dibuka - ini
+    // hanya polling ambient supaya topbar bisa menunjukkan ADA sesi lain terbuka tanpa harus
+    // membuka palet dulu (kekhawatiran: entity chip cuma menonjolkan satu nama, seolah cuma itu
+    // satu-satunya sesi yang aktif padahal bisa ada beberapa jendela Chrome PIC lain terbuka).
+    async function pollSessions() {
+        let list;
+        try { list = ((await P.api('/api/sessions/list')) || {}).sessions || []; } catch (e) { return; }
+        if (JSON.stringify(list) !== JSON.stringify(P.state.sessions)) { P.state.sessions = list; P.emit('sessions'); }
+    }
+    function otherSessionsCount(ent) {
+        const list = P.state.sessions || [];
+        return ent ? list.filter((s) => s.picId !== ent.pic_id).length : list.length;
+    }
+
     // ---------- Segarkan status sesi (tombol di sebelah pill topbar) ----------
     // Beda dari lib/login-status.js (histori "terakhir dikonfirmasi login sebagai X" yang
     // ditulis server setiap aksi) - ini membaca ULANG jendela Chrome yang sedang terbuka SEKARANG
@@ -85,7 +100,11 @@
         } else if (!P.isRestricted()) {
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button>';
         }
-        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + buttons + '</header>';
+        const otherSessions = otherSessionsCount(ent);
+        const sessBadge = otherSessions > 0
+            ? '<button type="button" class="chip-badge" id="btn-other-sessions" title="Lihat sesi Coretax lain yang sedang terbuka">' + otherSessions + ' sesi lain</button>'
+            : '';
+        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + sessBadge + buttons + '</header>';
     }
     function appHtml() {
         return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Periksa Pembaruan</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
@@ -176,6 +195,7 @@
         app.addEventListener('click', (e) => {
             const nav = e.target.closest('[data-nav]'); if (nav) return S.go(nav.dataset.nav);
             if (e.target.closest('#entity-chip')) return E.openPalette();
+            if (e.target.closest('#btn-other-sessions')) return E.openPalette();
             if (e.target.closest('#open-settings')) return openSettings();
             if (e.target.closest('#btn-open-coretax')) return P.manual.open();
             if (e.target.closest('#btn-check-session')) return P.manual.check(true);
@@ -221,6 +241,7 @@
     P.on('entity', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); } });
     P.on('login', () => { if (view === 'app') S.renderTopbar(); });
     P.on('manual', () => { if (view === 'app') { S.renderTopbar(); if (!P.state.run.active) S.renderContent(false); } });
+    P.on('sessions', () => { if (view === 'app') S.renderTopbar(); });
     P.on('run', (st) => {
         if (view !== 'app') return;
         S.renderTopbar();
@@ -240,6 +261,8 @@
         setInterval(P.manual.poll, 2000);
         setInterval(pollLogin, 3000);
         pollLogin();
+        setInterval(pollSessions, 4000);
+        pollSessions();
     };
     document.addEventListener('DOMContentLoaded', S.boot);
 })();
