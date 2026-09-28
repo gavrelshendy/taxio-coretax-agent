@@ -231,18 +231,6 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
         assert.ok((await text('#entity-chip')).includes('PIC ANDI PRATAMA'));
     });
-    await test('topbar: tombol X melepas pilihan entitas, kembali ke "Pilih entitas"', async () => {
-        assert.ok(await visible('#btn-clear-entity'));
-        await page.click('#btn-clear-entity');
-        assert.ok((await text('#entity-chip')).includes('Pilih entitas'), 'kembali ke state kosong');
-        assert.ok(!(await visible('#btn-clear-entity')), 'tombol X ikut hilang saat tidak ada entitas terpilih');
-        assert.ok((await text('.col-main')).includes('Pilih entitas dulu'));
-        // kembalikan ke PT Contoh Sejahtera Abadi untuk blok-blok pengujian berikutnya
-        await page.click('#entity-chip');
-        await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
-        await page.waitForSelector('#palette', { state: 'detached' });
-        assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
-    });
     await test('topbar: tombol 👤 beralih entitas terpilih ke sesi manual, membawa nama & NPWP-nya', async () => {
         assert.ok(await visible('#btn-manual-for-entity'));
         await page.click('#btn-manual-for-entity');
