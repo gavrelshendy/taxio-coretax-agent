@@ -187,10 +187,16 @@
         // (dibaca live dari jendelanya), menyebut picId (ID internal, bukan nama orang) di judul
         // cuma bikin baris tidak enak dibaca tanpa menambah info baru.
         const idText = s.identity || (s.loggedIn ? '(identitas belum terbaca)' : 'Belum login / masih di halaman masuk');
-        return '<div class="session-row">'
+        // Sesi yang cocok dengan entitas yang SEDANG dipilih di topbar (pic_id sama - berlaku
+        // juga untuk sesi manual, yang pic_id-nya selalu 'manual') di-highlight, supaya jelas
+        // sesi mana yang sedang "dikerjakan" tanpa harus mencocokkan identitas manual.
+        const cur = E.current();
+        const isCurrent = !!(cur && cur.pic_id === s.picId);
+        return '<div class="session-row' + (isCurrent ? ' current' : '') + '">'
             + '<button type="button" class="session-btn" data-act="session-front" data-pic="' + P.esc(s.picId) + '">'
-            + '<span class="ent-av" style="background:var(--accent);color:#fff">' + n + '</span>'
-            + '<span class="ent-tx"><b>Sesi ' + n + (s.kind === 'manual' ? ' · Manual' : '') + '</b><span>' + P.esc(idText) + '</span></span></button>'
+            + '<span class="ent-av">' + n + '</span>'
+            + '<span class="ent-tx"><b>Sesi ' + n + (s.kind === 'manual' ? ' · Manual' : '') + '</b><span>' + P.esc(idText) + '</span></span>'
+            + (isCurrent ? P.icon('check', 17, '', 2.6).replace('<svg ', '<svg style="color:var(--accent);flex:none" ') : '') + '</button>'
             + '<button type="button" class="icon-btn" aria-label="Tutup sesi ini" title="Tutup jendela ini" data-act="session-close" data-pic="' + P.esc(s.picId) + '">' + P.icon('x', 15) + '</button></div>';
     }
 

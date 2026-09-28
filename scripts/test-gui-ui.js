@@ -401,6 +401,27 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForSelector('#settings', { state: 'detached' });
     });
+    await test('palet: "Sesi Aktif" menampilkan jendela yang benar-benar terbuka, sesi yang cocok dengan entitas terpilih di-highlight, X menutupnya', async () => {
+        // Entitas terpilih saat ini: PT Contoh Sejahtera Abadi / PIC p-andi (dari test sebelumnya).
+        fakes.ctl.sessions = [
+            { picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT CONTOH SEJAHTERA ABADI' },
+            { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }
+        ];
+        await page.click('#entity-chip');
+        await page.waitForSelector('#palette');
+        await page.waitForFunction(() => (document.querySelector('#pal-body') || {}).textContent.includes('SESI AKTIF'), null, { timeout: 3000 });
+        const rows = page.locator('.session-row');
+        assert.strictEqual(await rows.count(), 2);
+        assert.ok(await rows.nth(0).innerText().then((t) => t.includes('Sesi 1')));
+        assert.ok((await rows.nth(0).getAttribute('class')).includes('current'), 'sesi yang cocok dengan entitas terpilih (p-andi) di-highlight');
+        assert.ok(!(await rows.nth(1).getAttribute('class')).includes('current'), 'sesi lain (p-rina) tidak di-highlight');
+        // Tutup sesi ke-2 lewat ikon X - daftar berkurang jadi 1 tanpa perlu tutup-buka ulang palet.
+        await rows.nth(1).locator('[data-act="session-close"]').click();
+        await page.waitForFunction(() => document.querySelectorAll('.session-row').length === 1, null, { timeout: 3000 });
+        fakes.ctl.sessions = [];
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#palette', { state: 'detached' });
+    });
     await test('memilih PIC pada entitas Hub ber-PIC banyak langsung memicu login otomatis (tanpa klik Masuk Coretax terpisah)', async () => {
         calls.length = 0;
         await page.keyboard.press('Control+k');
