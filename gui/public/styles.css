@@ -302,10 +302,13 @@ select.input { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg
 .ent-actions { display: none; gap: 4px; }
 .ent:hover .ent-actions, .ent.hover .ent-actions { display: flex; }
 .ent-actions button { width: 30px; height: 30px; border-radius: 8px; background: #fff; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted); }
-/* Tombol "login manual" - muncul di hover seperti .ent-actions, tapi berlaku untuk SEMUA baris
-   (bukan cuma entitas lokal), jadi span-nya sendiri, di luar .ent-actions. */
-.ent-manual-btn { display: none; width: 30px; height: 30px; border-radius: 8px; background: #fff; border: 1px solid var(--line); align-items: center; justify-content: center; color: var(--muted); flex: none; }
-.ent:hover .ent-manual-btn, .ent.hover .ent-manual-btn { display: flex; }
+/* Tombol "login manual" - muncul di hover, berlaku untuk SEMUA baris (bukan cuma entitas
+   lokal). Ditaruh SEBELUM avatar (kiri), bukan di klaster kanan (.row-right, yang sudah padat
+   dengan pemilih PIC + tag) - di sana ikonnya bikin baris pecah dua baris pada entitas ber-nama
+   panjang. display:none (bukan cuma disembunyikan visual) supaya tidak ikut makan .ent-main's
+   gap saat tersembunyi, jadi baris tidak bergeser sama sekali sebelum di-hover. */
+.ent-manual-lead { display: none; width: 24px; height: 24px; border-radius: 7px; background: #fff; border: 1px solid var(--line); align-items: center; justify-content: center; color: var(--muted); flex: none; }
+.ent:hover .ent-manual-lead, .ent.hover .ent-manual-lead { display: flex; }
 /* Ditata seperti baris ".ent-main" biasa (ikon + teks rata kiri) supaya menyatu dengan daftar
    entitas di atasnya, bukan tombol besar terpisah yang berdiri sendiri di ujung bawah. */
 .pal-add { display: flex; align-items: center; gap: 14px; height: 44px; margin-top: 2px; padding: 0 12px; border-radius: 12px; border: 0; background: none; color: var(--accent); font-size: 14px; font-weight: 600; width: 100%; text-align: left; }
