@@ -242,6 +242,18 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('#palette', { state: 'detached' });
         assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
     });
+    await test('topbar: tombol 👤 beralih entitas terpilih ke sesi manual, membawa nama & NPWP-nya', async () => {
+        assert.ok(await visible('#btn-manual-for-entity'));
+        await page.click('#btn-manual-for-entity');
+        const chip = await text('#entity-chip');
+        assert.ok(chip.includes('PT Contoh Sejahtera Abadi') && chip.includes('MANUAL'), 'nama entitas tetap dibawa, tag berubah jadi MANUAL');
+        assert.ok(await visible('#btn-open-coretax') && await visible('#btn-check-session'), 'topbar berubah ke Buka Coretax + Periksa sesi');
+        // kembalikan ke OTOMATIS untuk blok-blok pengujian berikutnya
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok((await text('#entity-chip')).includes('OTOMATIS'));
+    });
 
     // ------------------------------------------------ halaman SPT
     await test('SPT: bawaan PPh 21/26 dan bulan lalu, ringkasan menghitung kombinasi', async () => {

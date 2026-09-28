@@ -154,17 +154,9 @@
         const actions = isLocal ? '<span class="ent-actions"><button type="button" aria-label="Ubah entitas" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Hapus entitas" data-act="del" data-key="' + P.esc(key) + '" style="color:var(--red)">' + P.icon('trash', 15) + '</button></span>' : '';
         const right = '<span class="row-right">' + actions + picChip + tag + '</span>';
         const av = isManualRow ? 'SM' : L.initials(e.entity_name);
-        // Jalan keluar eksplisit dari login OTOMATIS: Anda ketik sandi Coretax sendiri di jendela
-        // yang terbuka, kredensial yang tersimpan (Hub maupun lokal) TIDAK dipakai sama sekali
-        // untuk entitas ini. Sebelumnya cuma tersedia untuk entitas yang belum tertaut PIC -
-        // pengguna melaporkan tidak ada cara melakukan ini untuk entitas yang sudah OTOMATIS.
-        // Ditaruh SEBELUM avatar (kiri), bukan di klaster kanan yang sudah padat dengan pemilih
-        // PIC + tag - di situ ikonnya bikin baris pecah dua baris pada entitas ber-nama panjang.
-        const manualBtn = (!isManualRow && !unlinked && !P.isRestricted())
-            ? '<button type="button" class="ent-manual-lead" aria-label="Login manual untuk entitas ini" title="Login manual - Anda ketik sandi Coretax sendiri, tanpa memakai kredensial tersimpan" data-act="use-manual" data-key="' + P.esc(key) + '">' + P.icon('user', 13) + '</button>' : '';
         let html = '<div class="ent' + (cur ? ' current' : '') + (idx === pal.hover && !unlinked ? ' hover' : '') + (unlinked ? ' unlinked' : '') + '" data-idx="' + idx + '">'
             + '<button type="button" class="ent-main" data-act="ent" data-key="' + P.esc(key) + '"' + (unlinked ? ' aria-disabled="true"' : '') + '>'
-            + manualBtn + '<span class="ent-av">' + P.esc(av) + '</span><span class="ent-tx"><b>' + P.esc(isManualRow ? (P.state.manual.identity || 'Sesi manual') : e.entity_name) + '</b><span>' + metaFor(e) + '</span></span>' + right
+            + '<span class="ent-av">' + P.esc(av) + '</span><span class="ent-tx"><b>' + P.esc(isManualRow ? (P.state.manual.identity || 'Sesi manual') : e.entity_name) + '</b><span>' + metaFor(e) + '</span></span>' + right
             + (cur ? P.icon('check', 18, '', 2.6).replace('<svg ', '<svg style="color:var(--accent)" ') : '') + '</button>';
         if (open) {
             // Baris yang di-highlight: picCursor (digerakkan panah ↑↓, dikonfirmasi Enter) kalau
@@ -326,6 +318,9 @@
     function useManualFor(e) {
         E.select({ project: 'manual', project_label: 'Manual', entity_id: 'MANUAL', entity_name: e.entity_name, npwp: e.npwp || '', individual: !!e.individual, pic_id: 'manual', pic_name: 'Login manual', pic_is_mine: true, pics: [], linked: true }, null);
     }
+    // Dipakai tombol 👤 di topbar (sebelah tombol segarkan status) - beralih entitas yang SEDANG
+    // dipilih ke sesi manual, membawa nama/NPWP-nya untuk konteks, tanpa kredensial tersimpan.
+    E.useManualFor = useManualFor;
     async function deleteLocal(e) {
         if (!confirm('Hapus entitas "' + e.entity_name + '" dari komputer ini?')) return;
         try {
