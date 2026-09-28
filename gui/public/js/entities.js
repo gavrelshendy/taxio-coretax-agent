@@ -183,12 +183,14 @@
     // langsung kelihatan apa yang sedang aktif SEBELUM memilih entitas untuk sesi baru. Klik
     // barisnya = bawa jendela itu ke depan; ikon X = tutup jendela itu.
     function sessionRowHtml(s, n) {
-        const label = s.kind === 'manual' ? 'Sesi manual' : 'PIC ' + s.picId;
+        // Judul baris cukup "Sesi N" - nama entitas/identitas asli sudah ada di baris kedua
+        // (dibaca live dari jendelanya), menyebut picId (ID internal, bukan nama orang) di judul
+        // cuma bikin baris tidak enak dibaca tanpa menambah info baru.
         const idText = s.identity || (s.loggedIn ? '(identitas belum terbaca)' : 'Belum login / masih di halaman masuk');
         return '<div class="session-row">'
             + '<button type="button" class="session-btn" data-act="session-front" data-pic="' + P.esc(s.picId) + '">'
             + '<span class="ent-av" style="background:var(--accent);color:#fff">' + n + '</span>'
-            + '<span class="ent-tx"><b>Sesi ' + n + ' · ' + P.esc(label) + '</b><span>' + P.esc(idText) + '</span></span></button>'
+            + '<span class="ent-tx"><b>Sesi ' + n + (s.kind === 'manual' ? ' · Manual' : '') + '</b><span>' + P.esc(idText) + '</span></span></button>'
             + '<button type="button" class="icon-btn" aria-label="Tutup sesi ini" title="Tutup jendela ini" data-act="session-close" data-pic="' + P.esc(s.picId) + '">' + P.icon('x', 15) + '</button></div>';
     }
 
@@ -202,6 +204,12 @@
         const q = pal.q.trim();
         const push = (e) => { palNav.push(e); return palNav.length - 1; };
         let html = '';
+        // Aksi global, bukan hasil pencarian - selalu di paling atas supaya tetap terlihat/bisa
+        // dipakai kapan saja, tidak terkubur di bawah daftar (dan tidak ikut hilang saat mengetik
+        // di kotak cari, beda dari daftar entitas lokal di bawah yang IKUT tersaring oleh q).
+        if (!P.isRestricted()) {
+            html += '<button type="button" class="pal-add" data-act="add"><span class="ent-av" style="background:var(--accent-soft);color:var(--accent)">' + P.icon('plus', 18, '', 2.2) + '</span><span>Tambah entitas baru</span></button>';
+        }
         if (pal.sessions.length && !q) {
             html += '<div class="pal-sec">SESI AKTIF</div>' + pal.sessions.map((s, i) => sessionRowHtml(s, i + 1)).join('')
                 + '<div class="pal-note" style="margin-bottom:2px">' + P.icon('info', 15) + '<span>Pilih entitas di bawah untuk membuka jendela baru.</span></div>';
@@ -225,13 +233,15 @@
 
         if (!P.isRestricted()) {
             const locals = E.personal.filter((e) => e.project === 'local' && L.entityMatches(e, q));
-            html += '<div class="pal-sec">DITAMBAHKAN DI SINI</div>' + (locals.length ? locals.map((e) => rowHtml(e, push(e))).join('') : '<div class="pal-empty" style="padding:12px">' + (q ? 'Tidak ada yang cocok.' : 'Belum ada. Tambahkan klien yang belum ada di Taxio Hub.') + '</div>')
-                // Ditata seperti baris entitas biasa (ikon + teks rata kiri), bukan sebagai
-                // tombol besar terpisah di ujung bawah - supaya menyatu dengan daftar.
-                + '<button type="button" class="pal-add" data-act="add"><span class="ent-av" style="background:var(--accent-soft);color:var(--accent)">' + P.icon('plus', 18, '', 2.2) + '</span><span>Tambah entitas baru</span></button>';
+            if (locals.length || !q) {
+                html += '<div class="pal-sec">DITAMBAHKAN DI SINI</div>' + (locals.length ? locals.map((e) => rowHtml(e, push(e))).join('') : '<div class="pal-empty" style="padding:12px">Belum ada. Tambahkan klien yang belum ada di Taxio Hub.</div>');
+            }
         }
 
-        if (!html) html = '<div class="pal-empty">' + (q ? 'Tidak ada entitas yang cocok dengan "' + P.esc(q) + '".' : (E.loaded ? 'Belum ada entitas.' : 'Memuat entitas…')) + '</div>';
+        // Dicek terpisah dari `html` sekarang - tombol "Tambah entitas baru" selalu ada di atas
+        // (aksi global, bukan hasil pencarian), jadi `html` sendiri tidak pernah kosong lagi.
+        const hadListContent = palNav.length > 0 || !!me || (pal.sessions.length > 0 && !q);
+        if (!hadListContent) html += '<div class="pal-empty">' + (q ? 'Tidak ada entitas yang cocok dengan "' + P.esc(q) + '".' : (E.loaded ? 'Belum ada entitas.' : 'Memuat entitas…')) + '</div>';
         if (pal.hover >= palNav.length) pal.hover = Math.max(0, palNav.length - 1);
         return html;
     }
