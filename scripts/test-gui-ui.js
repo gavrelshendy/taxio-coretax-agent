@@ -230,6 +230,18 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
         assert.ok((await text('#entity-chip')).includes('PIC ANDI PRATAMA'));
     });
+    await test('topbar: tombol X melepas pilihan entitas, kembali ke "Pilih entitas"', async () => {
+        assert.ok(await visible('#btn-clear-entity'));
+        await page.click('#btn-clear-entity');
+        assert.ok((await text('#entity-chip')).includes('Pilih entitas'), 'kembali ke state kosong');
+        assert.ok(!(await visible('#btn-clear-entity')), 'tombol X ikut hilang saat tidak ada entitas terpilih');
+        assert.ok((await text('.col-main')).includes('Pilih entitas dulu'));
+        // kembalikan ke PT Contoh Sejahtera Abadi untuk blok-blok pengujian berikutnya
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
+    });
 
     // ------------------------------------------------ halaman SPT
     await test('SPT: bawaan PPh 21/26 dan bulan lalu, ringkasan menghitung kombinasi', async () => {
@@ -359,6 +371,17 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
+    await test('Pengaturan: panel "Sesi Coretax aktif" tampil tanpa error, kosong bila tidak ada jendela terbuka', async () => {
+        await page.click('#open-settings');
+        await page.waitForSelector('#settings');
+        // .eyebrow pakai text-transform:uppercase - innerText() Playwright mengikuti CSS itu,
+        // jadi dicocokkan case-insensitive supaya tidak rapuh terhadap perubahan CSS semacam ini.
+        assert.ok((await text('#settings')).toLowerCase().includes('sesi coretax aktif'));
+        await page.waitForFunction(() => (document.querySelector('#live-sessions') || {}).textContent, null, { timeout: 3000 });
+        assert.ok((await text('#live-sessions')).includes('Tidak ada jendela Coretax yang terbuka'));
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#settings', { state: 'detached' });
+    });
     await test('memilih PIC pada entitas Hub ber-PIC banyak langsung memicu login otomatis (tanpa klik Masuk Coretax terpisah)', async () => {
         calls.length = 0;
         await page.keyboard.press('Control+k');
@@ -400,6 +423,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('simpan entitas: terpilih dengan tag OTOMATIS (kredensial tersimpan, bukan lagi MANUAL)', async () => {
         await page.click('#entity-dialog [data-act="save"]');
         await page.waitForSelector('#entity-dialog', { state: 'detached' });
+        await pause(200);
         const chip = await text('#entity-chip');
         assert.ok(chip.includes('CV Klien Baru Sejahtera') && chip.includes('OTOMATIS') && chip.includes('PIC Ani Sample Wijaya'));
         await page.click('.nav-item[data-nav="spt"]');

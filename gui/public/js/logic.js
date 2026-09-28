@@ -86,8 +86,11 @@
     function initials(name) {
         const words = String(name || '').replace(/[.,()]/g, ' ').split(/\s+/).filter((w) => w && !LEGAL.test(w));
         if (!words.length) return 'E';
-        if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-        return (words[0][0] + words[1][0]).toUpperCase();
+        // Biasanya 3 huruf (satu per kata) supaya lebih mudah dibedakan antar entitas yang mirip -
+        // 2 kata cukup 2 huruf, 1 kata pakai 3 huruf pertama kata itu sendiri.
+        if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+        if (words.length === 2) return (words[0][0] + words[1][0]).toUpperCase();
+        return (words[0][0] + words[1][0] + words[2][0]).toUpperCase();
     }
 
     const digits = (s) => String(s || '').replace(/\D/g, '');
