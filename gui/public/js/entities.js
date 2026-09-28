@@ -115,7 +115,8 @@
     // ---------- Palet ----------
     // picCursor: PIC yang sedang di-highlight (bukan berarti sudah dipilih/login) saat pic-panel
     // suatu entitas sedang terbuka - digerakkan panah/Enter tanpa menyentuh mouse sama sekali.
-    const pal = { open: false, q: '', hover: 0, expanded: null, picCursor: null };
+    const pal = { open: false, q: '', hover: 0, expanded: null, picCursor: null, sessions: [] };
+    let sessTimer = null;
     let palKey = null;
     let dlgKey = null;
     let palNav = []; // urutan baris yang bisa dipilih (untuk keyboard)
@@ -143,13 +144,14 @@
         const chosen = multi ? E.pickFor(e) : null;
         const isLocal = e.project === 'local';
         const isManualRow = e.project === 'manual';
-        // Tag OTOMATIS/MANUAL/BELUM ADA PIC SELALU tampil, di posisi yang sama - sebelumnya
-        // entitas dengan >1 PIC kehilangan tag ini (digantikan pemilih PIC), membuatnya terlihat
-        // beda kelas padahal sama-sama otomatis. Pemilih PIC sekarang tampil BERDAMPINGAN.
-        let tag;
+        // Label OTOMATIS dihapus dari sini - hampir semua baris di palet ini otomatis (Hub
+        // maupun lokal berkredensial), jadi menandainya di tiap baris cuma jadi noise berulang.
+        // BELUM ADA PIC dan TERDETEKSI tetap tampil - itu PENGECUALIAN yang justru penting untuk
+        // langsung terlihat (entitas ini TIDAK bisa dipakai otomatis / ini sesi yang Anda login
+        // sendiri, bukan status "sama seperti yang lain").
+        let tag = '';
         if (unlinked) tag = '<span class="tag warn lg">BELUM ADA PIC</span>';
         else if (isManualRow) tag = '<span class="tag lg manual" style="margin-left:0">TERDETEKSI</span>';
-        else tag = '<span class="tag lg auto" style="margin-left:0">OTOMATIS</span>';
         const picChip = multi ? '<span class="pic-chip">' + P.esc((chosen ? chosen.pic_name : '').split(' ')[0]) + P.icon(open ? 'up' : 'down', 15) + '</span>' : '';
         const actions = isLocal ? '<span class="ent-actions"><button type="button" aria-label="Ubah entitas" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Hapus entitas" data-act="del" data-key="' + P.esc(key) + '" style="color:var(--red)">' + P.icon('trash', 15) + '</button></span>' : '';
         const right = '<span class="row-right">' + actions + picChip + tag + '</span>';
@@ -175,6 +177,21 @@
         return html + '</div>';
     }
 
+    // Bisa lebih dari satu jendela Coretax terbuka bersamaan (satu per PIC yang pernah dipakai
+    // proses ini, plus sesi manual) - ditaruh di ATAS palet ini sendiri (bukan dropdown/dialog
+    // terpisah, sesuai permintaan pengguna: "dijadikan disini aja"), supaya begitu palet dibuka
+    // langsung kelihatan apa yang sedang aktif SEBELUM memilih entitas untuk sesi baru. Klik
+    // barisnya = bawa jendela itu ke depan; ikon X = tutup jendela itu.
+    function sessionRowHtml(s, n) {
+        const label = s.kind === 'manual' ? 'Sesi manual' : 'PIC ' + s.picId;
+        const idText = s.identity || (s.loggedIn ? '(identitas belum terbaca)' : 'Belum login / masih di halaman masuk');
+        return '<div class="session-row">'
+            + '<button type="button" class="session-btn" data-act="session-front" data-pic="' + P.esc(s.picId) + '">'
+            + '<span class="ent-av" style="background:var(--accent);color:#fff">' + n + '</span>'
+            + '<span class="ent-tx"><b>Sesi ' + n + ' · ' + P.esc(label) + '</b><span>' + P.esc(idText) + '</span></span></button>'
+            + '<button type="button" class="icon-btn" aria-label="Tutup sesi ini" title="Tutup jendela ini" data-act="session-close" data-pic="' + P.esc(s.picId) + '">' + P.icon('x', 15) + '</button></div>';
+    }
+
     // Satu pencarian gabung Grup+Saya (bukan tab terpisah lagi) - mengetik menyaring KEDUANYA
     // sekaligus, tidak perlu pindah tab dulu untuk menemukan entitas pribadi/lokal. Entitas yang
     // muncul di kedua sumber (mis. entitas pribadi seorang PIC yang juga anggota grup) dedupe by
@@ -185,6 +202,10 @@
         const q = pal.q.trim();
         const push = (e) => { palNav.push(e); return palNav.length - 1; };
         let html = '';
+        if (pal.sessions.length && !q) {
+            html += '<div class="pal-sec">SESI AKTIF</div>' + pal.sessions.map((s, i) => sessionRowHtml(s, i + 1)).join('')
+                + '<div class="pal-note" style="margin-bottom:2px">' + P.icon('info', 15) + '<span>Pilih entitas di bawah untuk membuka jendela baru.</span></div>';
+        }
         const seen = new Set();
 
         const me = E.manualEntity();
@@ -218,8 +239,14 @@
     function paintPalette() {
         const body = P.$('pal-body'); if (body) body.innerHTML = bodyHtml();
         const foot = P.$('pal-foot');
-        if (foot) foot.innerHTML = '<span style="display:flex;gap:6px;align-items:center"><kbd>↑</kbd><kbd>↓</kbd> pilih</span><span style="display:flex;gap:6px;align-items:center"><kbd>Enter</kbd> gunakan &amp; login</span><span class="grow"></span>'
-            + '<span><b style="color:var(--accent-ink)">OTOMATIS</b> Taxio Hub &amp; lokal · <b style="color:var(--text)">MANUAL</b> Anda login sendiri</span>';
+        if (foot) foot.innerHTML = '<span style="display:flex;gap:6px;align-items:center"><kbd>↑</kbd><kbd>↓</kbd> pilih</span><span style="display:flex;gap:6px;align-items:center"><kbd>Enter</kbd> gunakan &amp; login</span>';
+    }
+
+    // Dipoll ringan selama palet terbuka - kalau jendelanya ditutup langsung (bukan lewat ikon X
+    // di sini), baris "Sesi Aktif" ikut hilang tanpa perlu menutup-buka ulang palet.
+    async function refreshSessions() {
+        try { pal.sessions = (await P.api('/api/sessions/list')).sessions || []; } catch (e) { return; }
+        if (pal.open) paintPalette();
     }
 
     E.openPalette = function () {
@@ -233,10 +260,12 @@
         document.body.appendChild(scrim);
         const input = P.$('pal-q');
         paintPalette(); input.focus();
+        refreshSessions();
+        sessTimer = setInterval(refreshSessions, 3000);
         input.addEventListener('input', () => { pal.q = input.value; pal.hover = 0; pal.expanded = null; pal.picCursor = null; paintPalette(); });
         scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) E.closePalette(); });
         scrim.addEventListener('mouseover', (e) => { const row = e.target.closest('.ent'); if (row && row.dataset.idx !== undefined && Number(row.dataset.idx) >= 0 && Number(row.dataset.idx) !== pal.hover) { pal.hover = Number(row.dataset.idx); scrim.querySelectorAll('.ent.hover').forEach((n) => n.classList.remove('hover')); if (!row.classList.contains('unlinked')) row.classList.add('hover'); } });
-        scrim.addEventListener('click', (e) => {
+        scrim.addEventListener('click', async (e) => {
             const t = e.target.closest('[data-act]');
             if (!t) return;
             const act = t.dataset.act;
@@ -247,6 +276,8 @@
             else if (act === 'add') { E.closePalette(); E.openDialog(null); }
             else if (act === 'edit' && ent) { E.closePalette(); E.openDialog(ent); }
             else if (act === 'del' && ent) deleteLocal(ent);
+            else if (act === 'session-front') { t.disabled = true; try { await P.post('/api/sessions/front', { picId: t.dataset.pic }); } finally { t.disabled = false; } }
+            else if (act === 'session-close') { t.disabled = true; try { await P.post('/api/sessions/close', { picId: t.dataset.pic }); } finally { refreshSessions(); } }
         });
         // Di level dokumen, bukan pada scrim: setelah baris diklik isi palet digambar ulang dan fokus
         // jatuh ke body, sehingga Esc/Enter tidak lagi sampai ke elemen di dalam palet.
@@ -291,7 +322,7 @@
         document.addEventListener('keydown', palKey);
     };
     function scrollHover() { const el = document.querySelector('#pal-body .ent.hover'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); }
-    E.closePalette = function () { pal.open = false; if (palKey) { document.removeEventListener('keydown', palKey); palKey = null; } const s = P.$('palette'); if (s) s.remove(); };
+    E.closePalette = function () { pal.open = false; if (palKey) { document.removeEventListener('keydown', palKey); palKey = null; } if (sessTimer) { clearInterval(sessTimer); sessTimer = null; } const s = P.$('palette'); if (s) s.remove(); };
 
     /** Baris ber-PIC banyak (Hub atau Badan lokal) SELALU membuka pilihan PIC dulu - lewat klik
      *  MAUPUN Enter - sama seperti mekanisme Taxio Hub sendiri (coretax.js loginToCoretax: >=2
