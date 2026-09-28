@@ -115,7 +115,7 @@
     // ---------- Palet ----------
     // picCursor: PIC yang sedang di-highlight (bukan berarti sudah dipilih/login) saat pic-panel
     // suatu entitas sedang terbuka - digerakkan panah/Enter tanpa menyentuh mouse sama sekali.
-    const pal = { open: false, tab: 'group', q: '', hover: 0, expanded: null, picCursor: null };
+    const pal = { open: false, q: '', hover: 0, expanded: null, picCursor: null };
     let palKey = null;
     let dlgKey = null;
     let palNav = []; // urutan baris yang bisa dipilih (untuk keyboard)
@@ -166,7 +166,7 @@
             const cursorId = pal.picCursor || (chosen && chosen.pic_id);
             html += '<div class="pic-panel"><div class="cap">Login memakai PIC</div>' + e.pics.map((p) =>
                 '<button type="button" class="radio-row" role="radio" aria-checked="' + (cursorId === p.pic_id) + '" data-act="pic" data-key="' + P.esc(key) + '" data-pic="' + P.esc(p.pic_id) + '"><span class="rd"></span><span class="grow">' + P.esc(p.pic_name) + '</span>' + (p.is_primary ? '<span class="tag auto" style="margin-left:0">UTAMA</span>' : '') + '</button>').join('')
-                + '<div class="hint" style="padding:4px 2px 0">↑↓ pilih PIC, Enter konfirmasi &amp; login. Jika SPT ditandatangani PIC lain, unduhan SPT otomatis dicoba dengan PIC tersebut.</div></div>';
+                + '<div class="hint" style="padding:4px 2px 0">Jika SPT ditandatangani PIC lain, unduhan SPT otomatis dicoba dengan PIC tersebut.</div></div>';
         }
         if (unlinked) {
             html += '<div class="unlinked-note">Belum ada PIC tertaut. Tautkan lewat <b style="color:var(--text)">Manage Coretax PIC</b> di Taxio Hub agar bisa dipakai otomatis.'
@@ -175,30 +175,42 @@
         return html + '</div>';
     }
 
+    // Satu pencarian gabung Grup+Saya (bukan tab terpisah lagi) - mengetik menyaring KEDUANYA
+    // sekaligus, tidak perlu pindah tab dulu untuk menemukan entitas pribadi/lokal. Entitas yang
+    // muncul di kedua sumber (mis. entitas pribadi seorang PIC yang juga anggota grup) dedupe by
+    // key supaya tidak dobel - grup menang, "DARI TAXIO HUB" cuma untuk sisa yang benar-benar
+    // tidak tercakup oleh daftar grup.
     function bodyHtml() {
         palNav = [];
         const q = pal.q.trim();
         const push = (e) => { palNav.push(e); return palNav.length - 1; };
         let html = '';
-        if (pal.tab === 'group') {
-            const list = L.visibleEntities(E.group, q);
-            if (!list.length) html = '<div class="pal-empty">' + (q ? 'Tidak ada entitas yang cocok dengan "' + P.esc(q) + '".' : (E.loaded ? 'Belum ada entitas dengan PIC tertaut.' : 'Memuat entitas…')) + '</div>';
-            else html = (q ? '<div class="pal-sec">' + list.length + ' HASIL</div>' : '') + list.map((e) => rowHtml(e, e.linked === false ? -1 : push(e))).join('');
-            const hidden = L.hiddenUnlinkedCount(E.group);
-            if (!q && hidden > 0) html += '<div class="pal-note">' + P.icon('info', 15) + '<span>Entitas yang belum punya PIC tertaut disembunyikan. Ketik nama untuk mencarinya.</span></div>';
-        } else {
-            const me = E.manualEntity();
-            const hubs = L.visibleEntities(E.personal.filter((e) => e.project === 'taxio_hub'), q);
-            const locals = E.personal.filter((e) => e.project === 'local' && L.entityMatches(e, q));
-            if (me) html += '<div class="pal-sec">SESI YANG SEDANG TERBUKA</div>' + rowHtml(me, push(me));
-            if (hubs.length) html += '<div class="pal-sec">DARI TAXIO HUB</div>' + hubs.map((e) => rowHtml(e, push(e))).join('');
-            if (!P.isRestricted()) {
-                html += '<div class="pal-sec">DITAMBAHKAN DI SINI</div>' + (locals.length ? locals.map((e) => rowHtml(e, push(e))).join('') : '<div class="pal-empty" style="padding:12px">' + (q ? 'Tidak ada yang cocok.' : 'Belum ada. Tambahkan klien yang belum ada di Taxio Hub.') + '</div>')
-                    // Ditata seperti baris entitas biasa (ikon + teks rata kiri), bukan sebagai
-                    // tombol besar terpisah di ujung bawah - supaya menyatu dengan daftar.
-                    + '<button type="button" class="pal-add" data-act="add"><span class="ent-av" style="background:var(--accent-soft);color:var(--accent)">' + P.icon('plus', 18, '', 2.2) + '</span><span>Tambah entitas baru</span></button>';
-            } else if (!hubs.length && !me) html = '<div class="pal-empty">Belum ada entitas pribadi.</div>';
+        const seen = new Set();
+
+        const me = E.manualEntity();
+        if (me) { html += '<div class="pal-sec">SESI YANG SEDANG TERBUKA</div>' + rowHtml(me, push(me)); }
+
+        const groupList = L.visibleEntities(E.group, q);
+        groupList.forEach((e) => seen.add(L.entityKey(e)));
+        if (groupList.length) {
+            html += (q ? '<div class="pal-sec">' + groupList.length + ' HASIL</div>' : '<div class="pal-sec">ENTITAS</div>')
+                + groupList.map((e) => rowHtml(e, e.linked === false ? -1 : push(e))).join('');
         }
+        const hidden = L.hiddenUnlinkedCount(E.group);
+        if (!q && hidden > 0) html += '<div class="pal-note">' + P.icon('info', 15) + '<span>Entitas yang belum punya PIC tertaut disembunyikan. Ketik nama untuk mencarinya.</span></div>';
+
+        const hubExtra = L.visibleEntities(E.personal.filter((e) => e.project === 'taxio_hub'), q).filter((e) => !seen.has(L.entityKey(e)));
+        if (hubExtra.length) html += '<div class="pal-sec">DARI TAXIO HUB</div>' + hubExtra.map((e) => rowHtml(e, push(e))).join('');
+
+        if (!P.isRestricted()) {
+            const locals = E.personal.filter((e) => e.project === 'local' && L.entityMatches(e, q));
+            html += '<div class="pal-sec">DITAMBAHKAN DI SINI</div>' + (locals.length ? locals.map((e) => rowHtml(e, push(e))).join('') : '<div class="pal-empty" style="padding:12px">' + (q ? 'Tidak ada yang cocok.' : 'Belum ada. Tambahkan klien yang belum ada di Taxio Hub.') + '</div>')
+                // Ditata seperti baris entitas biasa (ikon + teks rata kiri), bukan sebagai
+                // tombol besar terpisah di ujung bawah - supaya menyatu dengan daftar.
+                + '<button type="button" class="pal-add" data-act="add"><span class="ent-av" style="background:var(--accent-soft);color:var(--accent)">' + P.icon('plus', 18, '', 2.2) + '</span><span>Tambah entitas baru</span></button>';
+        }
+
+        if (!html) html = '<div class="pal-empty">' + (q ? 'Tidak ada entitas yang cocok dengan "' + P.esc(q) + '".' : (E.loaded ? 'Belum ada entitas.' : 'Memuat entitas…')) + '</div>';
         if (pal.hover >= palNav.length) pal.hover = Math.max(0, palNav.length - 1);
         return html;
     }
@@ -207,30 +219,24 @@
         const body = P.$('pal-body'); if (body) body.innerHTML = bodyHtml();
         const foot = P.$('pal-foot');
         if (foot) foot.innerHTML = '<span style="display:flex;gap:6px;align-items:center"><kbd>↑</kbd><kbd>↓</kbd> pilih</span><span style="display:flex;gap:6px;align-items:center"><kbd>Enter</kbd> gunakan &amp; login</span><span class="grow"></span>'
-            + (pal.tab === 'group' ? '<span><b style="color:var(--accent-ink)">OTOMATIS</b> login dari Taxio Hub</span>' : '<span><b style="color:var(--accent-ink)">OTOMATIS</b> Taxio Hub &amp; lokal · <b style="color:var(--text)">MANUAL</b> Anda login sendiri</span>');
-        document.querySelectorAll('#pal-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === pal.tab)));
+            + '<span><b style="color:var(--accent-ink)">OTOMATIS</b> Taxio Hub &amp; lokal · <b style="color:var(--text)">MANUAL</b> Anda login sendiri</span>';
     }
 
-    E.openPalette = function (tab) {
+    E.openPalette = function () {
         if (pal.open) return;
         pal.open = true; pal.q = ''; pal.hover = 0; pal.expanded = null; pal.picCursor = null;
-        pal.tab = tab || (E.selected && E.selected.entity.project !== 'taxio_hub' ? 'personal' : (E.selected && E.selected.entity.individual && E.personal.some((e) => L.entityKey(e) === L.entityKey(E.selected.entity)) ? 'personal' : 'group'));
         const scrim = document.createElement('div');
         scrim.className = 'scrim'; scrim.id = 'palette';
         scrim.innerHTML = '<div class="dialog" role="dialog" aria-label="Pilih entitas">'
             + '<div class="pal-search">' + P.icon('search', 20, '', 2.2).replace('<svg ', '<svg style="color:var(--accent)" ') + '<input id="pal-q" type="text" placeholder="Cari entitas atau NPWP…" autocomplete="off" aria-label="Cari entitas"><kbd>Esc</kbd></div>'
-            + '<div class="pal-bar"><div class="seg" id="pal-tabs"><button type="button" data-tab="group" aria-pressed="false">' + P.icon('users', 15) + 'Grup</button><button type="button" data-tab="personal" aria-pressed="false">' + P.icon('user', 15) + 'Saya</button></div><span class="hint" id="pal-hint"></span></div>'
             + '<div class="pal-list" id="pal-body"></div><div class="pal-foot" id="pal-foot"></div></div>';
         document.body.appendChild(scrim);
         const input = P.$('pal-q');
-        const setHint = () => { const h = P.$('pal-hint'); if (h) h.textContent = pal.tab === 'group' ? 'Satu baris per entitas' : 'Entitas pribadi dan yang Anda tambah sendiri'; };
-        paintPalette(); setHint(); input.focus();
+        paintPalette(); input.focus();
         input.addEventListener('input', () => { pal.q = input.value; pal.hover = 0; pal.expanded = null; pal.picCursor = null; paintPalette(); });
         scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) E.closePalette(); });
         scrim.addEventListener('mouseover', (e) => { const row = e.target.closest('.ent'); if (row && row.dataset.idx !== undefined && Number(row.dataset.idx) >= 0 && Number(row.dataset.idx) !== pal.hover) { pal.hover = Number(row.dataset.idx); scrim.querySelectorAll('.ent.hover').forEach((n) => n.classList.remove('hover')); if (!row.classList.contains('unlinked')) row.classList.add('hover'); } });
         scrim.addEventListener('click', (e) => {
-            const tabBtn = e.target.closest('#pal-tabs button');
-            if (tabBtn) { pal.tab = tabBtn.dataset.tab; pal.hover = 0; pal.expanded = null; pal.picCursor = null; paintPalette(); setHint(); return; }
             const t = e.target.closest('[data-act]');
             if (!t) return;
             const act = t.dataset.act;

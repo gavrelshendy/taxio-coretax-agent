@@ -204,18 +204,18 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('#palette', { state: 'detached' });
         assert.ok((await text('#entity-chip')).includes('PIC ANDI PRATAMA'), 'Enter kedua mengonfirmasi PIC yang di-highlight (bukan yang lama) dan login');
     });
-    await test('palet: Tab murni ke tombol lalu Enter tetap jalan (native), bukan cuma jalan pintas kotak cari', async () => {
+    await test('palet: Tab murni ke baris entitas lalu Enter tetap jalan (native), bukan cuma jalan pintas kotak cari', async () => {
         // Jalan pintas ↑↓/Enter di atas HANYA boleh aktif selagi fokus asli ada di kotak cari -
         // begitu pengguna berpindah pakai Tab (cara screen reader/keyboard biasa, bukan mengetik),
         // Enter pada tombol yang fokus harus tetap memicu tombol ITU secara native, tidak boleh
         // diam-diam ditangkap dan diarahkan ke logika kotak cari.
         await page.click('#entity-chip');
         await page.locator('#pal-q').focus();
-        await page.keyboard.press('Tab'); // -> tombol tab "Grup"
-        await page.keyboard.press('Tab'); // -> tombol tab "Saya"
-        await page.keyboard.press('Enter'); // harus memicu klik native tombol yang fokus ini
-        assert.strictEqual(await page.locator('#pal-tabs [data-tab="personal"]').getAttribute('aria-pressed'), 'true', 'Enter pada tombol hasil Tab harus memicu tombol itu sendiri, bukan diabaikan/diarahkan ke jalan pintas');
-        await page.keyboard.press('Escape');
+        await page.keyboard.press('Tab'); // -> baris entitas pertama (Budi Contoh Santoso), tanpa mengetik apa pun
+        await page.keyboard.press('Enter'); // harus memicu klik native baris yang fokus ini
+        assert.ok((await text('#entity-chip')).includes('Budi Contoh Santoso'), 'Enter pada baris hasil Tab harus memicu baris itu sendiri, bukan diabaikan/diarahkan ke jalan pintas kotak cari');
+        await page.click('#entity-chip'); // buka lagi untuk test berikutnya
+        await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter'); // kembalikan pilihan
         await page.waitForSelector('#palette', { state: 'detached' });
     });
     // Test berikut ini sengaja ditaruh TERAKHIR di blok palet: hasil akhirnya (entitas terpilih =
@@ -352,7 +352,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.strictEqual(await page.locator('.pp .chip[aria-pressed="true"]').count(), 1);
     });
 
-    // ------------------------------------------------ entitas lokal berkredensial (tab Saya) - login OTOMATIS
+    // ------------------------------------------------ entitas lokal berkredensial - login OTOMATIS
     await test('Alt+K membuka palet yang sama seperti Ctrl+K', async () => {
         await page.keyboard.press('Alt+k');
         await page.waitForSelector('#palette');
@@ -375,9 +375,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     });
     await test('tambah entitas Badan: PIC berkredensial sendiri (nama, NPWP, kata sandi); bisa tambah PIC lagi', async () => {
         await page.click('#entity-chip');
-        await page.click('#pal-tabs [data-tab="personal"]');
-        assert.ok(await visible('.pal-add'));
-        assert.ok((await text('#pal-body')).includes('Budi Contoh Santoso'), 'entitas pribadi dari Hub ada di Saya');
+        assert.ok(await visible('.pal-add'), 'tombol tambah entitas selalu terlihat, tidak perlu pindah tab');
+        assert.ok((await text('#pal-body')).includes('Budi Contoh Santoso'), 'entitas pribadi dari Hub tetap tampil dalam satu daftar gabungan');
         await page.click('.pal-add');
         await page.waitForSelector('#entity-dialog');
         assert.strictEqual(await page.locator('#entity-dialog [data-act="led-type"][data-val="badan"]').getAttribute('aria-pressed'), 'true');
@@ -409,9 +408,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok((await text('.status-pill')).includes('Belum masuk Coretax'), 'status login umum, bukan status jendela manual');
         await shot('15-entitas-lokal-otomatis');
     });
-    await test('palet Saya: entitas lokal ber-PIC banyak menampilkan tag OTOMATIS berdampingan dengan pemilih PIC', async () => {
+    await test('palet: entitas lokal ber-PIC banyak menampilkan tag OTOMATIS berdampingan dengan pemilih PIC', async () => {
         await page.click('#entity-chip');
-        await page.click('#pal-tabs [data-tab="personal"]');
         const row = page.locator('#pal-body .ent', { hasText: 'CV Klien Baru Sejahtera' });
         assert.ok((await row.locator('.tag.auto').first().innerText()).includes('OTOMATIS'));
         assert.ok(await row.locator('.pic-chip').isVisible(), 'pemilih PIC tampil berdampingan, bukan menggantikan tag');
@@ -421,7 +419,6 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('memilih entitas lokal ber-PIC banyak (Enter) membuka pilihan PIC juga; memilih PIC memicu login otomatis', async () => {
         calls.length = 0;
         await page.click('#entity-chip');
-        await page.click('#pal-tabs [data-tab="personal"]');
         await page.fill('#pal-q', 'klien baru');
         await page.keyboard.press('Enter');
         assert.ok(await visible('#palette'), 'Enter pada entitas lokal 2 PIC tidak boleh menutup palet - sama seperti entitas Hub');
@@ -471,7 +468,6 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         fakes.ctl.manual.loggedIn = false; fakes.ctl.manual.identity = '';
         await page.evaluate(() => window.Pilot.manual.poll());
         await page.click('#entity-chip');
-        await page.click('#pal-tabs [data-tab="group"]');
         await page.fill('#pal-q', 'lestari');
         await page.click('[data-act="use-manual"]');
         await page.waitForSelector('#palette', { state: 'detached' });
@@ -503,7 +499,6 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     });
     await test('entitas lokal dapat diubah lewat dialog yang sama; NPWP tiap PIC ikut ditampilkan (bukan rahasia)', async () => {
         await page.click('#entity-chip');
-        await page.click('#pal-tabs [data-tab="personal"]');
         const row = page.locator('#pal-body .ent', { hasText: 'CV Klien Baru Sejahtera' });
         await row.hover();
         await row.locator('[data-act="edit"]').click();
@@ -581,7 +576,6 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok((await text('.sidebar')).includes('Restricted Editor'));
         assert.ok(!(await visible('#btn-open-coretax')), 'tanpa Buka Coretax');
         await page.click('#entity-chip');
-        await page.click('#pal-tabs [data-tab="personal"]');
         assert.ok(!(await visible('.pal-add')), 'tanpa tambah entitas manual');
         await page.keyboard.press('Escape');
         await page.locator('#entity-chip').click();
