@@ -398,6 +398,25 @@ async function handleSessionStatus(req, res) {
     catch (e) { return sendJson(res, 200, { open: false, loggedIn: false, identity: '' }); }
 }
 
+/** Daftar semua jendela Chrome yang proses ini punya sekarang (bisa lebih dari satu PIC
+ *  sekaligus, plus sesi manual) - untuk panel "Sesi aktif" di Pengaturan. */
+async function handleSessionsList(req, res) {
+    try { return sendJson(res, 200, { sessions: await chrome.listLiveSessions() }); }
+    catch (e) { return sendJson(res, 200, { sessions: [] }); }
+}
+async function handleSessionFront(req, res) {
+    let body; try { body = await readJsonBody(req); } catch (e) { body = {}; }
+    if (!body || !body.picId) return sendJson(res, 400, { error: 'picId wajib diisi.' });
+    try { return sendJson(res, 200, { ok: await chrome.bringSessionToFront(body.picId) }); }
+    catch (e) { return sendJson(res, 400, { error: e.message }); }
+}
+async function handleSessionClose(req, res) {
+    let body; try { body = await readJsonBody(req); } catch (e) { body = {}; }
+    if (!body || !body.picId) return sendJson(res, 400, { error: 'picId wajib diisi.' });
+    try { return sendJson(res, 200, { ok: await chrome.closeLiveSession(body.picId) }); }
+    catch (e) { return sendJson(res, 400, { error: e.message }); }
+}
+
 function sanitizeFolder(s) { return String(s || '').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 60) || 'Manual'; }
 
 function anyRestricted() { return state.connectedProjectIds().some(isProjectRestricted); }
@@ -993,6 +1012,9 @@ function createGuiServer(port) {
             if (pathname === '/api/deeplink' && req.method === 'POST') return handleDeepLink(req, res);
             if (pathname === '/api/manual/status' && req.method === 'GET') return handleManualStatus(req, res);
             if (pathname === '/api/session/status' && req.method === 'POST') return handleSessionStatus(req, res);
+            if (pathname === '/api/sessions/list' && req.method === 'GET') return handleSessionsList(req, res);
+            if (pathname === '/api/sessions/front' && req.method === 'POST') return handleSessionFront(req, res);
+            if (pathname === '/api/sessions/close' && req.method === 'POST') return handleSessionClose(req, res);
             if (pathname === '/api/run/status' && req.method === 'GET') return sendJson(res, 200, runcontrol.status());
             if (pathname === '/api/run/pause' && req.method === 'POST') { runcontrol.pause(); return sendJson(res, 200, runcontrol.status()); }
             if (pathname === '/api/run/resume' && req.method === 'POST') { runcontrol.resume(); return sendJson(res, 200, runcontrol.status()); }

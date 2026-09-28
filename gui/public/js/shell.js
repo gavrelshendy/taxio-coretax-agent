@@ -84,7 +84,8 @@
         } else if (!P.isRestricted()) {
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button>';
         }
-        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + buttons + '</header>';
+        const clearBtn = ent ? '<button type="button" class="icon-btn" id="btn-clear-entity" title="Lepas pilihan entitas" aria-label="Lepas pilihan entitas"' + (busy ? ' disabled' : '') + '>' + P.icon('x', 16) + '</button>' : '';
+        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + clearBtn + buttons + '</header>';
     }
     function appHtml() {
         return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Periksa Pembaruan</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
@@ -127,11 +128,31 @@
         const scrim = document.createElement('div'); scrim.className = 'scrim'; scrim.id = 'settings';
         scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Pengaturan"><div class="dialog-head"><h2>Pengaturan</h2><button type="button" class="icon-btn" aria-label="Tutup" data-x="close">' + P.icon('x', 18) + '</button></div>'
             + '<div class="dialog-body"><div class="stack"><div class="eyebrow">Akun</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Putuskan</button></div></div>'
+            + '<div class="stack"><div class="eyebrow">Sesi Coretax aktif</div><div class="stack" id="live-sessions" style="gap:8px"></div></div>'
             + '<div class="stack"><div class="eyebrow">Versi aplikasi</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Periksa pembaruan</button></div></div></div>'
             + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Tutup aplikasi</button><span class="grow"></span><button type="button" class="btn" data-x="close">Selesai</button></div></div>';
         document.body.appendChild(scrim);
+        // Bisa lebih dari satu jendela Chrome terbuka bersamaan (satu per PIC yang dipakai, plus
+        // sesi manual) - daftar ini dipoll ringan selama dialog terbuka supaya kalau Anda menutup
+        // jendelanya sendiri (bukan lewat tombol Tutup di sini), baris itu ikut hilang dari sini
+        // tanpa perlu buka-tutup ulang Pengaturan.
+        async function renderSessions() {
+            const el = P.$('live-sessions'); if (!el) return;
+            let list = [];
+            try { list = (await P.api('/api/sessions/list')).sessions || []; } catch (e) { return; }
+            if (!list.length) { el.innerHTML = '<div class="hint">Tidak ada jendela Coretax yang terbuka saat ini.</div>'; return; }
+            el.innerHTML = list.map((s) => {
+                const label = s.kind === 'manual' ? 'Sesi manual' : 'PIC ' + s.picId;
+                const idText = s.identity || (s.loggedIn ? '(identitas belum terbaca)' : 'Belum login / masih di halaman masuk');
+                return '<div class="doc-row"><span class="ico">' + P.icon(s.kind === 'manual' ? 'user' : 'globe', 18) + '</span><div class="t"><b>' + esc(label) + '</b><span>' + esc(idText) + '</span></div>'
+                    + '<span class="row" style="gap:6px"><button type="button" class="btn btn-sm" data-x="front" data-pic="' + esc(s.picId) + '">Bawa ke depan</button>'
+                    + '<button type="button" class="btn btn-sm btn-danger" data-x="close-session" data-pic="' + esc(s.picId) + '">Tutup</button></span></div>';
+            }).join('');
+        }
+        renderSessions();
+        const sessTimer = setInterval(renderSessions, 3000);
         const onKey = (e) => { if (e.key === 'Escape') closeIt(); };
-        const closeIt = () => { document.removeEventListener('keydown', onKey); scrim.remove(); };
+        const closeIt = () => { document.removeEventListener('keydown', onKey); clearInterval(sessTimer); scrim.remove(); };
         document.addEventListener('keydown', onKey);
         scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) closeIt(); });
         scrim.addEventListener('click', async (e) => {
@@ -140,6 +161,8 @@
             if (x === 'close') closeIt();
             else if (x === 'disconnect') { closeIt(); P.state.session = await P.post('/api/disconnect', { project: 'taxio_hub' }); E.clear(); P.auth.screen = 'masuk'; P.emit('session'); }
             else if (x === 'quit') { if (confirm('Tutup Taxio Pilot sepenuhnya?')) await P.post('/api/quit'); }
+            else if (x === 'front') { b.disabled = true; try { await P.post('/api/sessions/front', { picId: b.dataset.pic }); } finally { b.disabled = false; } }
+            else if (x === 'close-session') { b.disabled = true; try { await P.post('/api/sessions/close', { picId: b.dataset.pic }); } finally { renderSessions(); } }
             else if (x === 'update') {
                 const t = P.$('upd-text'); b.disabled = true; t.textContent = 'Mengecek pembaruan…';
                 try {
@@ -172,6 +195,7 @@
         app.addEventListener('click', (e) => {
             const nav = e.target.closest('[data-nav]'); if (nav) return S.go(nav.dataset.nav);
             if (e.target.closest('#entity-chip')) return E.openPalette();
+            if (e.target.closest('#btn-clear-entity')) return E.clear();
             if (e.target.closest('#open-settings')) return openSettings();
             if (e.target.closest('#btn-open-coretax')) return P.manual.open();
             if (e.target.closest('#btn-check-session')) return P.manual.check(true);

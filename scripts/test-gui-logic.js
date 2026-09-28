@@ -56,11 +56,11 @@ test('yearsToCode dan parseYears cocok dengan lib/masa.js (tahunan)', () => {
 });
 test('masaLabel', () => { assert.strictEqual(L.masaLabel('0826'), 'Agustus 2026'); });
 
-test('initials: tanpa bentuk badan hukum, satu kata memakai dua huruf', () => {
-    assert.strictEqual(L.initials('PT Contoh Sejahtera Abadi'), 'CS');
-    assert.strictEqual(L.initials('BERKAT KANA ABADI, PT'), 'BK');
+test('initials: tanpa bentuk badan hukum, biasanya tiga huruf (satu kata pakai tiga huruf pertama)', () => {
+    assert.strictEqual(L.initials('PT Contoh Sejahtera Abadi'), 'CSA');
+    assert.strictEqual(L.initials('BERKAT KANA ABADI, PT'), 'BKA');
     assert.strictEqual(L.initials('Yayasan Contoh Peduli'), 'CP');
-    assert.strictEqual(L.initials('Budi'), 'BU');
+    assert.strictEqual(L.initials('Budi'), 'BUD');
     assert.strictEqual(L.initials('PT'), 'E');
 });
 

@@ -158,7 +158,12 @@
 
     // ---------- Aturan yang dipakai beberapa halaman ----------
     const restricted = () => P.isRestricted();
-    const perHalaman = (id, val) => '<div class="field"><label for="' + id + '">Baris per halaman</label><select class="input sm" id="' + id + '" data-bind="pageSize">' + ['auto', '100', '50', '25', '10'].map((v) => '<option value="' + v + '"' + (String(val) === v ? ' selected' : '') + '>' + (v === 'auto' ? 'Otomatis' : v + ' baris') + '</option>').join('') + '</select></div>';
+    // "Baris per halaman" dulu ada di sini (Otomatis/100/50/25/10), dihapus dari form - sejak
+    // e-Bupot/Bukti Potong Saya pindah ke pengambilan API langsung, angka ini cuma jadi ukuran
+    // batch per panggilan API, bukan lagi menyamai tampilan Coretax. Selalu mulai dari 100
+    // (state.pageSize tetap 'auto' -> automation/*.js jatuh ke default 100). Kontrol yang
+    // benar-benar berguna (ubah ukuran batch DI TENGAH proses kalau lemot/gagal) tetap ada di
+    // layar "Sedang Berjalan" (lihat P.run - tombol 10/25/50/100 di run-controls).
 
     // =========================================================
     // SPT
@@ -256,7 +261,7 @@
             }).join('') + '</div>')
                 + P.card(2, 'Status dan format', '', '<div class="stack-lg"><div class="field"><span class="label">Status dokumen</span>' + P.seg('status', [{ value: 'issued', label: 'Telah terbit' }, { value: 'not_issued', label: 'Belum terbit' }], st.status)
                     + '<span class="hint">Dokumen Belum Terbit belum punya PDF resmi dan disimpan sebagai ringkasan Excel saja.</span></div>'
-                    + '<div class="stack">' + P.docRow('excel', true, 'sheet', 'Excel', 'Ringkasan seluruh data (selalu dibuat)', true) + P.docRow('pdf', forceExcel ? false : st.pdf, 'file', 'PDF', forceExcel ? 'Tidak tersedia untuk pilihan ini' : 'PDF resmi tiap dokumen', forceExcel) + '</div>' + perHalaman('eb-page', st.pageSize) + '</div>')
+                    + '<div class="stack">' + P.docRow('excel', true, 'sheet', 'Excel', 'Ringkasan seluruh data (selalu dibuat)', true) + P.docRow('pdf', forceExcel ? false : st.pdf, 'file', 'PDF', forceExcel ? 'Tidak tersedia untuk pilihan ini' : 'PDF resmi tiap dokumen', forceExcel) + '</div></div>')
                 + P.card(3, 'Masa pajak', '', st.pp.html() + (showKode ? '<div class="field"><label for="eb-kode">Kode objek pajak (opsional)</label><input class="input mono" id="eb-kode" data-bind="kode" value="' + esc(st.kode) + '" placeholder="kosongkan = semua kode · mis. 21-100-35;21-100-20"></div>' : ''));
         },
         act(act, d, st, api) {
@@ -306,7 +311,7 @@
             }).join('') + '</div></div>';
             return P.card(1, 'Jenis bukti potong', '<span>Bukti potong yang diterima</span>', group('Milik entitas', false) + group('Milik PIC pribadi', true)
                 + (!personalOk ? '<div class="hint">Jenis milik PIC pribadi hanya tersedia saat memakai akun orang pribadi.</div>' : ''))
-                + P.card(2, 'Format', '', '<div class="stack">' + P.docRow('excel', true, 'sheet', 'Excel', 'Ringkasan seluruh data (selalu dibuat)', true) + P.docRow('pdf', st.pdf, 'file', 'PDF', 'PDF resmi tiap bukti potong') + '</div>' + perHalaman('bp-page', st.pageSize))
+                + P.card(2, 'Format', '', '<div class="stack">' + P.docRow('excel', true, 'sheet', 'Excel', 'Ringkasan seluruh data (selalu dibuat)', true) + P.docRow('pdf', st.pdf, 'file', 'PDF', 'PDF resmi tiap bukti potong') + '</div>')
                 + P.card(3, 'Masa pajak', '', st.pp.html());
         },
         act(act, d, st, api) {
