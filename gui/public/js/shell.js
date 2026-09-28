@@ -80,6 +80,7 @@
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button><button type="button" class="btn" id="btn-check-session" style="background:var(--surface-2)">' + P.icon('shield', 17) + 'Periksa sesi</button>';
         } else if (ent) {
             buttons = '<button type="button" class="icon-btn" id="btn-refresh-session" title="Cek ulang siapa yang sedang login di Coretax sekarang" aria-label="Segarkan status sesi">' + P.icon('retry', 16) + '</button>'
+                + (P.isRestricted() ? '' : '<button type="button" class="icon-btn" id="btn-manual-for-entity" title="Login manual untuk entitas ini - Anda ketik sandi Coretax sendiri, tanpa memakai kredensial tersimpan" aria-label="Login manual untuk entitas ini"' + (busy ? ' disabled' : '') + '>' + P.icon('user', 16) + '</button>')
                 + '<button type="button" class="btn" id="btn-login"' + (busy ? ' disabled' : '') + ' title="Login dan impersonate entitas ini, tanpa mengisi form">' + P.icon('globe', 17) + 'Masuk Coretax</button>';
         } else if (!P.isRestricted()) {
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button>';
@@ -200,6 +201,7 @@
             if (e.target.closest('#btn-open-coretax')) return P.manual.open();
             if (e.target.closest('#btn-check-session')) return P.manual.check(true);
             if (e.target.closest('#btn-refresh-session')) return P.session.refresh();
+            if (e.target.closest('#btn-manual-for-entity')) { const cur = E.current(); return cur && E.useManualFor(cur); }
             if (e.target.closest('#btn-login')) return loginEntity(e.target.closest('#btn-login'));
             if (e.target.closest('#outdated-check')) return checkUpdateFromBanner();
         });
