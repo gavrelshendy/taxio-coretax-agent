@@ -51,6 +51,15 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     const visible = (sel) => page.locator(sel).first().isVisible();
     const lastCall = () => calls[calls.length - 1];
     const pause = (ms) => page.waitForTimeout(ms);
+    // Kosongkan sesi palsu; pilihan entitas otomatis lepas (jendela hilang), lalu pilih lagi Sejahtera/ANDI.
+    const sessionsGoneThenReselect = async () => {
+        fakes.ctl.sessions = [];
+        await page.waitForFunction(() => document.querySelector('#entity-chip').textContent.includes('Pilih entitas'), null, { timeout: 7000 });
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
+    };
 
     console.log('gui ui');
     await page.goto(BASE + '/');
@@ -395,6 +404,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
             { picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT CONTOH SEJAHTERA ABADI' },
             { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }
         ];
+        await page.waitForSelector('#btn-other-sessions', { timeout: 6000 });
         await page.click('#entity-chip');
         await page.waitForSelector('#palette');
         await page.waitForFunction(() => (document.querySelector('#pal-body') || {}).textContent.includes('SESI AKTIF'), null, { timeout: 3000 });
@@ -406,9 +416,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         // Tutup sesi ke-2 lewat ikon X - daftar berkurang jadi 1 tanpa perlu tutup-buka ulang palet.
         await rows.nth(1).locator('[data-act="session-close"]').click();
         await page.waitForFunction(() => document.querySelectorAll('.session-row').length === 1, null, { timeout: 3000 });
-        fakes.ctl.sessions = [];
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
+        await sessionsGoneThenReselect();
     });
     await test('topbar: badge "N sesi lain" muncul saat ada sesi Coretax lain di luar entitas terpilih, klik membuka palet', async () => {
         // Entitas terpilih saat ini: PT Contoh Sejahtera Abadi / PIC p-andi. p-andi sendiri TIDAK
@@ -424,8 +434,14 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForFunction(() => (document.querySelector('#pal-body') || {}).textContent.includes('SESI AKTIF'), null, { timeout: 3000 });
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
-        fakes.ctl.sessions = [];
-        await page.waitForSelector('#btn-other-sessions', { state: 'detached', timeout: 6000 });
+        await sessionsGoneThenReselect();
+        assert.ok(!(await visible('#btn-other-sessions')));
+    });
+    await test('topbar: jendela sesi entitas terpilih hilang -> pilihan otomatis dilepas ("Pilih entitas")', async () => {
+        assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
+        fakes.ctl.sessions = [{ picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: 'x' }];
+        await page.waitForFunction(() => window.Pilot.state.sessions.length === 1, null, { timeout: 6000 });
+        await sessionsGoneThenReselect();
     });
     await test('memilih PIC pada entitas Hub ber-PIC banyak langsung memicu login otomatis (tanpa klik Masuk Coretax terpisah)', async () => {
         calls.length = 0;
