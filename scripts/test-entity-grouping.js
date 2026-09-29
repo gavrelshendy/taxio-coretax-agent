@@ -2,7 +2,7 @@
    PIC dipilih di dalam baris, entitas tanpa PIC ditandai. Jalankan:
      node scripts/test-entity-grouping.js */
 const assert = require('assert');
-const { groupEntityRows } = require('../lib/entities');
+const { groupEntityRows, resolveAuthorizedPic } = require('../lib/entities');
 
 let passed = 0;
 function test(name, fn) {
@@ -86,3 +86,24 @@ test('pic_is_mine dipertahankan per PIC (false hanya bila memang false)', () => 
 });
 
 console.log('\n' + passed + ' tes lulus' + (process.exitCode ? ', ADA YANG GAGAL' : '.'));
+
+console.log('resolveAuthorizedPic');
+// Klien Supabase tiruan: PIC di `denied` menjawab "Tidak berwenang" untuk passphrase dan kredensial.
+const fakeClient = (denied, passOnly) => ({ rpc: async (name, args) => {
+    const bad = denied.includes(args.p_pic_id);
+    if (name === 'get_coretax_pic_passphrase') return bad ? { data: null, error: { message: 'Tidak berwenang' } } : { data: 'pp-' + args.p_pic_id, error: null };
+    if (name === 'get_coretax_pic_credential_for_automation') return bad && !passOnly ? { data: null, error: { message: 'Tidak berwenang' } } : { data: [{ username: 'u', password: 'p' }], error: null };
+    return { data: null, error: null };
+} });
+const runAsync = async () => {
+    let r = await resolveAuthorizedPic(fakeClient([]), 'o', 'a', ['b']);
+    assert.deepStrictEqual([r.picId, r.switched, r.denied, r.passphrase], ['a', false, false, 'pp-a']);
+    r = await resolveAuthorizedPic(fakeClient(['a']), 'o', 'a', ['b', 'c']);
+    assert.deepStrictEqual([r.picId, r.switched, r.passphrase, r.fallbackPicIds], ['b', true, 'pp-b', ['c']]);
+    r = await resolveAuthorizedPic(fakeClient(['a', 'b']), 'o', 'a', ['b']);
+    assert.deepStrictEqual([r.picId, r.switched, r.denied], ['a', false, true]);
+    r = await resolveAuthorizedPic(fakeClient(['a'], true), 'o', 'a', ['b']);
+    assert.deepStrictEqual([r.picId, r.switched, r.denied], ['a', false, false]);
+    passed++; console.log('  ok   PIC ditolak -> pindah ke PIC tertaut yang berwenang; semua ditolak -> denied; hanya passphrase ditolak -> PIC tidak diubah');
+};
+runAsync().catch((e) => { console.error('  FAIL resolveAuthorizedPic: ' + (e && e.stack || e)); process.exitCode = 1; });

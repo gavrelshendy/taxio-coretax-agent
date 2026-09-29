@@ -86,6 +86,12 @@ test('visibleEntities: pencarian memunculkan yang belum tertaut (nama, kode, NPW
     assert.deepStrictEqual(L.visibleEntities(LIST, 'rina').map((e) => e.entity_id), ['MKA']);
     assert.deepStrictEqual(L.visibleEntities(LIST, 'tidak-ada'), []);
 });
+test('pickPic: PIC bawaan tidak jatuh ke PIC milik orang lain bila ada yang milik Anda', () => {
+    const e = { pics: [{ pic_id: 'orang', is_primary: true, pic_is_mine: false }, { pic_id: 'saya', is_primary: false, pic_is_mine: true }] };
+    assert.strictEqual(L.pickPic(e, undefined).pic_id, 'saya');
+    assert.strictEqual(L.pickPic(e, 'orang').pic_id, 'orang', 'pilihan eksplisit tetap dihormati');
+    assert.strictEqual(L.pickPic({ pics: [{ pic_id: 'o1', is_primary: true, pic_is_mine: false }] }, undefined).pic_id, 'o1');
+});
 test('pickPic: yang diminta, kalau tidak ada PIC utama, kalau tidak ada yang pertama', () => {
     assert.strictEqual(L.pickPic(LIST[0], 'r').pic_id, 'r');
     assert.strictEqual(L.pickPic(LIST[0], 'zzz').pic_id, 'a');

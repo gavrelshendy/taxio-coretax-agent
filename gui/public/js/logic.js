@@ -114,7 +114,10 @@
     /** Pilihan PIC untuk sebuah entitas Taxio Hub: yang diminta bila ada, jika tidak PIC utama. */
     function pickPic(entity, wantedPicId) {
         const pics = entity.pics || [];
-        return pics.find((p) => p.pic_id === wantedPicId) || pics.find((p) => p.is_primary) || pics[0] || null;
+        const mine = (p) => p.pic_is_mine !== false;
+        // PIC bawaan: yang dipilih user -> utama milik Anda -> PIC lain milik Anda -> utama -> pertama.
+        // PIC milik orang lain ditolak Taxio Hub ("Tidak berwenang"), jadi jangan jadi bawaan bila ada yang milik Anda.
+        return pics.find((p) => p.pic_id === wantedPicId) || pics.find((p) => p.is_primary && mine(p)) || pics.find(mine) || pics.find((p) => p.is_primary) || pics[0] || null;
     }
 
     /** Bentuk entitas datar yang diterima API aksi (sama dengan baris lama entitas x PIC).
