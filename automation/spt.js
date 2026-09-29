@@ -496,7 +496,7 @@ async function processSptCombo(ctx) {
                 }
                 if(ctx.a1Book){
                   try {
-                    const secret=await require('../lib/lampiran-confidential').renderConfidential(lampiranResult.confidentialSummaries,{entity:lampiranResult.entityName,period:lampiranResult.period.headerLabel,title:lampiran.TAXTYPE_CONFIG[row.TaxTypeCode].title,taxTypeCode:row.TaxTypeCode},{dir:saveDir,stem:require('../lib/spt-filenames').filename(row.TaxTypeCode,mmYY,'Lampiran - Confidential',pbSuffix,'',entityCode),outputLayout,renderSession:ctx.a1Book.renderSession});
+                    const secret=await require('../lib/lampiran-confidential').renderConfidential(lampiranResult.confidentialSummaries,{entity:ctx.entityName||lampiranResult.entityName,period:lampiranResult.period.headerLabel,title:lampiran.TAXTYPE_CONFIG[row.TaxTypeCode].title,taxTypeCode:row.TaxTypeCode},{dir:saveDir,stem:require('../lib/spt-filenames').filename(row.TaxTypeCode,mmYY,'Lampiran - Confidential',pbSuffix,'',entityCode),outputLayout,renderSession:ctx.a1Book.renderSession});
                     if(!secret.combinedPath)throw Error(secret.error||'PDF rahasia gagal dibuat.');
                     const secretPath=path.join(ctx.finalDir || saveDir,buildSptFilename(entityCode,meta.packageToken+' (Rahasia)',mmYY,pbSuffix));
                     if(!fs.existsSync(bpePath)||!fs.existsSync(sptPath))throw Error('Paket belum lengkap: BPE atau Induk belum tersedia.');
@@ -735,7 +735,7 @@ async function runSptDownload(opts) {
                 try {
                     const result = await processSptCombo({
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
-                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual,
+                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual, entityName: entity.entity_name,
                         includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, entityNpwp: entity.npwp, saveRoot,
                         log: emit, a1Book, finalDir
                     });
