@@ -22,6 +22,23 @@ module.exports=async function(){
  const ytd=await available.save(dir,'ENTITAS UJI');assert.equal(ytd.partial,false);assert.equal(ytd.selected,8);assert(ytd.control.slice(8).every(row=>row[2]==='Belum ada SPT'));
  const yearBook=new ExcelJS.Workbook();await yearBook.xlsx.readFile(ytd.file);assert.equal(yearBook.getWorksheet('L-IA').getCell('D16').value.result,1915897048);
  const empty=await new AnnualWorkbook(2026).save(dir,'ENTITAS UJI');assert(empty.partial);assert.equal(empty.selected,0);
+
+ // BPMP per NIK (SUMIFS) + NIK sementara 9990000000999000 dipisah per nomor di belakang # dan disorot.
+ const bpmp=(nik,name,value)=>[nik,name,value];
+ const rows=[['1','1111111111111111','BUDI','1.000'],['2','9990000000999000','penerima penghasilan#1213123','500'],['3','9990000000999000','penerima penghasilan#9999','700']];
+ const bpmpSheet=(rs)=>[{label:'L-IA',tables:[{title:'Tabel',headers:['No.','NIK/NPWP','Nama','Penghasilan Bruto (Rp)'],rows:rs,moneyCols:[3],totals:{3:sumAmounts(rs.map(r=>r[3]))},sourceTotals:[],records:true}],fields:[],otherText:''}];
+ const tb=new AnnualWorkbook(2026);for(let m=1;m<=12;m++)tb.register(String(m).padStart(2,'0')+'26',[]);
+ tb.register('0126',[normal]);tb.record('0126',normal,bpmpSheet(rows),true);tb.register('0226',[normal]);tb.record('0226',normal,bpmpSheet([['1','1111111111111111','BUDI','2.000'],['2','9990000000999000','penerima penghasilan#1213123','250']]),true);
+ const tr=await tb.save(dir,'ENTITAS UJI');assert.equal(tr.tempNikRows,4);
+ const twb=new ExcelJS.Workbook();await twb.xlsx.readFile(tr.file);const sum=twb.getWorksheet('BPMP per NIK');assert(sum,'sheet BPMP per NIK ada');
+ const cell=(r,c)=>{const v=sum.getCell(r,c).value;return v&&v.result!==undefined?v.result:v;};
+ assert.equal(cell(6,1),'1111111111111111');assert.equal(cell(6,5),3000);
+ assert.equal(cell(7,3),'1213123');assert.equal(cell(7,5),750);assert.equal(cell(8,3),'9999');assert.equal(cell(8,5),700);
+ assert.match(sum.getCell(6,5).value.formula,/^SUMIFS\('L-IA'!\$E\$8:\$E\$12,'L-IA'!\$C\$8:\$C\$12,\$A6&"\*"\)$/);
+ assert.match(sum.getCell(7,5).value.formula,/'L-IA'!\$D\$8:\$D\$12,"\*#"&\$C7\)$/);
+ assert.equal(sum.getCell(7,1).fill.fgColor.argb,'FFFFE699');assert.notEqual((sum.getCell(6,1).fill||{}).fgColor?.argb,'FFFFE699');
+ assert.equal(twb.getWorksheet('L-IA').getCell('C9').fill.fgColor.argb,'FFFFE699');assert.notEqual((twb.getWorksheet('L-IA').getCell('C8').fill||{}).fgColor?.argb,'FFFFE699');
+ assert.equal(cell(9,5),4450);
  console.log('PASS: A1 latest revision; all-version PDF completeness; annual totals; Masa; IDs; no fallback on failure; schema mismatch.');
 };
 if(require.main===module)module.exports().catch(e=>{console.error(e);process.exitCode=1});
