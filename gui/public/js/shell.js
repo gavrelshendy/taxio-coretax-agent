@@ -40,10 +40,23 @@
     // hanya polling ambient supaya topbar bisa menunjukkan ADA sesi lain terbuka tanpa harus
     // membuka palet dulu (kekhawatiran: entity chip cuma menonjolkan satu nama, seolah cuma itu
     // satu-satunya sesi yang aktif padahal bisa ada beberapa jendela Chrome PIC lain terbuka).
+    // Pilihan entitas dilepas otomatis begitu jendela sesinya HILANG (ditutup) - tapi hanya setelah
+    // sesi itu pernah terlihat, supaya jeda antara memilih entitas dan jendela login-nya muncul
+    // tidak dianggap "sesi hilang".
+    let seenSel = { key: '', seen: false };
+    function releaseIfSessionGone(list) {
+        const cur = E.current();
+        if (!cur || !cur.pic_id) { seenSel = { key: '', seen: false }; return; }
+        const key = cur.project + '|' + cur.entity_id + '|' + cur.pic_id;
+        if (seenSel.key !== key) seenSel = { key, seen: false };
+        if (list.some((s) => s.picId === cur.pic_id)) seenSel.seen = true;
+        else if (seenSel.seen && !P.state.run.active) { seenSel = { key: '', seen: false }; E.clear(); }
+    }
     async function pollSessions() {
         let list;
         try { list = ((await P.api('/api/sessions/list')) || {}).sessions || []; } catch (e) { return; }
         if (JSON.stringify(list) !== JSON.stringify(P.state.sessions)) { P.state.sessions = list; P.emit('sessions'); }
+        releaseIfSessionGone(list);
     }
     function otherSessionsCount(ent) {
         const list = P.state.sessions || [];
