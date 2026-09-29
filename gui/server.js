@@ -483,10 +483,13 @@ async function resolveEntitySource(res, entity) {
     const restricted = isProjectRestricted(entity.project);
     if (isIndividualEntityBlocked(restricted, entity)) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' }); return null; }
     const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
-    const passphrase = await entitiesLib.getPassphrase(s.client, s.orgId, entity.pic_id).catch(() => null);
-    const fallbackPicIds = await entitiesLib.getOtherLinkedPicIds(s.client, s.orgId, entity.entity_id, entity.pic_id).catch(() => []);
+    const linkedOthers = await entitiesLib.getOtherLinkedPicIds(s.client, s.orgId, entity.entity_id, entity.pic_id).catch(() => []);
+    const authorized = await entitiesLib.resolveAuthorizedPic(s.client, s.orgId, entity.pic_id, linkedOthers);
+    if (authorized.denied) { sendJson(res, 403, { error: 'Anda tidak berwenang memakai PIC yang dipilih untuk entitas ini di Taxio Hub. Pilih PIC lain di palet entitas, atau minta admin memberi akses.' }); return null; }
+    const passphrase = authorized.passphrase;
+    const fallbackPicIds = authorized.fallbackPicIds;
     return {
-        kind: 'auto', client: s.client, orgId: s.orgId, picId: entity.pic_id,
+        kind: 'auto', client: s.client, orgId: s.orgId, picId: authorized.picId,
         entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
         restricted, allowedEbupotSections, passphrase, fallbackPicIds, label: entity.entity_name
     };
