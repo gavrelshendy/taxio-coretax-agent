@@ -31,7 +31,7 @@ module.exports=async function(){
  tb.register('0126',[normal]);tb.record('0126',normal,bpmpSheet(rows),true);tb.register('0226',[normal]);tb.record('0226',normal,bpmpSheet([['1','1111111111111111','BUDI','2.000'],['2','9990000000999000','penerima penghasilan#1213123','250']]),true);
  const tr=await tb.save(dir,'ENTITAS UJI');assert.equal(tr.tempNikRows,4);
  const twb=new ExcelJS.Workbook();await twb.xlsx.readFile(tr.file);const sum=twb.getWorksheet('BPMP per NIK');assert(sum,'sheet BPMP per NIK ada');
- const cell=(r,c)=>{const v=sum.getCell(r,c).value;return v&&v.result!==undefined?v.result:v;};
+ const cell=(r,c)=>{const v=sum.getCell(r,c).value;return v&&typeof v==="object"&&v.formula?(v.result||0):v;};
  assert.equal(cell(6,1),'1111111111111111');assert.equal(cell(6,5),3000);
  assert.equal(cell(7,3),'1213123');assert.equal(cell(7,5),750);assert.equal(cell(8,3),'9999');assert.equal(cell(8,5),700);
  assert.match(sum.getCell(6,5).value.formula,/^SUMIFS\('L-IA'!\$E\$8:\$E\$12,'L-IA'!\$C\$8:\$C\$12,\$A6&"\*"\)$/);
@@ -39,6 +39,9 @@ module.exports=async function(){
  assert.equal(sum.getCell(7,1).fill.fgColor.argb,'FFFFE699');assert.notEqual((sum.getCell(6,1).fill||{}).fgColor?.argb,'FFFFE699');
  assert.equal(twb.getWorksheet('L-IA').getCell('C9').fill.fgColor.argb,'FFFFE699');assert.notEqual((twb.getWorksheet('L-IA').getCell('C8').fill||{}).fgColor?.argb,'FFFFE699');
  assert.equal(cell(9,5),4450);
+ // Ringkasan menyamping per masa: kolom 6..17 = Jan..Des (Bruto).
+ assert.equal(cell(6,6),1000);assert.equal(cell(6,7),2000);assert.equal(cell(6,8),0);assert.equal(cell(7,6),500);assert.equal(cell(7,7),250);assert.equal(cell(8,6),700);assert.equal(cell(9,6),2200);assert.equal(cell(9,7),2250);
+ assert.match(sum.getCell(6,7).value.formula,/,'L-IA'!\$A\$8:\$A\$12,"Februari"\)$/);assert.equal(sum.getCell(5,6).value,'Jan');assert.equal(sum.getCell(5,17).value,'Des');
  console.log('PASS: A1 latest revision; all-version PDF completeness; annual totals; Masa; IDs; no fallback on failure; schema mismatch.');
 };
 if(require.main===module)module.exports().catch(e=>{console.error(e);process.exitCode=1});
