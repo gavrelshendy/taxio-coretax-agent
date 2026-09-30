@@ -498,6 +498,11 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         const row = page.locator('#pal-body .ent', { hasText: 'CV Klien Baru Sejahtera' });
         assert.ok(await row.locator('.pic-chip').isVisible(), 'pemilih PIC tetap tampil');
         assert.strictEqual(await row.locator('.tag.auto').count(), 0, 'label OTOMATIS sudah dihapus dari baris palet');
+        assert.strictEqual(await page.locator('#pal-body .ent-main button').count(), 0, 'tidak ada <button> di dalam <button> (merusak tata letak baris)');
+        await row.hover();
+        const main = await row.locator('.ent-main').boundingBox(), acts = await row.locator('.ent-actions').boundingBox();
+        assert.ok(main && acts && acts.x >= main.x + main.width - 1, 'tombol ubah/hapus berada di KANAN baris, bukan menumpuk di bawah teks');
+        await shot('20-baris-lokal');
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
@@ -645,6 +650,22 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(await page.locator('#log-view .log-line').count() > 0);
         await shot('19-log');
         await page.click('#dock-toggle');
+    });
+
+    await test('tambah entitas dengan 1 PIC: langsung login otomatis setelah disimpan (tidak perlu pilih ulang)', async () => {
+        await page.click('#entity-chip');
+        await page.click('.pal-add');
+        await page.waitForSelector('#entity-dialog');
+        await page.fill('#led-name', 'CV Satu PIC Contoh');
+        await page.fill('#led-npwp', '0678901234560001');
+        await page.fill('[data-pic-field="name"][data-idx="0"]', 'Rani Contoh');
+        await page.fill('[data-pic-field="npwp"][data-idx="0"]', '1111222233335555');
+        await page.fill('[data-pic-field="password"][data-idx="0"]', 'sandiRani');
+        const loginReq = page.waitForRequest((r) => r.url().includes('/api/actions/login-entity'), { timeout: 4000 });
+        await page.click('#entity-dialog [data-act="save"]');
+        const req = await loginReq;
+        assert.ok(JSON.parse(req.postData()).entity.entity_name.includes('CV Satu PIC Contoh'));
+        await pause(300);
     });
 
     // ------------------------------------------------ Restricted Editor

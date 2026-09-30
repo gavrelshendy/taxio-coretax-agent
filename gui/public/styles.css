@@ -283,7 +283,8 @@ select.input { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg
 .ent { border-radius: 12px; }
 .ent.hover, .ent:hover { background: var(--surface-2); }
 .ent.current { background: var(--accent-soft); }
-.ent-main { display: flex; align-items: center; gap: 14px; width: 100%; padding: 10px 12px; border: 0; background: none; text-align: left; }
+.ent-line { display: flex; align-items: center; gap: 4px; }
+.ent-main { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; padding: 10px 12px; border: 0; background: none; text-align: left; }
 .ent-av { width: 38px; height: 38px; border-radius: 10px; background: var(--surface-2); color: var(--ink); font: 700 13px var(--font-head); display: flex; align-items: center; justify-content: center; flex: none; }
 .ent.current .ent-av { background: var(--accent); color: #fff; }
 .ent.unlinked .ent-av { background: transparent; border: 1.5px dashed var(--line-strong); color: var(--muted); }
@@ -313,7 +314,8 @@ select.input { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg
 .radio-row .grow { flex: 1; }
 .unlinked-note { margin: -2px 12px 12px 64px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
 .ent-actions { display: none; gap: 4px; }
-.ent:hover .ent-actions, .ent.hover .ent-actions { display: flex; }
+.ent:hover .ent-actions, .ent.hover .ent-actions, .ent-line:focus-within .ent-actions { display: flex; }
+.ent-actions { flex: none; margin-right: 10px; }
 .ent-actions button { width: 30px; height: 30px; border-radius: 8px; background: #fff; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted); }
 /* Ditata seperti baris ".ent-main" biasa (ikon + teks rata kiri) supaya menyatu dengan daftar
    entitas di atasnya, bukan tombol besar terpisah yang berdiri sendiri di ujung bawah. */
