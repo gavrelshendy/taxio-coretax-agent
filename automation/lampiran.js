@@ -1617,20 +1617,30 @@ async function downloadWidgetSptPackage(page, ctx, taxpayerId, recordId, aggrega
     return { ...lampiranResult, count: lampiranResult.count + extraPaths.length, paths: [...extraPaths, ...lampiranResult.paths], bpeIncluded: !!bpeBuffer, indukIncluded: true };
 }
 
+const widgetBindings = new WeakMap(); // browserContext -> { ctx, page } yang dipakai binding tunggal
 async function installLampiranWidget(page, { saveRoot, entityCode, compFolder, restricted }) {
     const ctx = { saveRoot: saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), entityCode, compFolder, restricted };
     const browserContext = page.context();
     // Sumber data grid lengkap ditangkap pasif sejak sebelum halaman SPT dibuka. Header
     // autentikasi hanya disimpan di memori proses dan tidak pernah ditulis ke log/fixture.
     returnsheetGridApi.watchContext(browserContext);
-    try { await browserContext.exposeFunction('__ca_downloadSptPackageV1150', (taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout, lampiranFormat) => {
-        log('[Lampiran engine v1.15.0-final] Binding paket aktif untuk ' + taxTypeCode + ' mode ' + mode + ', output ' + outputLayout + '.');
-        // Cari tab yang benar saat tombol diklik. `page` awal dapat berbeda karena Coretax bisa
-        // membuka form SPT pada tab baru setelah widget pertama kali dipasang.
-        const active = browserContext.pages().find(p => !p.isClosed() && p.url().includes(String(taxpayerId)) && p.url().includes(String(recordId)))
-            || browserContext.pages().find(p => !p.isClosed() && /\/(corporate-income-tax-return|personal-income-tax-return|article-21-26-tax-return|withholding-tax-return|value-added-tax-return)\//i.test(p.url())) || page;
-        return downloadWidgetSptPackage(active, ctx, taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout, lampiranFormat);
-    }); } catch (e) { log('[Lampiran engine v1.15.0-final] Gagal memasang binding baru: ' + e.message); }
+    // exposeFunction hanya boleh SEKALI per context. Jendela Chrome yang dipakai ulang (ganti
+    // PIC/entitas) dulu memasangnya lagi -> galat "already registered" dan binding lama tetap
+    // memakai entitas/folder lama. Sekarang binding dipasang sekali dan keadaannya diperbarui.
+    const existing = widgetBindings.get(browserContext);
+    if (existing) { existing.ctx = ctx; existing.page = page; }
+    else {
+        const state = { ctx, page };
+        widgetBindings.set(browserContext, state);
+        try { await browserContext.exposeFunction('__ca_downloadSptPackageV1150', (taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout, lampiranFormat) => {
+            log('[Lampiran engine v1.15.0-final] Binding paket aktif untuk ' + taxTypeCode + ' mode ' + mode + ', output ' + outputLayout + '.');
+            // Cari tab yang benar saat tombol diklik. `page` awal dapat berbeda karena Coretax bisa
+            // membuka form SPT pada tab baru setelah widget pertama kali dipasang.
+            const active = browserContext.pages().find(p => !p.isClosed() && p.url().includes(String(taxpayerId)) && p.url().includes(String(recordId)))
+                || browserContext.pages().find(p => !p.isClosed() && /\/(corporate-income-tax-return|personal-income-tax-return|article-21-26-tax-return|withholding-tax-return|value-added-tax-return)\//i.test(p.url())) || state.page;
+            return downloadWidgetSptPackage(active, state.ctx, taxpayerId, recordId, aggregateId, taxTypeCode, mode, taxYearHint, outputLayout, lampiranFormat);
+        }); } catch (e) { widgetBindings.delete(browserContext); log('[Lampiran engine v1.15.0-final] Gagal memasang binding baru: ' + e.message); }
+    }
     const script = lampiranWidget.buildLampiranWidgetScript(require('../lib/spt-access').isRestricted(restricted));
     try { await browserContext.addInitScript({ content: script }); }
     catch (e) { log('[Lampiran] Gagal memasang init script: ' + e.message); }
