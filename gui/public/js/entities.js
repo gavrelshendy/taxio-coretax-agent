@@ -154,12 +154,15 @@
         else if (isManualRow) tag = '<span class="tag lg manual" style="margin-left:0">TERDETEKSI</span>';
         const picChip = multi ? '<span class="pic-chip">' + P.esc((chosen ? chosen.pic_name : '').split(' ')[0]) + P.icon(open ? 'up' : 'down', 15) + '</span>' : '';
         const actions = isLocal ? '<span class="ent-actions"><button type="button" aria-label="Ubah entitas" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Hapus entitas" data-act="del" data-key="' + P.esc(key) + '" style="color:var(--red)">' + P.icon('trash', 15) + '</button></span>' : '';
-        const right = '<span class="row-right">' + actions + picChip + tag + '</span>';
+        const right = '<span class="row-right">' + picChip + tag + '</span>';
         const av = isManualRow ? 'SM' : L.initials(e.entity_name);
         let html = '<div class="ent' + (cur ? ' current' : '') + (idx === pal.hover && !unlinked ? ' hover' : '') + (unlinked ? ' unlinked' : '') + '" data-idx="' + idx + '">'
-            + '<button type="button" class="ent-main" data-act="ent" data-key="' + P.esc(key) + '"' + (unlinked ? ' aria-disabled="true"' : '') + '>'
+            + '<div class="ent-line"><button type="button" class="ent-main" data-act="ent" data-key="' + P.esc(key) + '"' + (unlinked ? ' aria-disabled="true"' : '') + '>'
             + '<span class="ent-av">' + P.esc(av) + '</span><span class="ent-tx"><b>' + P.esc(isManualRow ? (P.state.manual.identity || 'Sesi manual') : e.entity_name) + '</b><span>' + metaFor(e) + '</span></span>' + right
-            + (cur ? P.icon('check', 18, '', 2.6).replace('<svg ', '<svg style="color:var(--accent)" ') : '') + '</button>';
+            + (cur ? P.icon('check', 18, '', 2.6).replace('<svg ', '<svg style="color:var(--accent)" ') : '') + '</button>'
+            // Tombol ubah/hapus JANGAN di dalam .ent-main: <button> di dalam <button> membuat browser
+            // menutup .ent-main lebih awal dan merusak tata letak baris. Jadi saudaranya, bukan anaknya.
+            + actions + '</div>';
         if (open) {
             // Baris yang di-highlight: picCursor (digerakkan panah ↑↓, dikonfirmasi Enter) kalau
             // ada, kalau tidak jatuh ke PIC yang sudah pernah dipilih/utama - SAMA sekali tidak
@@ -488,7 +491,12 @@
                 closeDialog();
                 await E.load();
                 const saved = E.personal.find((x) => x.local_id === r.entity.local_id);
-                if (saved) E.select(saved, null);
+                if (saved) {
+                    E.select(saved, null);
+                    // Satu PIC = tidak ada yang perlu dipilih, langsung login otomatis seperti memilih dari palet.
+                    // 2+ PIC: biarkan terpilih dulu; PIC dipilih lewat palet sebelum login.
+                    if ((saved.pics || []).length <= 1) autoLoginAfterSelect();
+                }
                 P.info('Entitas "' + r.entity.entity_name + '" disimpan.');
             } catch (err) { dlg.busy = false; dlg.error = err.message; paintDialog(); }
         }
