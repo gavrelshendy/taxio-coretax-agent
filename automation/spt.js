@@ -229,11 +229,23 @@ async function openLampiranView(page, row, authState, emit) {
         const url = candidates[index];
         try {
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await page.waitForSelector(config.rootSelector, { timeout: 20000 });
+            // 'attached': elemennya cukup ADA; 'visible' bergantung pada requestAnimationFrame yang dihentikan Chrome untuk jendela tertutup/terlipat.
+            await page.waitForSelector(config.rootSelector, { state: 'attached', timeout: 20000 });
             emit('Halaman Lampiran terbuka (' + (index + 1) + '/' + candidates.length + ').');
             return url;
         } catch (e) {
-            if (index === candidates.length - 1) throw new Error('Halaman Lampiran tidak dapat dibuka: ' + e.message);
+            if (index === candidates.length - 1) {
+                // Kondisi halaman saat gagal + versi Chrome, supaya penyebabnya (redirect ke login, halaman
+                // dimuat ulang terus, versi Chrome berbeda, dst.) terbaca dari log tanpa menebak.
+                let info = '';
+                try {
+                    const cdp = await page.context().newCDPSession(page);
+                    const ver = await cdp.send('Browser.getVersion').catch(() => ({}));
+                    info = ' [halaman: ' + String(page.url()).replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '<id>') + ' | judul: ' + (await page.title().catch(() => '?'))
+                        + ' | root ada: ' + (await page.locator(config.rootSelector).count().catch(() => '?')) + ' | ' + (ver.product || 'Chrome ?') + ']';
+                } catch (diagErr) { info = ' [diagnostik gagal: ' + diagErr.message + ']'; }
+                throw new Error('Halaman Lampiran tidak dapat dibuka: ' + e.message + info);
+            }
         }
     }
     throw new Error('Alamat halaman Lampiran tidak tersedia pada data SPT.');
