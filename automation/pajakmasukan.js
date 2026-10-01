@@ -844,6 +844,6 @@ async function runDownloadExcel(o) {
 module.exports = {
     runCreditByPeriod, creditOne, runUncreditByPeriod, uncreditOne, runImportFromExcel, runDownloadExcel, findByNumber, listByPeriod, getContext,
     checkEligibility, checkUncreditEligibility, crossCheck, normalizeFakturNo, normalizeNpwp, parseTargetMasaInput,
-    monthDistance, periodLabel, PERIOD_CODE, PERIOD_MONTH, MONTH_ID, STATUS,
+    monthDistance, periodLabel, PERIOD_CODE, PERIOD_MONTH, MONTH_ID, STATUS, apiPost, ensureOnInputTaxPage,
     __test: { buildFetchScript, tally, findHeaderRow, processExcelRow }
 };

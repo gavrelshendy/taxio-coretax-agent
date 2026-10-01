@@ -242,6 +242,7 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         ['Bukti Potong Saya', '/api/actions/download-mybupot', { buktiTypeKeys: ['bppu'], masaInput: '0126' }],
         ['SPT', '/api/actions/download-spt', { jenisPajakKeys: ['ppn'], masaInput: '0126' }],
         ['Pajak Masukan (unduh)', '/api/actions/download-pajak-masukan', { masaInput: '0126' }],
+        ['e-Faktur (unduh)', '/api/actions/download-efaktur', { masaInput: '0126', types: ['input', 'output'], excel: true }],
         ['Pajak Masukan (kredit)', '/api/actions/import-pajak-masukan', { fileBase64: 'AAAA' }],
         ['Kode Billing PPh 25', '/api/actions/billing-pph25', { masaInput: '0726', nominal: 'Rp 1.500.000' }]
     ];

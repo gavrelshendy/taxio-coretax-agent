@@ -346,13 +346,31 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         for (const k of ['bppu', 'bpnr', 'bp26', 'bpatc']) assert.ok(!(await page.locator('.tile[data-val="' + k + '"]').isDisabled()), k + ' terbuka');
         assert.ok((await text('.tile[data-val="bpa1"]')).includes('BP A1'));
     });
-    await test('Unduh Faktur Masukan: kirim entitas dan masa', async () => {
+    await test('Unduh e-Faktur: 8 jenis dokumen, bawaan Pajak Masukan + Excel; kirim jenis, format, entitas dan masa', async () => {
         await page.click('.nav-item[data-nav="faktur"]');
         await page.waitForSelector('.pp');
+        assert.strictEqual(await page.locator('#efaktur-types .chip').count(), 8, 'delapan jenis dokumen e-Faktur');
+        assert.strictEqual(await page.locator('#efaktur-types .chip[aria-pressed="true"]').count(), 1, 'bawaan hanya Pajak Masukan');
+        await page.click('#efaktur-types .chip[data-val="output"]');
+        await page.click('#efaktur-types .chip[data-val="sdInput"]');
+        await page.click('[data-act="efmt"][data-val="csv"]');
         await page.click('[data-act="start"]'); await pause(300);
-        assert.strictEqual(lastCall().url, '/api/actions/download-pajak-masukan');
+        assert.strictEqual(lastCall().url, '/api/actions/download-efaktur');
+        assert.deepStrictEqual(lastCall().body.types.slice().sort(), ['input', 'output', 'sdInput']);
+        assert.strictEqual(lastCall().body.excel, true); assert.strictEqual(lastCall().body.csv, true);
         assert.strictEqual(lastCall().body.masaInput, PREV_MMYY);
         assert.strictEqual(lastCall().body.entity.pic_id, 'p-andi');
+    });
+    await test('Unduh e-Faktur: tombol mulai terkunci bila tak ada jenis dokumen atau format', async () => {
+        await page.click('[data-act="enone"]');
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'tanpa jenis dokumen');
+        await page.click('[data-act="eall"]');
+        assert.strictEqual(await page.locator('#efaktur-types .chip[aria-pressed="true"]').count(), 8);
+        await page.click('[data-act="efmt"][data-val="excel"]'); await page.click('[data-act="efmt"][data-val="csv"]');
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'tanpa format');
+        await page.click('[data-act="efmt"][data-val="excel"]');
+        assert.ok(!(await page.locator('#rail [data-act="start"]').isDisabled()));
+        await shot('21-efaktur');
     });
     await test('Billing: nominal berformat ribuan, masa satu bulan, tombol aktif hanya bila lengkap', async () => {
         await page.click('.nav-item[data-nav="billing"]');
