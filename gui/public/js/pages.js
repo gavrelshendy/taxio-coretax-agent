@@ -14,7 +14,7 @@
             { id: 'spt', label: 'SPT', icon: 'file', crumb: 'Unduh' },
             { id: 'ebupot', label: 'e-Bupot', icon: 'fileCheck', crumb: 'Unduh' },
             { id: 'bpsaya', label: 'Bukti Potong Saya', icon: 'inbox', crumb: 'Unduh' },
-            { id: 'faktur', label: 'Unduh Faktur Masukan', icon: 'receipt', crumb: 'Unduh' },
+            { id: 'faktur', label: 'Unduh e-Faktur', icon: 'receipt', crumb: 'Unduh' },
             { id: 'a1', label: 'SPT PPh 21 Setahun', icon: 'cal', crumb: 'Unduh', hideForRestricted: true }
         ] },
         { title: 'OTOMASI', items: [
@@ -332,19 +332,39 @@
     // =========================================================
     // Unduh Faktur Masukan
     // =========================================================
+    const EFAKTUR_TYPES = [
+        ['input', 'Pajak Masukan'], ['output', 'Pajak Keluaran'],
+        ['inputReturn', 'Retur Pajak Masukan'], ['outputReturn', 'Retur Pajak Keluaran'],
+        ['sdInput', 'Dokumen Lain Masukan'], ['sdOutput', 'Dokumen Lain Keluaran'],
+        ['sdInputReturn', 'Retur Dokumen Lain Masukan'], ['sdOutputReturn', 'Retur Dokumen Lain Keluaran']
+    ];
     const faktur = createPage({
         id: 'faktur',
-        init(api) { return { pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }) }; },
+        init(api) { return { pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }), types: ['input'], excel: true, csv: false }; },
         afterDraw(st) { st.pp.bind(); },
         main(st) {
-            return '<div class="banner info"><span class="ico">' + P.icon('receipt', 22) + '</span><div class="body"><b>Unduh data pajak masukan</b><span>Ekspor seluruh faktur pajak masukan pada masa yang dipilih ke Excel. Diambil langsung dari Coretax, tidak dibatasi paginasi tampilan. PDF per faktur belum tersedia di menu ini.</span></div></div>'
-                + P.card(1, 'Masa pajak', '', st.pp.html());
+            const chips = EFAKTUR_TYPES.map(([key, label]) => '<button type="button" class="chip" data-act="etype" data-val="' + key + '" aria-pressed="' + st.types.includes(key) + '">' + esc(label) + '</button>').join('');
+            return '<div class="banner info"><span class="ico">' + P.icon('receipt', 22) + '</span><div class="body"><b>Unduh dokumen e-Faktur</b><span>Faktur Pajak Masukan dan Keluaran, Retur, Dokumen Lain, dan Retur Dokumen Lain. Diambil langsung dari Coretax, tidak dibatasi paginasi tampilan.</span></div></div>'
+                + P.card(1, 'Jenis dokumen', '<span><button type="button" class="link" data-act="eall">Pilih semua</button> · <button type="button" class="link" data-act="enone">Kosongkan</button></span>', '<div class="chips c2 wide" id="efaktur-types">' + chips + '</div>')
+                + P.card(2, 'Masa pajak', '', st.pp.html())
+                + P.card(3, 'Format', '<span>Boleh dua-duanya</span>', '<div class="chips c2 wide"><button type="button" class="chip" data-act="efmt" data-val="excel" aria-pressed="' + st.excel + '">Excel<span class="hint">Satu file, satu sheet per jenis · cepat</span></button>'
+                    + '<button type="button" class="chip" data-act="efmt" data-val="csv" aria-pressed="' + st.csv + '">CSV resmi Coretax<span class="hint">Zip dibuat server Coretax · bisa beberapa menit</span></button></div>');
+        },
+        act(act, d, st) {
+            if (act === 'etype') { st.types = st.types.includes(d.val) ? st.types.filter((k) => k !== d.val) : st.types.concat(d.val); return true; }
+            if (act === 'eall') { st.types = EFAKTUR_TYPES.map((t) => t[0]); return true; }
+            if (act === 'enone') { st.types = []; return true; }
+            if (act === 'efmt') { st[d.val] = !st[d.val]; return true; }
+            return false;
         },
         rail(st, api) {
             const ent = api.entity();
-            return railCard({ big: st.pp.count(), unit: 'masa', rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Format', 'Excel']], ready: readiness(ent), blocked: st.pp.count() ? '' : 'Pilih masa pajak' });
+            const fmt = [st.excel ? 'Excel' : '', st.csv ? 'CSV resmi' : ''].filter(Boolean).join(' + ') || '-';
+            let blocked = '';
+            if (!st.types.length) blocked = 'Pilih jenis dokumen'; else if (!st.pp.count()) blocked = 'Pilih masa pajak'; else if (!st.excel && !st.csv) blocked = 'Pilih format';
+            return railCard({ big: st.types.length, unit: 'jenis dokumen', rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Masa', st.pp.count() + ' masa'], ['Format', esc(fmt)]], ready: readiness(ent), blocked });
         },
-        async start(st, api) { await P.post('/api/actions/download-pajak-masukan', { entity: api.entity(), masaInput: st.pp.code(), saveRoot: P.saveRoot() || undefined }); }
+        async start(st, api) { await P.post('/api/actions/download-efaktur', { entity: api.entity(), masaInput: st.pp.code(), types: st.types, excel: st.excel, csv: st.csv, saveRoot: P.saveRoot() || undefined }); }
     });
 
     // =========================================================

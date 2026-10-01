@@ -24,6 +24,7 @@ const { runLoginOnly } = require('../automation/login');
 const { runSptDownload } = require('../automation/spt');
 const { runDividenImport, runDividenCheck, openNewCase } = require('../automation/dividen');
 const pajakMasukan = require('../automation/pajakmasukan');
+const efaktur = require('../automation/efaktur');
 const { runBillingPph25 } = require('../automation/billing');
 const registration = require('../lib/registration');
 const connection = require('../lib/connection');
@@ -692,6 +693,38 @@ async function handleDownloadPajakMasukan(req, res) {
     }
 }
 
+/** e-Faktur - unduh delapan jenis dokumen (Pajak Masukan/Keluaran, Retur, Dokumen Lain, Retur Dokumen Lain).
+ *  Excel diambil langsung dari daftar Coretax; CSV resmi dibuat oleh Coretax sendiri (ekspor massal). */
+async function handleDownloadEfaktur(req, res) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity, masaInput, types, excel, csv, saveRoot } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (!masaInput) return sendJson(res, 400, { error: 'Masa wajib diisi.' });
+    const known = new Set(efaktur.DOC_TYPES.map((t) => t.key));
+    const typeKeys = Array.isArray(types) ? [...new Set(types.map(String))] : [];
+    if (!typeKeys.length || typeKeys.some((k) => !known.has(k))) return sendJson(res, 400, { error: 'Pilih minimal satu jenis dokumen yang valid.' });
+    if (excel === false && !csv) return sendJson(res, 400, { error: 'Pilih minimal satu format (Excel atau CSV resmi).' });
+    let masaList;
+    try { masaList = masaLib.parseMasaListInput(masaInput); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+
+    try { runcontrol.start('Download e-Faktur · ' + typeKeys.length + ' jenis · ' + target.label); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true });
+    try {
+        const page = await target.open();
+        await efaktur.runDownloadEfaktur({ page, types: typeKeys, masaList, excel: excel !== false, csv: !!csv, saveRoot, entityFolder: target.folder, entityName: target.label, emit: (m) => log(m) });
+    } catch (e) {
+        log('Gagal download e-Faktur: ' + e.message);
+    } finally {
+        runcontrol.finish();
+    }
+}
+
 /** Pajak Masukan - pengkreditan per baris Excel. Entitas+PIC (login otomatis) atau sesi manual. */
 async function handleImportPajakMasukan(req, res) {
     let body;
@@ -1004,6 +1037,7 @@ function createGuiServer(port) {
             if (pathname === '/api/actions/download-spt' && req.method === 'POST') return handleDownloadSpt(req, res);
             if (pathname === '/api/actions/import-pajak-masukan' && req.method === 'POST') return handleImportPajakMasukan(req, res);
             if (pathname === '/api/actions/download-pajak-masukan' && req.method === 'POST') return handleDownloadPajakMasukan(req, res);
+            if (pathname === '/api/actions/download-efaktur' && req.method === 'POST') return handleDownloadEfaktur(req, res);
             if (pathname === '/api/actions/import-dividen' && req.method === 'POST') return handleImportDividen(req, res);
             if (pathname === '/api/actions/check-dividen' && req.method === 'POST') return handleCheckDividen(req, res);
             if (pathname === '/api/actions/create-dividen-case' && req.method === 'POST') return handleCreateDividenCase(req, res);
