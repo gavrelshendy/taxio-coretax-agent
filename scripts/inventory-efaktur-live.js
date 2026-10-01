@@ -67,11 +67,17 @@ async function shapeOfResponse(res) {
     console.log('Terhubung ke Chrome di port ' + port);
     const browser = await chromium.connectOverCDP('http://127.0.0.1:' + port);
     const context = browser.contexts()[0];
-    const page = await context.newPage();
+    // Pakai TAB Coretax yang sudah login (tab baru memulai ulang alur OIDC dan bisa terlempar ke login/logout).
+    const existing = context.pages().find((p) => /coretaxdjp\.pajak\.go\.id\/(?!identityproviderportal)/.test(p.url()));
+    if (!existing) {
+        const urls = context.pages().map((p) => p.url().replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '<id>').slice(0, 100));
+        throw new Error('Tidak ada tab Coretax yang sedang login (tab: ' + JSON.stringify(urls) + '). Login dulu lewat aplikasi (pilih entitas, klik Masuk Coretax), lalu jalankan lagi.');
+    }
+    const page = existing;
 
     const calls = new Map();
     let currentPage = 'awal';
-    page.on('response', async (res) => {
+    context.on('response', async (res) => {
         const url = res.url();
         const at = url.indexOf(API_MARK);
         if (at === -1) return;
@@ -89,7 +95,8 @@ async function shapeOfResponse(res) {
     const open = async (url, label) => {
         currentPage = label;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForTimeout(4500);
+        await page.waitForTimeout(9000);
+        if (/identityproviderportal/.test(page.url())) throw new Error('Terlempar ke halaman login/logout - sesi Coretax berakhir.');
         const info = await page.evaluate(() => {
             const visible = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
             const clean = (v) => String(v || '').replace(/\s+/g, ' ').trim();
@@ -140,6 +147,5 @@ async function shapeOfResponse(res) {
     console.log('\nHasil: ' + output);
     console.log('Endpoint yang terlihat:');
     for (const e of report.endpoint) console.log('  ' + e.method + ' ' + e.path + '  <- ' + e.halaman.join(', ') + (e.response && e.response.rows != null ? '  [' + e.response.rows + ' baris]' : ''));
-    await page.close().catch(() => {});
     process.exit(0);
 })().catch((error) => { console.error(error); process.exitCode = 1; });
