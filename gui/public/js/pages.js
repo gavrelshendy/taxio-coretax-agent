@@ -89,7 +89,7 @@
             if (def.normalize) def.normalize(st, api);
             const need = def.needsEntity !== false;
             const main = need && !ent ? entityGuard() : (need ? manualBanner(ent) : '') + def.main(st, api);
-            return P.run.summaryHtml() + '<div class="cols"><div class="col-main">' + main + '</div><aside class="rail" id="rail">' + railHtml() + '</aside></div>';
+            return P.run.summaryHtml() + (def.batch ? P.batch.barHtml() : '') + '<div class="cols"><div class="col-main">' + main + '</div><aside class="rail" id="rail">' + railHtml() + '</aside></div>';
         }
         function afterDraw() {
             P.bindFolderField(root);
@@ -118,12 +118,18 @@
             if (!t || !root.contains(t) || t.closest('.pp')) return;
             const act = t.dataset.act;
             if (act === 'open-palette') return E.openPalette();
+            if (act === 'batch-clear') { P.batch.clear(); return; }
             if (act === 'open-coretax') return P.manual.open();
             if (act === 'check-session') return P.manual.check(true);
             if (act === 'start') {
                 if (busy) return;
                 busy = true; t.disabled = true;
-                try { await def.start(st, api); P.run.poll(); } catch (err) { alert('Gagal memulai: ' + err.message); }
+                try {
+                    if (def.batch && P.batch.count() >= 2) {
+                        // Antrean banyak entitas: tiap entitas dijalankan berurutan lewat start() yang sama.
+                        await P.batch.run(async () => { await def.start(st, api); });
+                    } else { await def.start(st, api); P.run.poll(); }
+                } catch (err) { alert('Gagal memulai: ' + err.message); }
                 busy = false;
                 updateRail();
                 return;
@@ -172,7 +178,7 @@
     const SPT_ANNUAL = [['badan', '1771', 'PPh Badan'], ['spt_op', '1770', 'PPh Orang Pribadi']];
     const ANNUAL_KEYS = ['badan', 'spt_op'];
     const spt = createPage({
-        id: 'spt',
+        id: 'spt', batch: true,
         init(api) {
             return { jenis: new Set([restricted() ? 'unifikasi' : 'pph21']), bpe: true, induk: true, lampiran: false, fmt: 'pdf', isi: 'print', sus: 'combined',
                 ppM: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }), ppY: P.period.create({ mode: 'tahun', onChange: () => api.updateRail() }) };
@@ -248,7 +254,7 @@
     const EBUPOT_TYPES = [['bp21', 'BP21', 'Bukti pemotongan PPh 21'], ['bppu', 'BPPU', 'Pemotongan unifikasi'], ['bpa1', 'BPA1', 'Bukti pemotongan A1'], ['bpmp', 'BPMP', 'Masa pegawai tetap']];
     const KODE_TYPES = ['bp21', 'bppu'];
     const ebupot = createPage({
-        id: 'ebupot',
+        id: 'ebupot', batch: true,
         init(api) { return { jenis: new Set(['bp21']), status: 'issued', pdf: true, pageSize: 'auto', kode: '', pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }) }; },
         normalize(st) { if (restricted()) { st.jenis.delete('bpmp'); st.jenis.delete('bpa1'); } },
         afterDraw(st) { st.pp.bind(); },
@@ -294,7 +300,7 @@
     const MYBUPOT = [['bppu', 'BPPU', 'BPPU', false], ['bpnr', 'BPNR', 'BPNR', false], ['bp26', 'BP26', 'BP 26', false], ['bpatc', 'DOK', 'Dokumen yang Dipersamakan', false],
         ['bpmp', 'BPMP', 'BPMP', true], ['bp21', 'BP21', 'BP 21', true], ['bpa1', 'A1', 'BP A1', true], ['bpa2', 'A2', 'BP A2', true]];
     const bpsaya = createPage({
-        id: 'bpsaya',
+        id: 'bpsaya', batch: true,
         init(api) { return { jenis: new Set(['bppu']), pdf: true, pageSize: 'auto', pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }) }; },
         normalize(st, api) {
             const ent = api.entity();
@@ -339,7 +345,7 @@
         ['sdInputReturn', 'Retur Dokumen Lain Masukan'], ['sdOutputReturn', 'Retur Dokumen Lain Keluaran']
     ];
     const faktur = createPage({
-        id: 'faktur',
+        id: 'faktur', batch: true,
         init(api) { return { pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }), types: ['input'], excel: true, csv: false }; },
         afterDraw(st) { st.pp.bind(); },
         main(st) {
@@ -371,7 +377,7 @@
     // Mode A1 (SPT PPh 21 setahun)
     // =========================================================
     const a1 = createPage({
-        id: 'a1',
+        id: 'a1', batch: true,
         init() { const y = P.today().getFullYear(); return { year: y, years: Array.from({ length: y - 2025 + 1 }, (_, i) => 2025 + i) }; },
         main(st) {
             const out = (icon, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + P.icon(icon, 18) + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';

@@ -58,6 +58,7 @@ function install() {
     chrome.getManualStatus = async () => Object.assign({}, ctl.manual);
     chrome.listLiveSessions = async () => ctl.sessions.map((s) => Object.assign({}, s));
     chrome.bringSessionToFront = async () => true;
+    chrome.getEntityStatus = async (picId) => { const s = ctl.sessions.find((x) => x.picId === picId); return s ? { open: true, loggedIn: !!s.loggedIn, identity: s.identity || '' } : { open: false, loggedIn: false, identity: '' }; };
     chrome.closeLiveSession = async (picId) => { ctl.sessions = ctl.sessions.filter((s) => s.picId !== picId); return true; };
     chrome.openCoretaxManual = async () => { ctl.manual.open = true; return true; };
     // Entitas lokal (tab Saya) sekarang benar-benar mencoba login OTOMATIS lewat jalur yang sama

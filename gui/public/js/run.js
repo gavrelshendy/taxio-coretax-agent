@@ -43,6 +43,7 @@
             setTimeout(check, 1200);
         });
     }
+    R.waitIdle = waitForRunToFinish;
     R.runQueue = async function (items) {
         R.queue = items.slice();
         while (R.queue.length) {
@@ -66,7 +67,7 @@
     R.control = {
         pauseResume: () => control(P.state.run.paused ? 'resume' : 'pause'),
         skip: () => control('skip'), retry: () => control('retry'), back: () => control('back'),
-        stop: () => { if (confirm('Hentikan seluruh proses?')) { R.queue = []; control('stop'); } },
+        stop: () => { if (confirm('Hentikan seluruh proses?')) { R.queue = []; if (P.batch) P.batch.cancel(); control('stop'); } },
         pageSize: (n) => control('pagesize', { size: n })
     };
 
