@@ -63,12 +63,16 @@
                 return;
             }
             const fresh = findByKey(L.entityKey(sel));
-            E.selected = fresh ? { entity: fresh, picId: E.selected.picId } : null;
+            E.selected = fresh ? { entity: fresh, picId: E.selected.picId, restored: E.selected.restored } : null;
             return;
         }
         if (saved && saved.key) {
             const found = findByKey(saved.key);
-            if (found && (found.linked !== false || found.project === 'local')) E.selected = { entity: found, picId: saved.picId };
+            // restored: pilihan ini cuma diingat dari pemakaian sebelumnya, bukan dipilih sekarang. Kalau
+            // saat dicek ternyata tidak ada jendela Coretax-nya (mis. aplikasi baru dibuka) pilihannya
+            // dilepas oleh releaseIfSessionGone (shell.js) - supaya pil tidak "nyangkut" di entitas
+            // lama dengan status "Belum masuk Coretax".
+            if (found && (found.linked !== false || found.project === 'local')) E.selected = { entity: found, picId: saved.picId, restored: true };
         }
     }
     // Sesi manual terdeteksi dan belum ada pilihan lain: pilih otomatis, seperti perilaku lama.
@@ -112,11 +116,204 @@
             + '<span class="tx"><b>' + P.esc(name) + tag + '</b><span>' + P.esc(bits.join(' · ')) + '</span></span>' + P.icon('down', 16) + '</button>';
     };
 
+    // ---------- Sesi Coretax di topbar + antrean banyak entitas ----------
+    // Satu sesi = satu jendela Chrome yang login sebagai satu PIC. Dari jendela itu entitas lain milik
+    // PIC yang sama dibuka dengan impersonate ulang, TANPA jendela baru. Tab sesi selalu tampil di
+    // topbar; tab aktif (yang sorotannya menyala) = sesi yang dipakai untuk unduhan. Panah di tab
+    // membuka daftar entitas sesi itu: klik nama = pindah entitas di jendela yang sama, kotak centang =
+    // masuk antrean unduh berurutan (P.batch).
+    const digits = (s) => String(s || '').replace(/\D/g, '');
+    function sameNpwp(a, b) { const x = digits(a); const y = digits(b); return x.length >= 15 && y.length >= 15 && (x === y || x.endsWith(y) || y.endsWith(x)); }
+    E.sessions = () => (P.state.sessions || []).filter((s) => s.open !== false);
+    E.sessionEntities = function (picId) {
+        const seen = new Set(); const out = [];
+        all().forEach((e) => {
+            if (e.project === 'manual' || e.linked === false) return;
+            if (!(e.pics || []).some((p) => p.pic_id === picId)) return;
+            if (P.isRestricted() && e.individual) return; // perorangan diblokir untuk akun Restricted
+            const k = L.entityKey(e); if (seen.has(k)) return; seen.add(k); out.push(e);
+        });
+        return out.sort((a, b) => String(a.entity_name || '').localeCompare(String(b.entity_name || '')));
+    };
+    function picNameOf(picId) {
+        for (const e of all()) { const p = (e.pics || []).find((x) => x.pic_id === picId); if (p && p.pic_name) return p.pic_name; }
+        return '';
+    }
+    // Entitas yang SEDANG diimpersonate di jendela sesi (dibaca dari identitas jendelanya: NPWP/nama).
+    E.sessionEntity = function (s) {
+        const list = E.sessionEntities(s.picId);
+        const id = String(s.identity || '');
+        const byNpwp = list.find((e) => e.npwp && sameNpwp(e.npwp, id));
+        if (byNpwp) return byNpwp;
+        const name = id.split('·').slice(1).join('·').trim().toUpperCase();
+        return (name && list.find((e) => String(e.entity_name || '').trim().toUpperCase() === name)) || null;
+    };
+    E.selectSession = function (picId) {
+        const s = E.sessions().find((x) => x.picId === picId); if (!s) return;
+        if (s.kind === 'manual') { const me = E.manualEntity(); if (me) E.select(me, null); return; }
+        const ent = E.sessionEntity(s);
+        if (!ent) { P.info('Entitas yang sedang terbuka di sesi ini belum bisa dikenali. Pilih entitasnya lewat panah di tab sesi.'); return; }
+        E.select(ent, picId);
+    };
+    E.sessionStripHtml = function () {
+        const sess = E.sessions();
+        if (!sess.length) return '';
+        const cur = E.current();
+        const tabs = sess.map((s, i) => {
+            const manual = s.kind === 'manual';
+            const active = !!(cur && cur.pic_id === s.picId);
+            const idRest = String(s.identity || '').split('·').slice(1).join('·').trim();
+            const idText = s.identity ? (idRest || s.identity) : (s.loggedIn ? 'Identitas belum terbaca' : 'Belum login');
+            const who = manual ? 'Manual' : (picNameOf(s.picId) || 'PIC').split(' ')[0];
+            const n = manual ? 0 : E.sessionEntities(s.picId).length;
+            const id = P.esc(s.picId);
+            return '<div class="sess-tab' + (active ? ' active' : '') + '">'
+                + '<button type="button" class="sess-main" data-sess="' + id + '" title="Pakai sesi ini untuk unduhan" aria-pressed="' + active + '"><span class="n">' + (i + 1) + '</span><span class="t"><b>' + P.esc(who) + '</b><span>' + P.esc(idText) + '</span></span></button>'
+                + (manual ? '' : '<button type="button" class="sess-drop" data-sess-drop="' + id + '" aria-label="Pilih entitas di sesi ini" title="Ganti entitas di jendela ini · ' + n + ' entitas">' + P.icon('down', 14) + '</button>')
+                + '<button type="button" class="sess-x" data-sess-close="' + id + '" aria-label="Tutup sesi ini" title="Tutup jendela ini">' + P.icon('x', 13) + '</button></div>';
+        }).join('');
+        return '<div class="sess-strip" role="group" aria-label="Sesi Coretax aktif">' + tabs + '<button type="button" class="sess-new" id="sess-new">' + P.icon('plus', 14, '', 2.4) + 'Sesi baru</button></div>';
+    };
+
+    // ---------- Antrean banyak entitas ----------
+    const batch = { items: new Map(), running: false, cancel: false, progress: null };
+    const keyOf = (e) => L.entityKey(e);
+    P.batch = {
+        has: (e) => batch.items.has(keyOf(e)),
+        count: () => batch.items.size,
+        running: () => batch.running,
+        progress: () => batch.progress,
+        toggle(e, picId) { const k = keyOf(e); if (batch.items.has(k)) batch.items.delete(k); else batch.items.set(k, { entity: e, picId }); P.emit('batch'); },
+        setMany(list, picId, on) { list.forEach((e) => { if (on) batch.items.set(keyOf(e), { entity: e, picId }); else batch.items.delete(keyOf(e)); }); P.emit('batch'); },
+        clear() { if (batch.running) return; batch.items.clear(); P.emit('batch'); },
+        cancel() { batch.cancel = true; },
+        names: () => Array.from(batch.items.values()).map((x) => x.entity.entity_name),
+        flats: () => Array.from(batch.items.values()).map((x) => L.flattenSelection(x.entity, x.picId)),
+        /** Jalankan startOne(flat) untuk tiap entitas antrean secara berurutan: pindah entitas di
+         *  jendela sesinya, pastikan benar-benar berpindah, lalu unduh, tunggu selesai, berikutnya. */
+        async run(startOne) {
+            const flats = P.batch.flats();
+            if (!flats.length || batch.running) return;
+            batch.running = true; batch.cancel = false; P.emit('batch');
+            const done = [];
+            for (let i = 0; i < flats.length && !batch.cancel; i++) {
+                const f = flats[i];
+                batch.progress = { i: i + 1, n: flats.length, name: f.entity_name }; P.emit('batch');
+                P.emit('log-local', 'Antrean ' + (i + 1) + '/' + flats.length + ': ' + f.entity_name);
+                try {
+                    await P.post('/api/actions/login-entity', { entity: f });
+                    await P.run.waitIdle();
+                    if (batch.cancel) break;
+                    const st = await P.post('/api/session/status', { picId: f.pic_id });
+                    if (!st.loggedIn || (f.npwp && !sameNpwp(f.npwp, st.identity))) throw new Error('belum berpindah ke entitas ini di jendela sesi');
+                    E.select(all().find((e) => keyOf(e) === keyOf(f)) || f, f.pic_id);
+                    await startOne(f);
+                    await P.run.waitIdle();
+                    done.push({ name: f.entity_name, ok: true });
+                } catch (err) {
+                    done.push({ name: f.entity_name, ok: false, err: err.message });
+                    P.emit('log-local', 'Antrean: ' + f.entity_name + ' dilewati - ' + err.message);
+                }
+            }
+            const cancelled = batch.cancel;
+            batch.running = false; batch.cancel = false; batch.progress = null; batch.items.clear(); P.emit('batch');
+            const bad = done.filter((d) => !d.ok);
+            P.info('Antrean ' + (cancelled ? 'dihentikan' : 'selesai') + ': ' + done.filter((d) => d.ok).length + ' dari ' + flats.length + ' entitas diunduh'
+                + (bad.length ? '. Dilewati: ' + bad.map((d) => d.name).join(', ') : '.'));
+        }
+    };
+    P.batch.barHtml = function () {
+        const n = batch.items.size;
+        if (!batch.running && n < 2) return '';
+        if (batch.running && batch.progress) {
+            const pr = batch.progress;
+            return '<div class="banner info batch-bar"><span class="ico">' + P.icon('loader', 20, 'spin', 2.2) + '</span><div class="body"><b>Antrean unduhan · entitas ' + pr.i + ' dari ' + pr.n + '</b><span>' + P.esc(pr.name) + '</span></div></div>';
+        }
+        const names = P.batch.names();
+        const shown = names.slice(0, 3).map(P.esc).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) + ' lagi' : '');
+        return '<div class="banner info batch-bar"><span class="ico">' + P.icon('layers', 20) + '</span><div class="body"><b>Antrean unduhan: ' + n + ' entitas</b><span>' + shown + ' · Mulai Otomasi menjalankannya berurutan.</span></div>'
+            + '<button type="button" class="btn btn-sm" data-act="batch-clear">Kosongkan</button></div>';
+    };
+
+    // ---------- Daftar entitas sesi (popover dari panah di tab) ----------
+    let popEl = null;
+    let popPic = null;
+    function closePop() {
+        if (!popEl) return;
+        popEl.remove(); popEl = null; popPic = null;
+        document.removeEventListener('mousedown', popOutside, true);
+        document.removeEventListener('keydown', popKey, true);
+    }
+    E.closeSessionPopover = closePop;
+    function popOutside(ev) { if (popEl && !popEl.contains(ev.target) && !ev.target.closest('[data-sess-drop]')) closePop(); }
+    function popKey(ev) { if (ev.key === 'Escape') closePop(); }
+    function popList(q) {
+        return E.sessionEntities(popPic).filter((e) => !q || L.entityMatches(e, q));
+    }
+    function paintPopList() {
+        if (!popEl) return;
+        const q = (popEl.querySelector('.sp-q') || {}).value || '';
+        const cur = E.current();
+        const list = popList(q);
+        popEl.querySelector('.sp-list').innerHTML = list.map((e) => {
+            const k = P.esc(keyOf(e));
+            const isCur = !!(cur && keyOf(cur) === keyOf(e) && cur.pic_id === popPic);
+            const meta = (e.project === 'taxio_hub' ? P.esc(e.entity_id) : '') + (e.npwp ? (e.project === 'taxio_hub' ? ' · ' : '') + P.esc(L.formatNpwp(e.npwp)) : '');
+            return '<div class="sp-row' + (isCur ? ' cur' : '') + '"><label class="sp-cb" title="Masukkan ke antrean unduhan"><input type="checkbox" data-sp-cb="' + k + '"' + (P.batch.has(e) ? ' checked' : '') + '></label>'
+                + '<button type="button" class="sp-pick" data-sp-pick="' + k + '"><b>' + P.esc(e.entity_name) + '</b><span>' + meta + '</span></button>'
+                + (isCur ? '<span class="sp-now" title="Entitas yang sedang dikerjakan">' + P.icon('check', 15, '', 2.6) + '</span>' : '') + '</div>';
+        }).join('') || '<div class="sp-empty">Tidak ada entitas yang cocok.</div>';
+        const c = popEl.querySelector('.sp-count'); if (c) c.textContent = P.batch.count() + ' dipilih untuk antrean';
+    }
+    E.openSessionPopover = function (picId, anchor) {
+        if (popEl && popPic === picId) { closePop(); return; }
+        closePop();
+        const sess = E.sessions(); const idx = sess.findIndex((s) => s.picId === picId); if (idx < 0) return;
+        popPic = picId;
+        popEl = document.createElement('div'); popEl.className = 'sess-pop'; popEl.setAttribute('role', 'dialog'); popEl.setAttribute('aria-label', 'Entitas sesi ' + (idx + 1));
+        const n = E.sessionEntities(picId).length;
+        popEl.innerHTML = '<div class="sp-head"><div><b>Sesi ' + (idx + 1) + ' · ' + P.esc(picNameOf(picId) || 'PIC') + '</b><span>' + n + ' entitas bisa dibuka di jendela ini tanpa membuka jendela baru</span></div>'
+            + '<button type="button" class="icon-btn" data-sp-front aria-label="Tampilkan jendela sesi ini" title="Tampilkan jendela Chrome sesi ini">' + P.icon('globe', 15) + '</button></div>'
+            + '<input type="text" class="sp-q" placeholder="Cari entitas di sesi ini…" aria-label="Cari entitas di sesi ini">'
+            + '<div class="sp-list"></div>'
+            + '<div class="sp-foot"><span class="sp-count"></span><span class="sp-acts"><button type="button" class="link-btn" data-sp-all>Pilih semua</button><button type="button" class="link-btn" data-sp-none>Kosongkan</button></span></div>'
+            + '<div class="sp-hint">Klik nama untuk pindah entitas. Centang beberapa entitas lalu Mulai Otomasi: diunduh berurutan di jendela ini.</div>';
+        document.body.appendChild(popEl);
+        const r = anchor.getBoundingClientRect();
+        const w = Math.min(380, window.innerWidth - 16);
+        popEl.style.width = w + 'px';
+        popEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+        popEl.style.top = (r.bottom + 6) + 'px';
+        popEl.style.maxHeight = Math.max(240, window.innerHeight - r.bottom - 20) + 'px';
+        paintPopList();
+        popEl.querySelector('.sp-q').addEventListener('input', paintPopList);
+        popEl.addEventListener('change', (ev) => {
+            const cb = ev.target.closest('[data-sp-cb]'); if (!cb) return;
+            const e = E.sessionEntities(popPic).find((x) => keyOf(x) === cb.dataset.spCb); if (e) P.batch.toggle(e, popPic);
+            const c = popEl && popEl.querySelector('.sp-count'); if (c) c.textContent = P.batch.count() + ' dipilih untuk antrean';
+        });
+        popEl.addEventListener('click', async (ev) => {
+            const pick = ev.target.closest('[data-sp-pick]');
+            if (pick) {
+                const e = E.sessionEntities(popPic).find((x) => keyOf(x) === pick.dataset.spPick);
+                if (e) { E.select(e, popPic); closePop(); autoLoginAfterSelect(); }
+                return;
+            }
+            if (ev.target.closest('[data-sp-all]')) { P.batch.setMany(popList((popEl.querySelector('.sp-q') || {}).value || ''), popPic, true); paintPopList(); return; }
+            if (ev.target.closest('[data-sp-none]')) { P.batch.setMany(popList((popEl.querySelector('.sp-q') || {}).value || ''), popPic, false); paintPopList(); return; }
+            if (ev.target.closest('[data-sp-front]')) { try { await P.post('/api/sessions/front', { picId: popPic }); } catch (e) { /* jendela mungkin sudah tertutup */ } }
+        });
+        document.addEventListener('mousedown', popOutside, true);
+        document.addEventListener('keydown', popKey, true);
+        popEl.querySelector('.sp-q').focus();
+    };
+    // Sesi hilang (jendela ditutup): bersihkan popover/antrean yang menunjuk ke sana.
+    P.on('sessions', () => { if (popPic && !E.sessions().some((s) => s.picId === popPic)) closePop(); });
+
     // ---------- Palet ----------
     // picCursor: PIC yang sedang di-highlight (bukan berarti sudah dipilih/login) saat pic-panel
     // suatu entitas sedang terbuka - digerakkan panah/Enter tanpa menyentuh mouse sama sekali.
-    const pal = { open: false, q: '', hover: 0, expanded: null, picCursor: null, sessions: [] };
-    let sessTimer = null;
+    const pal = { open: false, q: '', hover: 0, expanded: null, picCursor: null };
     let palKey = null;
     let dlgKey = null;
     let palNav = []; // urutan baris yang bisa dipilih (untuk keyboard)
@@ -180,29 +377,6 @@
         return html + '</div>';
     }
 
-    // Bisa lebih dari satu jendela Coretax terbuka bersamaan (satu per PIC yang pernah dipakai
-    // proses ini, plus sesi manual) - ditaruh di ATAS palet ini sendiri (bukan dropdown/dialog
-    // terpisah, sesuai permintaan pengguna: "dijadikan disini aja"), supaya begitu palet dibuka
-    // langsung kelihatan apa yang sedang aktif SEBELUM memilih entitas untuk sesi baru. Klik
-    // barisnya = bawa jendela itu ke depan; ikon X = tutup jendela itu.
-    function sessionRowHtml(s, n) {
-        // Judul baris cukup "Sesi N" - nama entitas/identitas asli sudah ada di baris kedua
-        // (dibaca live dari jendelanya), menyebut picId (ID internal, bukan nama orang) di judul
-        // cuma bikin baris tidak enak dibaca tanpa menambah info baru.
-        const idText = s.identity || (s.loggedIn ? '(identitas belum terbaca)' : 'Belum login / masih di halaman masuk');
-        // Sesi yang cocok dengan entitas yang SEDANG dipilih di topbar (pic_id sama - berlaku
-        // juga untuk sesi manual, yang pic_id-nya selalu 'manual') di-highlight, supaya jelas
-        // sesi mana yang sedang "dikerjakan" tanpa harus mencocokkan identitas manual.
-        const cur = E.current();
-        const isCurrent = !!(cur && cur.pic_id === s.picId);
-        return '<div class="session-row' + (isCurrent ? ' current' : '') + '">'
-            + '<button type="button" class="session-btn" data-act="session-front" data-pic="' + P.esc(s.picId) + '">'
-            + '<span class="ent-av">' + n + '</span>'
-            + '<span class="ent-tx"><b>Sesi ' + n + (s.kind === 'manual' ? ' · Manual' : '') + '</b><span>' + P.esc(idText) + '</span></span>'
-            + (isCurrent ? P.icon('check', 17, '', 2.6).replace('<svg ', '<svg style="color:var(--accent);flex:none" ') : '') + '</button>'
-            + '<button type="button" class="icon-btn" aria-label="Tutup sesi ini" title="Tutup jendela ini" data-act="session-close" data-pic="' + P.esc(s.picId) + '">' + P.icon('x', 15) + '</button></div>';
-    }
-
     // Satu pencarian gabung Grup+Saya (bukan tab terpisah lagi) - mengetik menyaring KEDUANYA
     // sekaligus, tidak perlu pindah tab dulu untuk menemukan entitas pribadi/lokal. Entitas yang
     // muncul di kedua sumber (mis. entitas pribadi seorang PIC yang juga anggota grup) dedupe by
@@ -218,10 +392,6 @@
         // di kotak cari, beda dari daftar entitas lokal di bawah yang IKUT tersaring oleh q).
         if (!P.isRestricted()) {
             html += '<button type="button" class="pal-add" data-act="add"><span class="ent-av" style="background:var(--accent-soft);color:var(--accent)">' + P.icon('plus', 18, '', 2.2) + '</span><span>Tambah entitas baru</span></button>';
-        }
-        if (pal.sessions.length && !q) {
-            html += '<div class="pal-sec">SESI AKTIF</div>' + pal.sessions.map((s, i) => sessionRowHtml(s, i + 1)).join('')
-                + '<div class="pal-note" style="margin-bottom:2px">' + P.icon('info', 15) + '<span>Pilih entitas di bawah untuk membuka jendela baru.</span></div>';
         }
         const seen = new Set();
 
@@ -249,7 +419,7 @@
 
         // Dicek terpisah dari `html` sekarang - tombol "Tambah entitas baru" selalu ada di atas
         // (aksi global, bukan hasil pencarian), jadi `html` sendiri tidak pernah kosong lagi.
-        const hadListContent = palNav.length > 0 || !!me || (pal.sessions.length > 0 && !q);
+        const hadListContent = palNav.length > 0 || !!me;
         if (!hadListContent) html += '<div class="pal-empty">' + (q ? 'Tidak ada entitas yang cocok dengan "' + P.esc(q) + '".' : (E.loaded ? 'Belum ada entitas.' : 'Memuat entitas…')) + '</div>';
         if (pal.hover >= palNav.length) pal.hover = Math.max(0, palNav.length - 1);
         return html;
@@ -263,11 +433,6 @@
 
     // Dipoll ringan selama palet terbuka - kalau jendelanya ditutup langsung (bukan lewat ikon X
     // di sini), baris "Sesi Aktif" ikut hilang tanpa perlu menutup-buka ulang palet.
-    async function refreshSessions() {
-        try { pal.sessions = (await P.api('/api/sessions/list')).sessions || []; } catch (e) { return; }
-        if (pal.open) paintPalette();
-    }
-
     E.openPalette = function () {
         if (pal.open) return;
         pal.open = true; pal.q = ''; pal.hover = 0; pal.expanded = null; pal.picCursor = null;
@@ -279,8 +444,6 @@
         document.body.appendChild(scrim);
         const input = P.$('pal-q');
         paintPalette(); input.focus();
-        refreshSessions();
-        sessTimer = setInterval(refreshSessions, 3000);
         input.addEventListener('input', () => { pal.q = input.value; pal.hover = 0; pal.expanded = null; pal.picCursor = null; paintPalette(); });
         scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) E.closePalette(); });
         scrim.addEventListener('mouseover', (e) => { const row = e.target.closest('.ent'); if (row && row.dataset.idx !== undefined && Number(row.dataset.idx) >= 0 && Number(row.dataset.idx) !== pal.hover) { pal.hover = Number(row.dataset.idx); scrim.querySelectorAll('.ent.hover').forEach((n) => n.classList.remove('hover')); if (!row.classList.contains('unlinked')) row.classList.add('hover'); } });
@@ -295,8 +458,6 @@
             else if (act === 'add') { E.closePalette(); E.openDialog(null); }
             else if (act === 'edit' && ent) { E.closePalette(); E.openDialog(ent); }
             else if (act === 'del' && ent) deleteLocal(ent);
-            else if (act === 'session-front') { t.disabled = true; try { await P.post('/api/sessions/front', { picId: t.dataset.pic }); } finally { t.disabled = false; } }
-            else if (act === 'session-close') { t.disabled = true; try { await P.post('/api/sessions/close', { picId: t.dataset.pic }); } finally { refreshSessions(); } }
         });
         // Di level dokumen, bukan pada scrim: setelah baris diklik isi palet digambar ulang dan fokus
         // jatuh ke body, sehingga Esc/Enter tidak lagi sampai ke elemen di dalam palet.
@@ -341,7 +502,7 @@
         document.addEventListener('keydown', palKey);
     };
     function scrollHover() { const el = document.querySelector('#pal-body .ent.hover'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); }
-    E.closePalette = function () { pal.open = false; if (palKey) { document.removeEventListener('keydown', palKey); palKey = null; } if (sessTimer) { clearInterval(sessTimer); sessTimer = null; } const s = P.$('palette'); if (s) s.remove(); };
+    E.closePalette = function () { pal.open = false; if (palKey) { document.removeEventListener('keydown', palKey); palKey = null; } const s = P.$('palette'); if (s) s.remove(); };
 
     /** Baris ber-PIC banyak (Hub atau Badan lokal) SELALU membuka pilihan PIC dulu - lewat klik
      *  MAUPUN Enter - sama seperti mekanisme Taxio Hub sendiri (coretax.js loginToCoretax: >=2

@@ -47,6 +47,12 @@
     function releaseIfSessionGone(list) {
         const cur = E.current();
         if (!cur || !cur.pic_id) { seenSel = { key: '', seen: false }; return; }
+        // Pilihan hasil pemulihan (aplikasi baru dibuka): pertahankan hanya bila jendela sesinya masih
+        // terbuka; kalau tidak, lepas sekarang. Sesudah itu diperlakukan seperti pilihan biasa.
+        if (E.selected && E.selected.restored) {
+            if (list.some((s) => s.picId === cur.pic_id)) { E.selected.restored = false; }
+            else if (!P.state.run.active) { seenSel = { key: '', seen: false }; E.clear(); return; }
+        }
         const key = cur.project + '|' + cur.entity_id + '|' + cur.pic_id;
         if (seenSel.key !== key) seenSel = { key, seen: false };
         if (list.some((s) => s.picId === cur.pic_id)) seenSel.seen = true;
@@ -57,10 +63,6 @@
         try { list = ((await P.api('/api/sessions/list')) || {}).sessions || []; } catch (e) { return; }
         if (JSON.stringify(list) !== JSON.stringify(P.state.sessions)) { P.state.sessions = list; P.emit('sessions'); }
         releaseIfSessionGone(list);
-    }
-    function otherSessionsCount(ent) {
-        const list = P.state.sessions || [];
-        return ent ? list.filter((s) => s.picId !== ent.pic_id).length : list.length;
     }
 
     // ---------- Segarkan status sesi (tombol di sebelah pill topbar) ----------
@@ -113,11 +115,7 @@
         } else if (!P.isRestricted()) {
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button>';
         }
-        const otherSessions = otherSessionsCount(ent);
-        const sessBadge = otherSessions > 0
-            ? '<button type="button" class="chip-badge" id="btn-other-sessions" title="Lihat sesi Coretax lain yang sedang terbuka">' + otherSessions + ' sesi lain</button>'
-            : '';
-        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + sessBadge + buttons + '</header>';
+        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + buttons + E.sessionStripHtml() + '</header>';
     }
     function appHtml() {
         return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Periksa Pembaruan</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
@@ -208,7 +206,10 @@
         app.addEventListener('click', (e) => {
             const nav = e.target.closest('[data-nav]'); if (nav) return S.go(nav.dataset.nav);
             if (e.target.closest('#entity-chip')) return E.openPalette();
-            if (e.target.closest('#btn-other-sessions')) return E.openPalette();
+            const sm = e.target.closest('[data-sess]'); if (sm) return E.selectSession(sm.dataset.sess);
+            const sd = e.target.closest('[data-sess-drop]'); if (sd) return E.openSessionPopover(sd.dataset.sessDrop, sd);
+            const sc = e.target.closest('[data-sess-close]'); if (sc) return closeSession(sc.dataset.sessClose, sc);
+            if (e.target.closest('#sess-new')) return E.openPalette();
             if (e.target.closest('#open-settings')) return openSettings();
             if (e.target.closest('#btn-open-coretax')) return P.manual.open();
             if (e.target.closest('#btn-check-session')) return P.manual.check(true);
@@ -217,6 +218,11 @@
             if (e.target.closest('#btn-login')) return loginEntity(e.target.closest('#btn-login'));
             if (e.target.closest('#outdated-check')) return checkUpdateFromBanner();
         });
+    }
+    async function closeSession(picId, btn) {
+        btn.disabled = true;
+        try { await P.post('/api/sessions/close', { picId }); } catch (e) { /* jendela mungkin sudah tertutup */ }
+        pollSessions();
     }
     async function loginEntity(btn) {
         const ent = E.current(); if (!ent) return;
@@ -255,6 +261,7 @@
     P.on('login', () => { if (view === 'app') S.renderTopbar(); });
     P.on('manual', () => { if (view === 'app') { S.renderTopbar(); if (!P.state.run.active) S.renderContent(false); } });
     P.on('sessions', () => { if (view === 'app') S.renderTopbar(); });
+    P.on('batch', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); } });
     P.on('run', (st) => {
         if (view !== 'app') return;
         S.renderTopbar();

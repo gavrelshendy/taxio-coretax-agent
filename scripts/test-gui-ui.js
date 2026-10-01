@@ -416,44 +416,78 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForSelector('#settings', { state: 'detached' });
     });
-    await test('palet: "Sesi Aktif" menampilkan jendela yang benar-benar terbuka, sesi yang cocok dengan entitas terpilih di-highlight, X menutupnya', async () => {
-        // Entitas terpilih saat ini: PT Contoh Sejahtera Abadi / PIC p-andi (dari test sebelumnya).
+    await test('topbar: tab sesi menampilkan jendela yang benar-benar terbuka, tab entitas terpilih menyala, X menutupnya; tidak terpotong di jendela sempit', async () => {
         fakes.ctl.sessions = [
             { picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT CONTOH SEJAHTERA ABADI' },
             { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }
         ];
-        await page.waitForSelector('#btn-other-sessions', { timeout: 6000 });
-        await page.click('#entity-chip');
-        await page.waitForSelector('#palette');
-        await page.waitForFunction(() => (document.querySelector('#pal-body') || {}).textContent.includes('SESI AKTIF'), null, { timeout: 3000 });
-        const rows = page.locator('.session-row');
-        assert.strictEqual(await rows.count(), 2);
-        assert.ok(await rows.nth(0).innerText().then((t) => t.includes('Sesi 1')));
-        assert.ok((await rows.nth(0).getAttribute('class')).includes('current'), 'sesi yang cocok dengan entitas terpilih (p-andi) di-highlight');
-        assert.ok(!(await rows.nth(1).getAttribute('class')).includes('current'), 'sesi lain (p-rina) tidak di-highlight');
-        // Tutup sesi ke-2 lewat ikon X - daftar berkurang jadi 1 tanpa perlu tutup-buka ulang palet.
-        await rows.nth(1).locator('[data-act="session-close"]').click();
-        await page.waitForFunction(() => document.querySelectorAll('.session-row').length === 1, null, { timeout: 3000 });
-        await page.keyboard.press('Escape');
-        await page.waitForSelector('#palette', { state: 'detached' });
+        await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 2, null, { timeout: 6000 });
+        const tabs = page.locator('.sess-tab');
+        assert.ok((await tabs.nth(0).getAttribute('class')).includes('active'), 'tab sesi entitas terpilih (p-andi) menyala');
+        assert.ok(!(await tabs.nth(1).getAttribute('class')).includes('active'), 'tab sesi lain tidak menyala');
+        assert.ok((await text('.sess-strip')).includes('Sesi baru'), 'tombol Sesi baru ada');
+        // Jendela sempit: semua bagian topbar harus tetap di dalam layar (membungkus, bukan terpotong).
+        await page.setViewportSize({ width: 720, height: 800 });
+        await pause(200);
+        const fit = await page.evaluate(() => {
+            const w = window.innerWidth;
+            const els = Array.from(document.querySelectorAll('.topbar .title, .topbar .status-pill, #entity-chip, .sess-tab, .sess-new'));
+            return { over: els.filter((e) => { const r = e.getBoundingClientRect(); return r.left < -1 || r.right > w + 1; }).map((e) => e.className || e.id), scrollW: document.documentElement.scrollWidth, w };
+        });
+        assert.deepStrictEqual(fit.over, [], 'tidak ada bagian topbar yang melewati tepi layar');
+        assert.ok(fit.scrollW <= fit.w + 1, 'tidak ada scroll horizontal halaman');
+        await shot('sesi-tab-sempit');
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await tabs.nth(1).locator('[data-sess-close]').click();
+        await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 1, null, { timeout: 3000 });
         await sessionsGoneThenReselect();
     });
-    await test('topbar: badge "N sesi lain" muncul saat ada sesi Coretax lain di luar entitas terpilih, klik membuka palet', async () => {
-        // Entitas terpilih saat ini: PT Contoh Sejahtera Abadi / PIC p-andi. p-andi sendiri TIDAK
-        // dihitung (itu sesi entitas yang sedang aktif dipakai) - hanya p-rina yang dihitung "lain".
+    await test('tab sesi: klik tab mengaktifkan sesi itu; panah membuka daftar entitas sesi; klik nama berpindah entitas lewat PIC sesi yang sama (tanpa jendela baru)', async () => {
         fakes.ctl.sessions = [
             { picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT CONTOH SEJAHTERA ABADI' },
             { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }
         ];
-        await page.waitForSelector('#btn-other-sessions', { timeout: 6000 });
-        assert.ok((await text('#btn-other-sessions')).includes('1 sesi lain'));
-        await page.click('#btn-other-sessions');
-        await page.waitForSelector('#palette');
-        await page.waitForFunction(() => (document.querySelector('#pal-body') || {}).textContent.includes('SESI AKTIF'), null, { timeout: 3000 });
-        await page.keyboard.press('Escape');
-        await page.waitForSelector('#palette', { state: 'detached' });
+        await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 2, null, { timeout: 6000 });
+        await page.locator('.sess-tab').nth(1).locator('.sess-main').click();
+        await page.waitForFunction(() => /MITRA KARYA ABADI/.test((document.querySelector('#entity-chip') || {}).textContent || ''), null, { timeout: 3000 });
+        assert.ok((await page.locator('.sess-tab').nth(1).getAttribute('class')).includes('active'), 'sesi yang diklik menyala');
+        assert.ok(!(await page.locator('.sess-tab').nth(0).getAttribute('class')).includes('active'), 'hanya satu tab menyala');
+        await page.locator('.sess-tab').nth(1).locator('.sess-drop').click();
+        await page.waitForSelector('.sess-pop');
+        const pop = await text('.sess-pop');
+        assert.ok(pop.includes('MITRA KARYA ABADI') && pop.includes('Sample Niaga Mandiri'), 'entitas milik PIC sesi 2 tampil');
+        assert.ok(!pop.includes('Contoh Sejahtera Abadi'), 'entitas milik PIC lain tidak tampil');
+        const before = calls.length;
+        await page.locator('.sp-pick', { hasText: 'Sample Niaga Mandiri' }).click();
+        await pause(400);
+        assert.strictEqual(await page.locator('.sess-pop').count(), 0, 'daftar tertutup setelah memilih');
+        assert.ok((await text('#entity-chip')).includes('Sample Niaga Mandiri'), 'pil topbar = entitas yang dikerjakan');
+        const lg = calls.slice(before).find((x) => x.url === '/api/actions/login-entity');
+        assert.ok(lg && lg.body.entity.pic_id === 'p-rina', 'berpindah lewat PIC sesi yang sama (jendela yang sama)');
+        await pause(4500); // satu putaran polling sesi melihat jendelanya, supaya pelepasan otomatis aktif
         await sessionsGoneThenReselect();
-        assert.ok(!(await visible('#btn-other-sessions')));
+    });
+    await test('antrean: centang beberapa entitas satu sesi, Mulai Otomasi mengunduh berurutan (pindah entitas lalu unduh, per entitas)', async () => {
+        fakes.ctl.sessions = [{ picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }];
+        await page.click('.nav-item[data-nav="faktur"]');
+        await page.waitForSelector('.pp');
+        await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 1, null, { timeout: 6000 });
+        await page.locator('.sess-tab .sess-drop').click();
+        await page.waitForSelector('.sess-pop');
+        await page.click('[data-sp-all]');
+        await shot('sesi-popover-antrean');
+        assert.ok((await text('.sess-pop')).includes('2 dipilih'), 'dua entitas tercentang');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => /Antrean unduhan: 2 entitas/.test(document.body.textContent), null, { timeout: 3000 });
+        const before = calls.length;
+        await page.click('#rail [data-act="start"]');
+        const seqNow = () => calls.slice(before).map((c) => c.url.replace('/api/actions/', '') + ':' + ((c.body && c.body.entity) || {}).entity_id);
+        for (let i = 0; i < 60 && seqNow().length < 4; i++) await pause(500);
+        assert.deepStrictEqual(seqNow(), ['login-entity:SNM', 'download-efaktur:SNM', 'login-entity:MKA', 'download-efaktur:MKA'], 'tiap entitas: pindah dulu, baru unduh; berurutan');
+        await page.waitForFunction(() => /Antrean selesai: 2 dari 2/.test(document.body.textContent), null, { timeout: 8000 });
+        assert.ok(!(await text('#content')).includes('Antrean unduhan:'), 'bar antrean hilang setelah selesai');
+        await page.click('.nav-item[data-nav="spt"]');
+        await sessionsGoneThenReselect();
     });
     await test('topbar: jendela sesi entitas terpilih hilang -> pilihan otomatis dilepas ("Pilih entitas")', async () => {
         assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
@@ -684,6 +718,26 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         const req = await loginReq;
         assert.ok(JSON.parse(req.postData()).entity.entity_name.includes('CV Satu PIC Contoh'));
         await pause(300);
+    });
+
+    await test('pilihan entitas hasil pemulihan (muat ulang) dilepas bila tak ada jendela Coretax-nya, dipertahankan bila jendelanya masih terbuka', async () => {
+        const restore = async (sessions) => {
+            fakes.ctl.sessions = sessions;
+            await page.evaluate(() => localStorage.setItem('pilot.sel', JSON.stringify({ key: 'taxio_hub|MKA', picId: 'p-andi', name: 'MITRA KARYA ABADI, PT' })));
+            await page.reload();
+            await page.waitForSelector('#app .sidebar');
+        };
+        // Tanpa jendela: sempat tampil dari ingatan, lalu dilepas oleh polling sesi (tidak "nyangkut").
+        await restore([]);
+        await page.waitForFunction(() => /Pilih entitas/.test((document.querySelector('#entity-chip') || {}).textContent || ''), null, { timeout: 8000 });
+        // Dengan jendela PIC-nya masih terbuka: pilihan dipertahankan melewati beberapa kali polling.
+        await restore([{ picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }]);
+        await page.waitForTimeout(5500);
+        assert.ok((await text('#entity-chip')).includes('MITRA KARYA ABADI'), 'pilihan tetap bila sesinya masih terbuka');
+        fakes.ctl.sessions = [];
+        await page.evaluate(() => localStorage.removeItem('pilot.sel'));
+        await page.reload();
+        await page.waitForSelector('#app .sidebar');
     });
 
     // ------------------------------------------------ Restricted Editor
