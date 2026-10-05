@@ -324,11 +324,14 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('e-Bupot: BPMP mengunci PDF; kode objek hanya untuk BP21/BPPU; antrean per jenis', async () => {
         await page.click('.nav-item[data-nav="ebupot"]');
         await page.waitForSelector('.tile[data-val="bp21"]');
-        assert.ok(await visible('#eb-kode'));
-        await page.click('.tile[data-val="bp21"]'); await page.click('.tile[data-val="bpmp"]');
+        assert.strictEqual(await page.locator('.tile[aria-pressed="true"]').count(), 0, 'awalnya tidak ada jenis yang terpilih (BP21 tidak lagi tercentang sendiri)');
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'tanpa jenis: tombol mulai terkunci');
+        assert.ok(!(await visible('#eb-kode')), 'tanpa jenis kode objek tidak relevan');
+        await page.click('.tile[data-val="bpmp"]');
         assert.ok(!(await visible('#eb-kode')), 'tanpa BP21/BPPU kode objek tidak relevan');
         assert.ok(await page.locator('.doc-row [data-act="pdf"]').isDisabled(), 'BPMP saja: PDF terkunci');
         await page.click('.tile[data-val="bp21"]');
+        assert.ok(await visible('#eb-kode'), 'dengan BP21 kode objek tampil');
         await page.fill('#eb-kode', '21-100-35');
         await page.click('.pp [data-pp="quick"][data-val="q1"]');
         await page.click('[data-act="start"]');
@@ -338,6 +341,19 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(eb.some((x) => x.body.bupotType === 'bp21' && x.body.kodeInput === '21-100-35' && x.body.outputMode === 'pdf_excel'));
         assert.ok(eb.some((x) => x.body.bupotType === 'bpmp' && x.body.kodeInput === '' && x.body.outputMode === 'excel_only'));
         await shot('12-ebupot');
+    });
+    await test('e-Bupot: klik BPPU saja mengunduh BPPU saja (bukan BP21)', async () => {
+        // Tes sebelumnya meninggalkan BP21 + BPMP terpilih: lepas dulu, lalu pilih BPPU saja.
+        await page.click('.nav-item[data-nav="ebupot"]');
+        await page.waitForSelector('.tile[data-val="bppu"]');
+        for (const k of ['bp21', 'bpmp']) { if ((await page.locator('.tile[data-val="' + k + '"]').getAttribute('aria-pressed')) === 'true') await page.click('.tile[data-val="' + k + '"]'); }
+        await page.click('.tile[data-val="bppu"]');
+        assert.strictEqual(await page.locator('.tile[aria-pressed="true"]').count(), 1, 'hanya BPPU yang terpilih');
+        await page.click('.pp [data-pp="quick"][data-val="q1"]');
+        const before = calls.length;
+        await page.click('#rail [data-act="start"]'); await pause(800);
+        const eb = calls.slice(before).filter((x) => x.url === '/api/actions/download-ebupot');
+        assert.deepStrictEqual(eb.map((x) => x.body.bupotType), ['bppu'], 'hanya satu permintaan: BPPU');
     });
     await test('Bukti Potong Saya: jenis milik PIC pribadi terkunci untuk entitas Badan', async () => {
         await page.click('.nav-item[data-nav="bpsaya"]');
