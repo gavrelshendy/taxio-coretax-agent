@@ -255,7 +255,10 @@
     const KODE_TYPES = ['bp21', 'bppu'];
     const ebupot = createPage({
         id: 'ebupot', batch: true,
-        init(api) { return { jenis: new Set(['bp21']), status: 'issued', pdf: true, pageSize: 'auto', kode: '', pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }) }; },
+        init(api) {
+            // Awalnya TIDAK ada jenis terpilih. Dulu BP21 sudah tercentang sejak awal, sehingga mengklik BPPU
+            // menghasilkan BP21 + BPPU dan antrean mengunduh BP21 lebih dulu (dilaporkan live 2026-10-05).
+            return { jenis: new Set(), status: 'issued', pdf: true, pageSize: 'auto', kode: '', pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }) }; },
         normalize(st) { if (restricted()) { st.jenis.delete('bpmp'); st.jenis.delete('bpa1'); } },
         afterDraw(st) { st.pp.bind(); },
         main(st) {
