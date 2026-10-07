@@ -61,7 +61,8 @@ chrome.getManualStatus = async () => ({ open: false, loggedIn: false, identity: 
 chrome.isLoggedOut = () => false;
 const fakePage = { isClosed: () => false, url: () => '', goto: async () => { throw new Error('halaman tiruan: tidak ada Coretax sungguhan di tes ini'); } };
 chrome.launchOrReuseContext = async () => ({ context: {}, page: fakePage, reused: false, userDataDir: '/tmp/fake' });
-chrome.loginAndImpersonate = async () => true;
+let loginDelay = 0; // >0: login tiruan berlangsung lama, untuk mengetes dua sesi yang berjalan bersamaan
+chrome.loginAndImpersonate = async () => { if (loginDelay) await new Promise((r) => setTimeout(r, loginDelay)); return true; };
 
 const { createGuiServer } = require('../gui/server');
 const PORT = 52411;
@@ -79,7 +80,7 @@ const POST = (u, b, h) => call('POST', u, b === undefined ? {} : b, h);
 async function waitIdle() {
     for (let i = 0; i < 100; i++) {
         const st = (await GET('/api/run/status')).json;
-        if (!st || !st.active) return;
+        if (!st || !(st.anyActive || st.active)) return; // semua sesi, bukan hanya satu
         await new Promise((res) => setTimeout(res, 15));
     }
     throw new Error('proses tidak kunjung selesai (kemungkinan bug pada tes, bukan pada aplikasi)');
@@ -291,6 +292,30 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
     await test('login otomatis untuk sesi manual polos ditolak dengan arahan yang jelas (tombol khusus entitas otomatis)', async () => {
         const a = await POST('/api/actions/login-entity', { entity: manualSelEntity });
         assert.strictEqual(a.status, 400); assert.ok(/login sendiri/.test(a.json.error));
+    });
+
+    await test('dua sesi (PIC berbeda) berjalan bersamaan; sesi yang sama ditolak dengan nama prosesnya', async () => {
+        const L = require('../gui/public/js/logic.js');
+        const e1 = Object.assign({}, localSelEntity(), { pic_id: cv.pics[0].pic_id, pic_name: cv.pics[0].pic_name });
+        const e2 = Object.assign({}, localSelEntity(), { pic_id: cv.pics[1].pic_id, pic_name: cv.pics[1].pic_name });
+        loginDelay = 400;
+        try {
+            const a = await POST('/api/actions/login-entity', { entity: e1 });
+            const b = await POST('/api/actions/login-entity', { entity: e2 });
+            assert.strictEqual(a.status, 202, JSON.stringify(a.json)); assert.strictEqual(b.status, 202, 'sesi kedua harus bisa mulai walau sesi pertama sibuk: ' + JSON.stringify(b.json));
+            assert.notStrictEqual(a.json.session, b.json.session);
+            assert.strictEqual(a.json.session, L.sessionKeyOf(e1), 'kunci sesi GUI harus sama dengan server');
+            assert.strictEqual(b.json.session, L.sessionKeyOf(e2));
+            const all = (await GET('/api/run/status')).json;
+            assert.strictEqual(all.runs.filter((r) => r.active).length, 2);
+            const sa = (await GET('/api/run/status?session=' + encodeURIComponent(a.json.session))).json;
+            assert.strictEqual(sa.active, true); assert.strictEqual(sa.key, a.json.session); assert.ok(/^Login Coretax/.test(sa.label));
+            const c = await POST('/api/actions/login-entity', { entity: e1 });
+            assert.strictEqual(c.status, 409); assert.ok(/Sesi ini masih menjalankan "Login Coretax/.test(c.json.error), c.json.error);
+            const idle = (await GET('/api/run/status?session=' + encodeURIComponent('p-tidak-ada'))).json;
+            assert.strictEqual(idle.active, false, 'sesi tanpa proses tampil idle walau sesi lain sibuk');
+        } finally { loginDelay = 0; }
+        await waitIdle();
     });
 
     await test('permintaan POST lintas-origin tetap ditolak', async () => {

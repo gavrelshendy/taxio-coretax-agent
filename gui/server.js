@@ -370,9 +370,9 @@ async function handleBillingPph25(req, res) {
         : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, masaInput: mmYY, nominal: amount, saveRoot,
             restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
 
-    try { runcontrol.start('Kode Billing PPh 25 · ' + mmYY + ' · ' + src.label); }
+    try { runcontrol.start('Kode Billing PPh 25 · ' + mmYY + ' · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         await runBillingPph25(runOpts);
     } catch (e) {
@@ -496,6 +496,19 @@ async function resolveEntitySource(res, entity) {
     };
 }
 
+/** Kunci sesi + label log sebuah proses (lib/runcontrol.js): satu proses per jendela Chrome PIC
+ *  (atau sesi manual), sesi berbeda boleh berjalan bersamaan. Kuncinya sama dengan picId di
+ *  /api/sessions/list, jadi tab sesi di dashboard bisa mencocokkan prosesnya. */
+const MANUAL_SESSION = { key: 'manual', tag: 'Manual' };
+function sessionOf(src) {
+    if (!src || src.kind === 'manual') return MANUAL_SESSION;
+    const id = String((src.entity && src.entity.entity_id) || '');
+    // Entitas lokal ber-id internal ("local:<uuid>"): labelnya pakai kata pertama namanya.
+    const tag = id.startsWith('local:') ? String((src.entity && src.entity.entity_name) || 'Lokal').split(/[\s,]+/)[0] : id;
+    return { key: src.picId, tag: tag.slice(0, 16) };
+}
+function runSessionKey() { const r = runcontrol.current(); return r ? r.key : null; }
+
 /** Untuk fitur yang bekerja pada satu `page` (Pajak Masukan): membuka halaman Coretax untuk
  *  entitas ini lewat resolveEntitySource, lalu login otomatis (jika bukan sesi manual).
  *  Mengembalikan { label, folder, open() }, atau null setelah membalas galat. `open()` dipanggil
@@ -505,7 +518,7 @@ async function prepareEntityPage(res, entity) {
     if (!src) return null;
     if (src.kind === 'manual') {
         return {
-            label: src.label, folder: src.runEntity.entity_id,
+            label: src.label, folder: src.runEntity.entity_id, session: sessionOf(src),
             open: async () => {
                 if (chrome.isLoggedOut(src.manualPage)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
                 return src.manualPage;
@@ -513,7 +526,7 @@ async function prepareEntityPage(res, entity) {
         };
     }
     return {
-        label: src.label, folder: src.entity.entity_id,
+        label: src.label, folder: src.entity.entity_id, session: sessionOf(src),
         open: () => runLoginOnly({
             client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
             restricted: src.restricted, passphrase: src.passphrase, allowedEbupotSections: src.allowedEbupotSections
@@ -541,13 +554,13 @@ async function handleDownloadEbupot(req, res) {
         : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode,
             restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
 
-    // Only one automation run at a time - the run-control (pause/skip/stop) model is built
-    // around a single active run, and two runs would fight over the same Chrome window anyway.
-    try { runcontrol.start('e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + src.label); }
+    // One automation run per session (Chrome window): two runs in the same window would fight
+    // over it, but different sessions run side by side (lib/runcontrol.js).
+    try { runcontrol.start('e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     // Fire-and-forget: the run streams its own progress over /events. Respond immediately so
     // the GUI isn't blocked on a request that can legitimately take many minutes.
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         await runEbupotDownload(runOpts);
     } catch (e) {
@@ -592,9 +605,9 @@ async function handleDownloadMyBupot(req, res) {
         : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode,
             restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
 
-    try { runcontrol.start('Bukti Potong Saya · ' + src.label); }
+    try { runcontrol.start('Bukti Potong Saya · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         await runMyBuktiPotongDownload(runOpts);
     } catch (e) {
@@ -637,10 +650,10 @@ async function handleDownloadSpt(req, res) {
             onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
 
     runOpts.a1Year=body.a1Year;
-    try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label); }
+    try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     runcontrol.setJenisRequested(jenisPajakKeys);
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         await runSptDownload(runOpts);
     } catch (e) {
@@ -680,9 +693,9 @@ async function handleDownloadPajakMasukan(req, res) {
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
 
-    try { runcontrol.start('Download Pajak Masukan · ' + target.label); }
+    try { runcontrol.start('Download Pajak Masukan · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         const page = await target.open();
         await pajakMasukan.runDownloadExcel({ page, masaList, saveRoot, entityFolder: target.folder, emit: (m) => log(m) });
@@ -712,9 +725,9 @@ async function handleDownloadEfaktur(req, res) {
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
 
-    try { runcontrol.start('Download e-Faktur · ' + typeKeys.length + ' jenis · ' + target.label); }
+    try { runcontrol.start('Download e-Faktur · ' + typeKeys.length + ' jenis · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         const page = await target.open();
         await efaktur.runDownloadEfaktur({ page, types: typeKeys, masaList, excel: excel !== false, csv: !!csv, saveRoot, entityFolder: target.folder, entityName: target.label, emit: (m) => log(m) });
@@ -742,9 +755,9 @@ async function handleImportPajakMasukan(req, res) {
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
 
-    try { runcontrol.start('Impor Pajak Masukan' + (targetMasaInput ? ' · Masa ' + String(targetMasaInput).trim() : '') + ' · ' + target.label); }
+    try { runcontrol.start('Impor Pajak Masukan' + (targetMasaInput ? ' · Masa ' + String(targetMasaInput).trim() : '') + ' · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         const page = await target.open();
         await pajakMasukan.runImportFromExcel({ page, fileBuffer, targetMasaInput: targetMasaInput ? String(targetMasaInput).trim() : '', dryRun: false, emit: (m) => log(m) });
@@ -767,9 +780,9 @@ async function handleImportDividen(req, res) {
     let fileBuffer;
     try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
 
-    try { runcontrol.start('Impor Dividen · Sesi Manual'); }
+    try { runcontrol.start('Impor Dividen · Sesi Manual', MANUAL_SESSION); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         await runDividenImport({ manualPage, fileBuffer });
     } catch (e) {
@@ -793,9 +806,9 @@ async function handleCheckDividen(req, res) {
     let fileBuffer;
     try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
 
-    try { runcontrol.start('Cek Hasil Dividen · Sesi Manual'); }
+    try { runcontrol.start('Cek Hasil Dividen · Sesi Manual', MANUAL_SESSION); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         await runDividenCheck({ manualPage, fileBuffer });
     } catch (e) {
@@ -810,9 +823,9 @@ async function handleCreateDividenCase(req, res) {
     const manualPage = chrome.getManualPage();
     if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu.' });
 
-    try { runcontrol.start('Buat Kasus Dividen · Sesi Manual'); }
+    try { runcontrol.start('Buat Kasus Dividen · Sesi Manual', MANUAL_SESSION); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         await openNewCase(manualPage);
     } catch (e) {
@@ -832,9 +845,9 @@ async function handleLoginEntity(req, res) {
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
 
-    try { runcontrol.start('Login Coretax · ' + src.label); }
+    try { runcontrol.start('Login Coretax · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         await runLoginOnly({
             client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
@@ -890,7 +903,7 @@ async function handleOpenCoretaxManual(req, res) {
         return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan menggunakan Login Coretax Manual. Silakan pilih entitas dan klik tombol Login pada entitas tersebut.' });
     }
 
-    sendJson(res, 202, { started: true });
+    sendJson(res, 202, { started: true, session: runSessionKey() });
     chrome.openCoretaxManual(false, null).catch((e) => log('Gagal membuka Coretax manual: ' + e.message));
 }
 
@@ -924,7 +937,7 @@ async function handleCheckUpdate(req, res) {
     sendJson(res, 200, info);
     if (info.available) {
         updater.checkAndApply({
-            isRunActive: () => runcontrol.status().active,
+            isRunActive: () => runcontrol.anyActive(),
             onBeforeRestart: async () => {
                 try { await fetch('http://' + req.headers.host + '/api/quit', { method: 'POST' }); } catch (e) {}
             }
@@ -1011,9 +1024,11 @@ async function handlePickFolder(req, res) {
 }
 
 function createGuiServer(port) {
-    const server = http.createServer((req, res) => {
+    const server = http.createServer((req, res) => runcontrol.isolate(() => route(req, res)));
+    function route(req, res) {
         const url = new URL(req.url, 'http://127.0.0.1');
         const { pathname } = url;
+        const sess = url.searchParams.get('session') || null;
         try {
             if (req.method === 'POST' && isForeignOrigin(req)) {
                 log('[SECURITY] Permintaan POST ' + pathname + ' ditolak - Origin asing: ' + req.headers.origin);
@@ -1052,15 +1067,15 @@ function createGuiServer(port) {
             if (pathname === '/api/sessions/list' && req.method === 'GET') return handleSessionsList(req, res);
             if (pathname === '/api/sessions/front' && req.method === 'POST') return handleSessionFront(req, res);
             if (pathname === '/api/sessions/close' && req.method === 'POST') return handleSessionClose(req, res);
-            if (pathname === '/api/run/status' && req.method === 'GET') return sendJson(res, 200, runcontrol.status());
-            if (pathname === '/api/run/pause' && req.method === 'POST') { runcontrol.pause(); return sendJson(res, 200, runcontrol.status()); }
-            if (pathname === '/api/run/resume' && req.method === 'POST') { runcontrol.resume(); return sendJson(res, 200, runcontrol.status()); }
-            if (pathname === '/api/run/skip' && req.method === 'POST') { runcontrol.skip(); return sendJson(res, 200, runcontrol.status()); }
-            if (pathname === '/api/run/retry' && req.method === 'POST') { runcontrol.retry(); return sendJson(res, 200, runcontrol.status()); }
-            if (pathname === '/api/run/back' && req.method === 'POST') { runcontrol.back(); return sendJson(res, 200, runcontrol.status()); }
-            if (pathname === '/api/run/stop' && req.method === 'POST') { runcontrol.stop(); return sendJson(res, 200, runcontrol.status()); }
+            if (pathname === '/api/run/status' && req.method === 'GET') return sendJson(res, 200, runcontrol.status(sess));
+            if (pathname === '/api/run/pause' && req.method === 'POST') { runcontrol.pause(sess); return sendJson(res, 200, runcontrol.status(sess)); }
+            if (pathname === '/api/run/resume' && req.method === 'POST') { runcontrol.resume(sess); return sendJson(res, 200, runcontrol.status(sess)); }
+            if (pathname === '/api/run/skip' && req.method === 'POST') { runcontrol.skip(sess); return sendJson(res, 200, runcontrol.status(sess)); }
+            if (pathname === '/api/run/retry' && req.method === 'POST') { runcontrol.retry(sess); return sendJson(res, 200, runcontrol.status(sess)); }
+            if (pathname === '/api/run/back' && req.method === 'POST') { runcontrol.back(sess); return sendJson(res, 200, runcontrol.status(sess)); }
+            if (pathname === '/api/run/stop' && req.method === 'POST') { runcontrol.stop(sess); return sendJson(res, 200, runcontrol.status(sess)); }
             if (pathname === '/api/run/pagesize' && req.method === 'POST') {
-                return readJsonBody(req).then((b) => { const n = Number(b && b.size); if ([10, 25, 50, 100].includes(n)) runcontrol.setPageSizeOverride(n); return sendJson(res, 200, runcontrol.status()); }).catch(() => sendJson(res, 400, { error: 'Body tidak valid.' }));
+                return readJsonBody(req).then((b) => { const n = Number(b && b.size); if ([10, 25, 50, 100].includes(n)) runcontrol.setPageSizeOverride(n, sess); return sendJson(res, 200, runcontrol.status(sess)); }).catch(() => sendJson(res, 400, { error: 'Body tidak valid.' }));
             }
             if (pathname === '/api/quit' && req.method === 'POST') return handleQuit(req, res);
             if (pathname === '/api/check-update' && req.method === 'POST') return handleCheckUpdate(req, res);
@@ -1072,7 +1087,7 @@ function createGuiServer(port) {
             log('GUI server error: ' + e.message);
             sendJson(res, 500, { error: e.message });
         }
-    });
+    }
     return new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(port, '127.0.0.1', () => resolve(server));

@@ -245,7 +245,7 @@ async function createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nomin
     const hasSubmit = await submitBtn.isVisible({ timeout: 5000 }).catch(() => false);
     if (!hasSubmit) throw new Error('Tombol "Unduh Kode Billing" tidak ditemukan.');
 
-    chrome.downloadFlag.automated = true;
+    chrome.markAutomatedDownload(page, true);
     try {
         const [download] = await Promise.all([
             page.waitForEvent('download', { timeout: 30000 }),
@@ -257,7 +257,7 @@ async function createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nomin
         await download.delete().catch(() => {});
         return buffer;
     } finally {
-        chrome.downloadFlag.automated = false;
+        chrome.markAutomatedDownload(page, false);
     }
 }
 

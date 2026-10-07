@@ -525,6 +525,37 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
+    await test('Sesi baru saat sesi LAIN sedang berjalan: login sesi baru tetap jalan; sesi yang sibuk diberi tahu, tidak diam', async () => {
+        // Laporan 2026-10-07: "+ Sesi baru" tidak login sendiri selama ada proses di sesi lain.
+        const busy = { key: 'p-rina', tag: 'SNM', label: 'e-Bupot BPPU · CV Sample Niaga Mandiri', active: true, paused: false };
+        fakes.ctl.run = (key) => ({ key, active: key === 'p-rina', paused: false, label: key === 'p-rina' ? busy.label : '', jenisRequested: [], jenisTally: {}, holdReason: '', plan: null, runs: [busy], anyActive: true });
+        fakes.ctl.sessions = [{ picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0123 · CV Sample Niaga Mandiri' }];
+        try {
+            await page.waitForFunction(() => (window.Pilot.state.runs || []).length === 1 && window.Pilot.state.sessions.length === 1, null, { timeout: 6000 });
+            await page.waitForSelector('.sess-tab.busy', { timeout: 4000 });
+            assert.ok((await text('.sess-tab.busy')).includes('Sedang berjalan'), 'tab sesi yang sibuk diberi penanda');
+            calls.length = 0;
+            await page.click('#sess-new');
+            await page.waitForSelector('#palette');
+            await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
+            await page.waitForSelector('#palette', { state: 'detached' });
+            await pause(300);
+            assert.ok(calls.some((c) => c.url === '/api/actions/login-entity' && c.body.entity.pic_id === 'p-andi'), 'login sesi baru (PIC Andi) tetap dimulai walau sesi Rina sibuk');
+            calls.length = 0;
+            await page.click('#entity-chip');
+            await page.fill('#pal-q', 'sample niaga'); await page.keyboard.press('Enter');
+            await page.waitForSelector('#palette', { state: 'detached' });
+            await pause(300);
+            assert.ok(!calls.some((c) => c.url === '/api/actions/login-entity'), 'sesi yang sedang sibuk tidak dikirimi login kedua');
+            assert.ok(/Sesi PIC ini sedang menjalankan "e-Bupot BPPU/.test(await page.textContent('body')), 'pengguna diberi tahu kenapa login belum jalan');
+        } finally {
+            fakes.ctl.run = null; fakes.ctl.sessions = [];
+        }
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        await page.waitForFunction(() => !(window.Pilot.state.runs || []).some((r) => r.active), null, { timeout: 6000 });
+    });
     await test('tambah entitas Badan: PIC berkredensial sendiri (nama, NPWP, kata sandi); bisa tambah PIC lagi', async () => {
         await page.click('#entity-chip');
         assert.ok(await visible('.pal-add'), 'tombol tambah entitas selalu terlihat, tidak perlu pindah tab');

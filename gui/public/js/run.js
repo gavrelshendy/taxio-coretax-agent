@@ -7,37 +7,57 @@
     const R = P.run = { queue: [], finished: null, dismissed: null };
 
     // ---------- Polling ----------
+    // Setiap sesi (jendela Chrome per PIC, atau sesi manual) punya prosesnya sendiri dan sesi
+    // berbeda bisa berjalan bersamaan (lib/runcontrol.js). Tampilan proses, tombol kontrol, dan
+    // tombol mulai mengikuti sesi entitas yang sedang dipilih; P.state.runs memuat semua sesi
+    // (untuk penanda sibuk di tab sesi).
     let last = '';
     let wasActive = false;
     let lastLabel = '';
+    let lastKey;
+    R.sessionKey = () => L.sessionKeyOf(P.ent && P.ent.current ? P.ent.current() : null);
+    const statusUrl = (key) => '/api/run/status' + (key ? '?session=' + encodeURIComponent(key) : '');
     R.poll = async function () {
+        const key = R.sessionKey();
         let st;
-        try { st = await P.api('/api/run/status'); } catch (e) { return; }
-        setStatus(st);
+        try { st = await P.api(statusUrl(key)); } catch (e) { return; }
+        if (key !== R.sessionKey()) return; // pilihan sesi berubah selagi menunggu - poll berikutnya yang benar
+        setStatus(st, key);
     };
-    function setStatus(st) {
-        P.state.run = st || { active: false };
-        if (st && st.active && st.label) lastLabel = st.label;
-        if (wasActive && !(st && st.active)) {
+    function setStatus(st, key) {
+        st = st || { active: false };
+        P.state.runs = st.runs || [];
+        if (key !== lastKey) {
+            // Pindah sesi: jangan anggap proses sesi sebelumnya "baru saja selesai" di sesi ini.
+            lastKey = key; wasActive = !!st.active; lastLabel = st.active ? st.label : ''; R.finished = null; R.dismissed = null;
+        }
+        P.state.run = st;
+        if (st.active && st.label) lastLabel = st.label;
+        if (wasActive && !st.active) {
             // Proses baru saja selesai: simpan hasil akhirnya untuk ringkasan di halaman.
-            R.finished = { label: lastLabel, plan: st.plan, tally: st.jenisTally, requested: st.jenisRequested, at: Date.now() };
+            R.finished = { label: lastLabel || st.lastLabel, plan: st.plan, tally: st.jenisTally, requested: st.jenisRequested, at: Date.now() };
             R.dismissed = null;
         }
-        if (st && st.active) R.finished = null;
-        wasActive = !!(st && st.active);
+        if (st.active) R.finished = null;
+        wasActive = !!st.active;
         const sig = JSON.stringify(st);
         if (sig !== last) { last = sig; P.emit('run', P.state.run); }
     }
     R.startPolling = function () { R.poll(); setInterval(R.poll, 1500); };
+    /** Proses sesi `key` sedang berjalan? (dari polling terakhir). */
+    R.busy = (key) => !!key && (P.state.runs || []).some((r) => r.key === key && r.active);
+    R.runOf = (key) => (P.state.runs || []).find((r) => r.key === key) || null;
 
     // ---------- Antrean e-Bupot (satu jenis per proses, berantai) ----------
     // Alur unduh e-Bupot dibangun per jenis dengan mesin run-control yang sudah teruji; di sini
     // beberapa jenis dijalankan berurutan, menunggu tiap proses selesai sebelum yang berikutnya.
-    function waitForRunToFinish() {
+    /** Menunggu proses sesi `key` (bawaan: sesi terpilih saat dipanggil) selesai. */
+    function waitForRunToFinish(key) {
+        const k = key === undefined ? R.sessionKey() : key;
         return new Promise((resolve) => {
             const check = async () => {
-                let st; try { st = await P.api('/api/run/status'); } catch (e) { st = { active: false }; }
-                setStatus(st);
+                let st; try { st = await P.api(statusUrl(k)); } catch (e) { st = { active: false }; }
+                if (k === R.sessionKey()) setStatus(st, k); else P.state.runs = st.runs || P.state.runs;
                 if (st && st.active) setTimeout(check, 1200); else resolve();
             };
             setTimeout(check, 1200);
@@ -46,13 +66,14 @@
     R.waitIdle = waitForRunToFinish;
     R.runQueue = async function (items) {
         R.queue = items.slice();
+        const key = R.sessionKey();
         while (R.queue.length) {
             const next = R.queue.shift();
             P.emit('log-local', 'Bupot: memulai ' + next.bupotType.toUpperCase() + (R.queue.length ? ' (' + R.queue.length + ' jenis lagi menyusul)' : '') + '…');
             try {
-                await P.post('/api/actions/download-ebupot', next);
+                const r = await P.post('/api/actions/download-ebupot', next);
                 R.poll();
-                await waitForRunToFinish();
+                await waitForRunToFinish((r && r.session) || key);
             } catch (e) {
                 alert('Gagal memulai ' + next.bupotType.toUpperCase() + ': ' + e.message);
                 R.queue = [];
@@ -61,13 +82,15 @@
     };
 
     // ---------- Aksi kontrol ----------
+    // Selalu ke proses sesi yang sedang ditampilkan, bukan "proses mana saja".
     async function control(act, body) {
-        try { setStatus(await P.post('/api/run/' + act, body)); } catch (e) { alert('Gagal: ' + e.message); }
+        const key = P.state.run && P.state.run.key;
+        try { setStatus(await P.post('/api/run/' + act + (key ? '?session=' + encodeURIComponent(key) : ''), body), R.sessionKey()); } catch (e) { alert('Gagal: ' + e.message); }
     }
     R.control = {
         pauseResume: () => control(P.state.run.paused ? 'resume' : 'pause'),
         skip: () => control('skip'), retry: () => control('retry'), back: () => control('back'),
-        stop: () => { if (confirm('Hentikan seluruh proses?')) { R.queue = []; if (P.batch) P.batch.cancel(); control('stop'); } },
+        stop: () => { if (confirm('Hentikan proses di sesi ini? Sesi lain tetap berjalan.')) { R.queue = []; if (P.batch) P.batch.cancel(); control('stop'); } },
         pageSize: (n) => control('pagesize', { size: n })
     };
 
@@ -111,7 +134,7 @@
             + (st.coretaxAs ? '<div class="hint">Login Coretax: ' + P.esc(st.coretaxAs) + '</div>' : '') + '</div>'
             + '<div class="divider"></div><div class="stack" style="gap:8px"><div class="eyebrow">Baris per halaman</div><div class="seg">' + sizes.map((n) => '<button type="button" data-run-size="' + n + '" aria-pressed="' + (st.currentPageSize === n) + '">' + n + '</button>').join('') + '</div></div>'
             + '<div class="ctl-grid"><button type="button" class="btn ' + (st.paused ? 'btn-primary' : '') + '" data-run="pause">' + P.icon(st.paused ? 'play' : 'pause', 16) + (st.paused ? 'Lanjut' : 'Jeda') + '</button><button type="button" class="btn" data-run="back">' + P.icon('skipB', 16) + 'Mundur</button><button type="button" class="btn" data-run="retry">' + P.icon('retry', 16) + 'Ulang</button><button type="button" class="btn" data-run="skip">' + P.icon('skipF', 16) + 'Lewati</button></div>'
-            + '<button type="button" class="btn btn-danger btn-block" data-run="stop">' + P.icon('stop', 15) + 'Hentikan seluruh proses</button></div>';
+            + '<button type="button" class="btn btn-danger btn-block" data-run="stop">' + P.icon('stop', 15) + 'Hentikan proses sesi ini</button></div>';
         return '<div class="cols"><div class="col-main">' + left + '</div><aside class="rail">' + rail + '</aside></div>';
     };
     R.bindView = function (root) {
@@ -141,17 +164,37 @@
     };
 
     // ---------- Log aktivitas ----------
-    const D = P.dock = { open: false, count: 0 };
+    // Beberapa sesi bisa menulis log bersamaan; tiap baris dari sebuah proses berlabel entitasnya
+    // ("[HBI] ...") dan membawa kunci sesinya. "Sesi ini" menyaring ke sesi entitas terpilih
+    // (baris umum tanpa sesi - mis. dari dashboard - tetap tampil).
+    const D = P.dock = { open: false, count: 0, scope: P.store.get('logScope', 'all') === 'session' ? 'session' : 'all' };
     let lastMsg = 'Siap.';
+    const scopeLabel = () => (D.scope === 'session' ? 'Sesi ini' : 'Semua sesi');
+    const visible = (b) => D.scope !== 'session' || !b.session || b.session === R.sessionKey();
     D.html = function () {
         return '<footer class="dock' + (D.open ? ' open' : '') + '" id="dock"><button type="button" class="dock-bar" id="dock-toggle" aria-expanded="' + D.open + '">'
             + P.icon('term', 16) + '<b>Log aktivitas</b><span class="live"><i class="dot"></i>LIVE</span><span class="dock-last" id="dock-last">' + P.esc(lastMsg) + '</span>'
+            + '<span class="dock-tool" id="dock-scope" role="button" tabindex="0" title="Tampilkan log semua sesi, atau hanya sesi entitas yang dipilih" aria-pressed="' + (D.scope === 'session') + '">' + scopeLabel() + '</span>'
             + '<span class="dock-tool" id="dock-clear" role="button" tabindex="0">Bersihkan</span>' + P.icon(D.open ? 'down' : 'up', 18) + '</button><div class="log-view" id="log-view" role="log"></div></footer>';
     };
+    function rerenderLog() {
+        const view = P.$('log-view'); if (!view) return;
+        view.innerHTML = '';
+        buffered.filter(visible).forEach((b) => appendNode(view, b.time, b.msg));
+        view.scrollTop = view.scrollHeight;
+    }
     D.bind = function () {
         const t = P.$('dock-toggle');
         t.addEventListener('click', (e) => {
             if (e.target.closest('#dock-clear')) { clear(); return; }
+            const sc = e.target.closest('#dock-scope');
+            if (sc) {
+                D.scope = D.scope === 'session' ? 'all' : 'session';
+                P.store.set('logScope', D.scope);
+                sc.textContent = scopeLabel(); sc.setAttribute('aria-pressed', String(D.scope === 'session'));
+                rerenderLog();
+                return;
+            }
             D.open = !D.open;
             const el = P.$('dock'); el.classList.toggle('open', D.open); t.setAttribute('aria-expanded', String(D.open));
             const view = P.$('log-view'); if (D.open && view) view.scrollTop = view.scrollHeight;
@@ -163,16 +206,20 @@
         try { await P.post('/api/log/clear'); } catch (e) { /* diabaikan */ }
     }
     const buffered = [];
-    function addLine(rawLine) {
+    function addLine(rawLine, session) {
         const { time, msg } = L.parseLogLine(rawLine);
-        buffered.push({ time, msg });
+        const b = { time, msg, session: session || null };
+        buffered.push(b);
         if (buffered.length > 600) buffered.shift();
+        if (!visible(b)) return;
         lastMsg = msg;
         const view = P.$('log-view');
         if (!view) return;
         appendNode(view, time, msg);
         const l = P.$('dock-last'); if (l) l.textContent = msg;
     }
+    // Pindah entitas/sesi: saringan "Sesi ini" mengikuti sesi yang baru.
+    P.on('entity', () => { if (D.scope === 'session') rerenderLog(); });
     function appendNode(view, time, msg) {
         const stick = view.scrollTop + view.clientHeight >= view.scrollHeight - 40;
         const div = document.createElement('div');
@@ -186,7 +233,7 @@
     /** Dipanggil setelah dock dirender ulang: isi kembali dari buffer. */
     D.restore = function () {
         const view = P.$('log-view'); if (!view) return;
-        buffered.forEach((b) => appendNode(view, b.time, b.msg));
+        buffered.filter(visible).forEach((b) => appendNode(view, b.time, b.msg));
     };
     P.on('log-local', (msg) => addLine('[gui] ' + msg));
 
@@ -196,7 +243,7 @@
             try {
                 const entry = JSON.parse(ev.data);
                 if (entry.notice) { P.notice(entry.notice); return; }
-                if (entry.line != null) addLine(entry.line);
+                if (entry.line != null) addLine(entry.line, entry.session);
             } catch (e) { /* baris rusak diabaikan */ }
         };
         es.onerror = () => { /* EventSource menyambung ulang sendiri */ };

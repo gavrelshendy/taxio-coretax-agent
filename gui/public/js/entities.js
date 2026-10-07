@@ -85,14 +85,20 @@
 
     /** Login otomatis segera setelah entitas (dan PIC-nya, bila ada) selesai dipilih di palet -
      *  menghindari langkah tambahan "Masuk Coretax" terpisah. Tidak berlaku untuk sesi manual
-     *  (tidak ada yang bisa di-login-kan) atau entitas Hub yang belum tertaut PIC. Diam-diam
-     *  gagal (tombol "Masuk Coretax" di topbar tetap ada sebagai cadangan) - kegagalan login
-     *  sudah punya jalur pelaporannya sendiri lewat log aktivitas. */
+     *  (tidak ada yang bisa di-login-kan) atau entitas Hub yang belum tertaut PIC.
+     *  Sesi berbeda boleh berjalan bersamaan, jadi proses di sesi LAIN tidak menghalangi (dulu
+     *  setiap proses yang sedang jalan membuat login "Sesi baru" dilewati diam-diam - dilaporkan
+     *  2026-10-07). Bila sesi entitas ini sendiri sedang sibuk, atau server menolak, beri tahu. */
     function autoLoginAfterSelect() {
         const flat = E.current();
         if (!flat || flat.project === 'manual' || flat.pic_id === 'unlinked') return;
-        if (P.state.run && P.state.run.active) return;
-        P.post('/api/actions/login-entity', { entity: flat }).then(() => P.run.poll()).catch(() => { /* tombol Masuk Coretax di topbar tetap tersedia */ });
+        const key = L.sessionKeyOf(flat);
+        if (P.run.busy(key)) {
+            const r = P.run.runOf(key);
+            P.info('Sesi PIC ini sedang menjalankan "' + ((r && r.label) || 'proses lain') + '". Login ' + flat.entity_name + ' setelah proses itu selesai, atau pilih PIC lain.');
+            return;
+        }
+        P.post('/api/actions/login-entity', { entity: flat }).then(() => P.run.poll()).catch((e) => P.info('Login ' + flat.entity_name + ' belum dimulai: ' + e.message));
     }
 
     // ---------- Potongan tampilan bersama ----------
@@ -167,8 +173,12 @@
             const who = manual ? 'Manual' : (picNameOf(s.picId) || 'PIC').split(' ')[0];
             const n = manual ? 0 : E.sessionEntities(s.picId).length;
             const id = P.esc(s.picId);
-            return '<div class="sess-tab' + (active ? ' active' : '') + '">'
-                + '<button type="button" class="sess-main" data-sess="' + id + '" title="Pakai sesi ini untuk unduhan" aria-pressed="' + active + '"><span class="n">' + (i + 1) + '</span><span class="t"><b>' + P.esc(who) + '</b><span>' + P.esc(idText) + '</span></span></button>'
+            // Sesi yang sedang menjalankan proses (bisa beberapa sekaligus) diberi penanda berputar.
+            const run = P.run.busy(s.picId) ? P.run.runOf(s.picId) : null;
+            const num = run ? P.icon('loader', 12, 'spin', 2.6) : String(i + 1);
+            const tip = run ? 'Sedang berjalan: ' + run.label + (run.paused ? ' (dijeda)' : '') : 'Pakai sesi ini untuk unduhan';
+            return '<div class="sess-tab' + (active ? ' active' : '') + (run ? ' busy' : '') + '">'
+                + '<button type="button" class="sess-main" data-sess="' + id + '" title="' + P.esc(tip) + '" aria-pressed="' + active + '"><span class="n">' + num + '</span><span class="t"><b>' + P.esc(who) + '</b><span>' + P.esc(run ? (run.paused ? 'Dijeda' : 'Sedang berjalan') : idText) + '</span></span></button>'
                 + (manual ? '' : '<button type="button" class="sess-drop" data-sess-drop="' + id + '" aria-label="Pilih entitas di sesi ini" title="Ganti entitas di jendela ini · ' + n + ' entitas">' + P.icon('down', 14) + '</button>')
                 + '<button type="button" class="sess-x" data-sess-close="' + id + '" aria-label="Tutup sesi ini" title="Tutup jendela ini">' + P.icon('x', 13) + '</button></div>';
         }).join('');
@@ -201,14 +211,16 @@
                 batch.progress = { i: i + 1, n: flats.length, name: f.entity_name }; P.emit('batch');
                 P.emit('log-local', 'Antrean ' + (i + 1) + '/' + flats.length + ': ' + f.entity_name);
                 try {
-                    await P.post('/api/actions/login-entity', { entity: f });
-                    await P.run.waitIdle();
+                    // Tunggu proses SESI INI saja; sesi lain boleh tetap berjalan.
+                    const skey = L.sessionKeyOf(f);
+                    const r1 = await P.post('/api/actions/login-entity', { entity: f });
+                    await P.run.waitIdle((r1 && r1.session) || skey);
                     if (batch.cancel) break;
                     const st = await P.post('/api/session/status', { picId: f.pic_id });
                     if (!st.loggedIn || (f.npwp && !sameNpwp(f.npwp, st.identity))) throw new Error('belum berpindah ke entitas ini di jendela sesi');
                     E.select(all().find((e) => keyOf(e) === keyOf(f)) || f, f.pic_id);
                     await startOne(f);
-                    await P.run.waitIdle();
+                    await P.run.waitIdle(skey);
                     done.push({ name: f.entity_name, ok: true });
                 } catch (err) {
                     done.push({ name: f.entity_name, ok: false, err: err.message });
