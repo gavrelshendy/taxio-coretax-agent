@@ -144,6 +144,16 @@
      *  lokal (yang sejak kredensial disimpan, login otomatis persis seperti entitas Taxio Hub). */
     const isManualLike = (e) => !!e && e.project === 'manual';
     const entityKey = (e) => (e ? (e.project || '') + '|' + e.entity_id : '');
+    /** Kunci sesi (jendela Chrome) tempat proses entitas terpilih berjalan - sama dengan picId di
+     *  /api/sessions/list dan kunci proses di /api/run/status (gui/server.js sessionOf). Entitas
+     *  lokal berjendela "local:<id>:<pic>". null bila belum ada PIC. */
+    function sessionKeyOf(e) {
+        if (!e) return null;
+        if (isManualLike(e)) return 'manual';
+        if (!e.pic_id || e.pic_id === 'unlinked') return null;
+        if (e.project === 'local') return 'local:' + (e.local_id || String(e.entity_id || '').replace(/^local:/, '')) + ':' + e.pic_id;
+        return e.pic_id;
+    }
 
     /** NPWP resmi sejak integrasi NIK (2024): 16 digit, TANPA titik atau strip (dikonfirmasi
      *  dari Taxio Hub sendiri). Ditampilkan dikelompokkan per 4 digit dengan spasi supaya mudah
@@ -205,7 +215,7 @@
 
     const api = {
         MONTHS, MONTHS_LONG, isValidMasa, isValidYear, mmYY, masaToCode, parseMasa, yearsToCode, parseYears, masaLabel,
-        initials, entityMatches, visibleEntities, hiddenUnlinkedCount, pickPic, flattenSelection, isManualLike, entityKey,
+        initials, entityMatches, visibleEntities, hiddenUnlinkedCount, pickPic, flattenSelection, isManualLike, entityKey, sessionKeyOf,
         formatNpwp, rupiah, loginPill, planProgress, parseLogLine, logLevel
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

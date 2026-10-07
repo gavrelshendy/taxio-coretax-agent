@@ -71,10 +71,11 @@ function install() {
     chrome.loginAndImpersonate = async () => true;
 
     const realStatus = runcontrol.status;
-    runcontrol.status = () => (ctl.run ? ctl.run : realStatus());
+    // ctl.run boleh fungsi (key) => status, untuk mengetes beberapa sesi dengan status berbeda.
+    runcontrol.status = (key) => (typeof ctl.run === 'function' ? ctl.run(key) : ctl.run ? ctl.run : realStatus(key));
     for (const name of ['pause', 'resume', 'skip', 'retry', 'back', 'stop']) {
         const real = runcontrol[name];
-        runcontrol[name] = () => { ctl.runCalls.push(name); if (!ctl.run) real(); };
+        runcontrol[name] = (key) => { ctl.runCalls.push(name); if (!ctl.run) real(key); };
     }
     return { ctl, GROUP_ROWS };
 }

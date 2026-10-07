@@ -171,7 +171,7 @@ async function main(deepLinkUrl) {
     // (safe now - see lib/updater.js's header comment for why the update-installer process no
     // longer needs this process to avoid process.exit()).
     const runUpdateCheck = () => updater.checkAndApply({
-        isRunActive: () => runcontrol.status().active,
+        isRunActive: () => runcontrol.anyActive(),
         onBeforeRestart: async () => {
             try { await fetch('http://127.0.0.1:' + GUI_PORT + '/api/quit', { method: 'POST' }); } catch (e) {}
         }

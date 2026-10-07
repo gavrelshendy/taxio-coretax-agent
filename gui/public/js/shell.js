@@ -257,7 +257,8 @@
     }
     P.on('session', onSession);
     P.on('entities', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); } });
-    P.on('entity', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); } });
+    // Status proses mengikuti sesi entitas terpilih: muat ulang segera saat pilihan berubah.
+    P.on('entity', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); P.run.poll(); } });
     P.on('login', () => { if (view === 'app') S.renderTopbar(); });
     P.on('manual', () => { if (view === 'app') { S.renderTopbar(); if (!P.state.run.active) S.renderContent(false); } });
     P.on('sessions', () => { if (view === 'app') S.renderTopbar(); });
