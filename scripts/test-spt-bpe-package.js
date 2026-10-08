@@ -46,7 +46,10 @@ assert(unifikasiRows[0].includes('/withholding-tax-return/taxpayer/record/070720
 const ppnRows = spt.__test.buildLampiranViewCandidates({
     TaxTypeCode: 'VAT_VAT', RecordId: 'record', AggregateIdentifier: 'aggregate', TaxPeriodCode: '07072026'
 }, { taxpayerId: 'taxpayer' });
-assert(ppnRows[0].includes('/value-added-tax-return/taxpayer/record/07072026/aggregate?view=true'));
+// PPN is routed by its type code. Under the period code Coretax still opens the form but every
+// lampiran grid comes back empty (verified live 2026-10-07, NIGG Juli 2026: A-2 182 / B-2 266 /
+// B-3 32 rows under VAT_VAT, 0 under 07072026), so the period code must not come first.
+assert(ppnRows[0].includes('/value-added-tax-return/taxpayer/record/VAT_VAT/aggregate?view=true'));
 
 console.log(JSON.stringify({ badanName, opName, annualUrl: annualRows[0], unifikasiUrl: unifikasiRows[0], ppnUrl: ppnRows[0] }, null, 2));
 
