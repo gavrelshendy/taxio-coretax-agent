@@ -424,6 +424,12 @@ async function processSptCombo(ctx) {
             // tapi tanpa ini onRowDone tidak pernah dipanggil untuk baris ini sama sekali, jadi
             // checkbox Jenis Pajak di GUI tidak pernah ditandai selesai walau downloadnya
             // (dulu atau sekarang) benar-benar berhasil. Ditemukan live 2026-08-20.
+            // Files left here by an earlier download (e.g. from the dashboard, which has no compliance
+            // folder) go to the compliance folder now too: before, a Taxio Hub download of an already
+            // downloaded masa ticked the box but left the files in Downloads.
+            for (const filePath of [...(includeBpe ? [bpePath] : []), ...(includeInduk ? [sptPath] : [])]) {
+                if (fs.existsSync(filePath)) copyToCompliance(filePath, compFolder, emit);
+            }
             if (onRowDone) { try { onRowDone(jenisKey, mmYY, true); } catch (e) {} }
             continue;
         }
