@@ -46,8 +46,10 @@ const excel = require('../lib/excel');
 const runcontrol = require('../lib/runcontrol');
 const { _sleep, sanitizeFilenamePart } = require('../lib/datatable');
 
-// Every type's listing/PDF calls are fired from THIS one page - BP21 issued is the only route
-// confirmed to load directly by URL (BPPU's equivalent direct-URL guess 404's; the real BPPU/
+// Every type's listing/PDF calls are fired from one anchor page (openBupotAndPrep: the page of the
+// type being downloaded first - BPPU issued now loads by URL too, live 2026-10-08 - then the others,
+// skipping any page Coretax refuses with /401). Originally BP21 issued was the only route
+// confirmed to load directly by URL (BPPU's equivalent direct-URL guess 404'd then; the real BPPU/
 // BPA1/BPMP pages are only reachable via in-app sidebar navigation). Since the auth token and
 // x-dgt-code are session-wide, not page-specific (confirmed live: a header captured on this
 // page successfully fetched BPPU/BPA1/BPMP data), there's no need to actually navigate to each
@@ -424,13 +426,27 @@ async function runEbupotDownload(opts) {
         for (let attempt = 1; attempt <= NAV_ATTEMPTS; attempt++) {
             await runcontrol.checkpoint();
             try {
-                await page.goto(BOOTSTRAP_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-                if (chrome.isLoggedOut(page)) {
+                // The anchor is the page of the type being downloaded, then the other e-Bupot pages:
+                // a PIC whose Coretax role lacks one of them (live 2026-10-08: RONALD TONY on DFA is
+                // bounced to /401 from BP21 but opens BPPU) makes no API call there, so a fixed BP21
+                // anchor failed every BPPU download for that PIC. BPPU now opens by URL as well.
+                let captured = false, relogged = false;
+                for (const url of [...new Set([BUPOT_URLS[bupotType], BOOTSTRAP_URL, ...Object.values(BUPOT_URLS)])]) {
+                    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+                    if (chrome.isLoggedOut(page)) { relogged = true; break; }
+                    // Give an unauthorised page a moment to show itself as Coretax's /401 route.
+                    const denied = await page.waitForURL(/\/id-ID\/401(?:[/?#]|$)/, { timeout: 4000 }).then(() => true).catch(() => false);
+                    if (denied) { log('Halaman e-Bupot ' + url.split('/id-ID/')[1] + ' ditolak Coretax (401) untuk PIC ini - mencoba halaman e-Bupot lain.'); continue; }
+                    // A page Coretax did not refuse is as good as any other: if it caught nothing, the
+                    // next one would not either.
+                    captured = await waitForAuthCaptured(authState, 20000);
+                    break;
+                }
+                if (relogged) {
                     log('Halaman e-Bupot memantulkan ke login - login ulang lalu buka lagi...');
                     await loginAndImpersonate();
                     continue;
                 }
-                const captured = await waitForAuthCaptured(authState, 20000);
                 if (!captured) throw new Error('Tidak berhasil menangkap sesi API Coretax (authorization header) dari halaman.');
                 return;
             } catch (e) {
