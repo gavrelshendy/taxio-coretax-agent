@@ -201,7 +201,10 @@ function buildLampiranViewCandidates(row, authState) {
     const taxpayerIds = unique([authState.taxpayerId, row.TaxpayerAggregateIdentifier]);
     const recordIds = unique([row.RecordId, row.ReturnSheetRecordIdentifier]);
     const routeCodes = unique([
-        ['ICT_WT', 'VAT_VAT'].includes(row.TaxTypeCode) ? row.TaxPeriodCode : row.TaxTypeCode,
+        // Coretax routes Unifikasi by its period code (07072026) but PPN by its type code (VAT_VAT).
+        // PPN opened under the period code still renders the form, only with every lampiran grid
+        // empty and tabs B-1/B-2 missing - so the PPN lampiran came out blank without any error.
+        row.TaxTypeCode === 'ICT_WT' ? row.TaxPeriodCode : row.TaxTypeCode,
         row.TaxTypeCode,
         row.TaxPeriodCode,
         row.ReturnSheetTypeCode
@@ -225,6 +228,9 @@ async function openLampiranView(page, row, authState, emit) {
     const config = lampiran.TAXTYPE_CONFIG[row.TaxTypeCode];
     if (!config) throw new Error('Jenis lampiran ' + row.TaxTypeCode + ' belum didukung.');
     const candidates = buildLampiranViewCandidates(row, authState);
+    // The API read of PPN rows (lib/lampiran-api-ppn.js, off by default) needs the page's grid
+    // requests and auth header, so the watch goes on before the page loads.
+    if (process.env.CORETAX_PPN_API === '1') require('../lib/returnsheet-grid-api').watchContext(page.context());
     for (let index = 0; index < candidates.length; index++) {
         const url = candidates[index];
         try {
@@ -499,7 +505,8 @@ async function processSptCombo(ctx) {
                     saveRoot,
                     outputDir: saveDir,
                     entityCode,
-                    entityName: entityCode,
+                    // The lampiran kop shows this name; the entity code ("PJS") is only for file names.
+                    entityName: ctx.entityName || '',
                     compFolder: null, lampiranFormat, layoutStyle, entityNpwp, returnSheets: !!ctx.a1Book, renderSession:ctx.a1Book?.renderSession, fileSuffix: pbSuffix ? ' ' + pbSuffix : ''
                 }, authState.taxpayerId, row.RecordId, row.TaxTypeCode, lampiranMode,
                 isAnnual ? mmYY : '', outputLayout);
@@ -508,7 +515,7 @@ async function processSptCombo(ctx) {
                 }
                 if(ctx.a1Book){
                   try {
-                    const secret=await require('../lib/lampiran-confidential').renderConfidential(lampiranResult.confidentialSummaries,{entity:ctx.entityName||lampiranResult.entityName,period:lampiranResult.period.headerLabel,title:lampiran.TAXTYPE_CONFIG[row.TaxTypeCode].title,taxTypeCode:row.TaxTypeCode},{dir:saveDir,stem:require('../lib/spt-filenames').filename(row.TaxTypeCode,mmYY,'Lampiran - Confidential',pbSuffix,'',entityCode),outputLayout,renderSession:ctx.a1Book.renderSession});
+                    const secret=await require('../lib/lampiran-confidential').renderConfidential(lampiranResult.confidentialSummaries,{entity:ctx.entityName||lampiranResult.entityName,entityNpwp:ctx.entityNpwp,status:lampiran.sptStatus(pbSuffix||''),period:lampiranResult.period.headerLabel,title:lampiran.TAXTYPE_CONFIG[row.TaxTypeCode].title,taxTypeCode:row.TaxTypeCode},{dir:saveDir,stem:require('../lib/spt-filenames').filename(row.TaxTypeCode,mmYY,'Lampiran - Confidential',pbSuffix,'',entityCode),outputLayout,renderSession:ctx.a1Book.renderSession});
                     if(!secret.combinedPath)throw Error(secret.error||'PDF rahasia gagal dibuat.');
                     const secretPath=path.join(ctx.finalDir || saveDir,buildSptFilename(entityCode,meta.packageToken+' (Rahasia)',mmYY,pbSuffix));
                     if(!fs.existsSync(bpePath)||!fs.existsSync(sptPath))throw Error('Paket belum lengkap: BPE atau Induk belum tersedia.');
@@ -747,7 +754,7 @@ async function runSptDownload(opts) {
                 try {
                     const result = await processSptCombo({
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
-                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual, entityName: entity.entity_name,
+                        compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual, entityName: manual ? '' : entity.entity_name,
                         includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, entityNpwp: entity.npwp, saveRoot,
                         log: emit, a1Book, finalDir
                     });

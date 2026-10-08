@@ -1417,6 +1417,13 @@ function filename(entity, config, label, periodLabel, revision='') {
     return require('../lib/spt-filenames').filename(code,periodLabel,'Lampiran'+(section?' '+section:'')+' - '+mode,revision,'pdf',entity);
 }
 
+/** The kop's NORMAL/PEMBETULAN box, from the revision suffix the caller names the files with
+ *  ("PB 2" = Pembetulan ke-2); '' when the caller did not say. */
+function sptStatus(fileSuffix) {
+    const m = String(fileSuffix ?? '').match(/PB\s*(\d+)/i);
+    return m ? 'PEMBETULAN ' + m[1] : fileSuffix === undefined ? '' : 'NORMAL';
+}
+
 async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mode, taxYearHint = '', outputLayout = 'combined') {
     require('../lib/spt-access').assertAllowed(taxTypeCode,ctx,page);
     if (!TAXTYPE_CONFIG[taxTypeCode]) return { ok: false, error: 'Jenis SPT ini belum didukung.' };
@@ -1438,7 +1445,7 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
                 summaries.push(await collectPph21ConfidentialSummary(page,label));
             }
             const stem=require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - Confidential',ctx.fileSuffix,'',ctx.entityCode||entity);
-            const result=await require('../lib/lampiran-confidential').renderConfidential(summaries,{entity,period:period.headerLabel,title:config.title,taxTypeCode},{dir,stem,outputLayout});
+            const result=await require('../lib/lampiran-confidential').renderConfidential(summaries,{entity,entityNpwp:ctx.entityNpwp||await detectActiveTaxpayerTin(page),status:sptStatus(ctx.fileSuffix),period:period.headerLabel,title:config.title,taxTypeCode},{dir,stem,outputLayout});
             if(ctx.compFolder){fs.mkdirSync(ctx.compFolder,{recursive:true});for(const file of result.paths)fs.copyFileSync(file,path.join(ctx.compFolder,path.basename(file)));}
             await clickTab(page,'L-IA');
             return {ok:true,count:result.paths.length,paths:result.paths,combinedPath:result.combinedPath,dir,entityName:entity,entityKey:ctx.entityCode||entity,period,mode,outputLayout};
@@ -1460,16 +1467,32 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         for (const label of labels) {
             if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label);
             await waitForTabContentStable(page, config.rootSelector);
-            await setUpTables(page, label, 'full', taxTypeCode);
-            await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
-            tabs.push(await require('../lib/lampiran-capture').collectTab(page, config.rootSelector, label));
+            // PPN straight from Coretax's grid API (lib/lampiran-api-ppn.js), checked against the
+            // table on screen. Off for now by the user's choice (2026-10-07): the paginator stays the
+            // reader; CORETAX_PPN_API=1 turns the API read on for testing.
+            let tab = null;
+            if (taxTypeCode === 'VAT_VAT' && process.env.CORETAX_PPN_API === '1') {
+                try {
+                    tab = await require('../lib/lampiran-capture').collectTabFromRows(page, config.rootSelector, label, (headers) => require('../lib/lampiran-api-ppn').displayRows(page, label, headers));
+                    log('[Lampiran] ' + label + ': ' + tab.tables[0].collectedRows + ' baris diambil dari API Coretax, cocok dengan tampilan.');
+                } catch (e) {
+                    if (e && e.isStop) throw e;
+                    log('[Lampiran] ' + label + ': API tidak dipakai (' + e.message + ') - tabel dibaca halaman demi halaman.');
+                }
+            }
+            if (!tab) {
+                await setUpTables(page, label, 'full', taxTypeCode);
+                await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
+                tab = await require('../lib/lampiran-capture').collectTab(page, config.rootSelector, label);
+            }
+            tabs.push(tab);
             if(ctx.returnSheets&&taxTypeCode==='ICT_WIT'&&PPH21_API_GRIDS[label]){try{confidentialSummaries.push(await collectPph21ConfidentialSummary(page,label));}catch(e){log('[Lampiran] Ringkasan Confidential '+label+' gagal dibaca: '+e.message);}}
             log('[Lampiran] ' + label + ': seluruh tabel berhasil dibaca.');
         }
         // (named after Taxio's entity code when there is one, else the taxpayer's name - see lib/spt-filenames.js)
         const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'',ctx.entityCode||entity);
         const entityNpwp = ctx.entityNpwp || await detectActiveTaxpayerTin(page);
-        const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, entityNpwp, period: period.headerLabel, title: config.title, taxTypeCode }, {
+        const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, entityNpwp, status: sptStatus(ctx.fileSuffix), period: period.headerLabel, title: config.title, taxTypeCode }, {
             mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession,layoutStyle:ctx.layoutStyle
         });
         if (mode === 'confidential' && format === 'both') {
@@ -1667,7 +1690,7 @@ async function installLampiranWidget(page, { saveRoot, entityCode, compFolder, r
 
 module.exports = {
     installLampiranWidget, downloadLampiran, mergePdfs, compactPpnOfficialIndukPdf,
-    TAXTYPE_CONFIG, detectActiveTaxpayerName, preparePageForPrint,
+    TAXTYPE_CONFIG, sptStatus, detectActiveTaxpayerName, preparePageForPrint,
     __test: { waitForTabLabels, trimTrailingBlankPages, pageHasVisibleMarks, decodedPageContent, paginatorIds, printPaginatorPages,
         resetPaginators, setActivePaginatorOwner, clearPaginatorOwners, summarizePph21Grids,
         collectPph21ConfidentialSummary, replacePph21SnapshotWithOverview, printPph21ConfidentialOverview,
