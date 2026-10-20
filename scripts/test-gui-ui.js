@@ -127,15 +127,20 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         const items = await page.locator('.nav-item[data-nav]').allInnerTexts();
         assert.ok(items.join('|').includes('Kode Billing PPh 25'));
         const billing = page.locator('.nav-item[data-nav="billing"]');
-        assert.ok((await billing.innerText()).includes('BARU'));
+        assert.ok(!(await billing.innerText()).includes('BARU'), 'tanpa badge BARU');
         const otomasi = page.locator('.nav-group').nth(1);
         assert.ok((await otomasi.innerText()).includes('Kode Billing PPh 25'));
         assert.ok(!(await page.locator('.nav-group').nth(0).innerText()).includes('Billing'));
-        assert.ok((await page.locator('.nav-group').nth(0).innerText()).includes('SPT PPh 21 Setahun'), 'A1 tersedia untuk anggota biasa');
+        assert.ok((await otomasi.innerText()).includes('Rekap PPh 21 Setahun'), 'Rekap PPh 21 Setahun (Mode A1) di OTOMASI, tersedia untuk anggota biasa');
+        assert.ok(!(await page.locator('.nav-group').nth(0).innerText()).includes('Rekap PPh 21'));
     });
-    await test('tanpa entitas: kartu pilih entitas dan tombol mulai nonaktif', async () => {
-        assert.ok((await text('.col-main')).includes('Pilih entitas dulu'));
+    await test('tanpa entitas: formulir tetap tampil dengan banner pilih entitas, tombol mulai nonaktif', async () => {
+        const main = await text('.col-main');
+        assert.ok(main.includes('Entitas belum dipilih'));
+        assert.ok(main.includes('Jenis pajak') && main.includes('Masa pajak'), 'formulir SPT tetap tampil');
+        assert.ok(await page.locator('.col-main [data-act="open-palette"]').isVisible());
         assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
+        assert.ok((await text('#rail')).includes('Pilih entitas dulu'));
         await shot('05-tanpa-entitas');
     });
 
@@ -652,6 +657,66 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.strictEqual(c.url, '/api/actions/billing-pph25');
         assert.strictEqual(c.body.entity.project, 'local');
         assert.strictEqual(c.body.nominal, '250000');
+
+        // Dividen juga login otomatis lewat kredensial tersimpan - tanpa menunggu login manual.
+        await page.click('.nav-item[data-nav="dividen"]');
+        await page.waitForSelector('.dropzone');
+        assert.ok((await text('.col-main')).includes('Login otomatis sebagai'), 'banner login otomatis');
+        assert.ok(!(await page.locator('[data-act="create-case"]').isDisabled()), 'buat kasus tidak menunggu login manual');
+        await page.click('[data-act="create-case"]'); await pause(300);
+        c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/create-dividen-case');
+        assert.strictEqual(c.body.entity.project, 'local');
+        if (!(await page.locator('.dropzone.filled').count())) { await page.click('[data-act="pick-file"]'); await page.waitForSelector('.dropzone.filled'); }
+        assert.ok(!(await page.locator('[data-act="import"]').isDisabled()), 'impor aktif tanpa login manual');
+        await page.click('[data-act="import"]'); await pause(300);
+        c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/import-dividen');
+        assert.strictEqual(c.body.entity.project, 'local');
+        assert.strictEqual(c.body.fileBase64, 'AAAA');
+
+        // Mode A1 = Unduh setahun + Pembetulan NIK BPMP dalam satu halaman.
+        await page.click('.nav-item[data-nav="a1"]');
+        await page.waitForSelector('[data-act="a1view"][data-val="nik"]');
+        await page.click('[data-act="a1view"][data-val="nik"]');
+        await page.waitForSelector('.dropzone');
+        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'pembetulan: belum ada Excel');
+        await page.click('[data-act="pick-file"]'); await page.waitForSelector('.dropzone.filled');
+        assert.ok(!(await page.locator('[data-act="bmode"]').count()), 'satu tombol saja: Betulkan (cek sudah otomatis per bukti potong)');
+        assert.ok((await text('#rail [data-act="start"]')).includes('Betulkan di Coretax'));
+        const n = calls.length;
+        page.once('dialog', (dlg) => dlg.dismiss());
+        await page.click('#rail [data-act="start"]'); await pause(300);
+        assert.strictEqual(calls.length, n, 'dibatalkan di dialog konfirmasi -> tidak ada permintaan');
+        page.once('dialog', (dlg) => dlg.accept());
+        await page.click('#rail [data-act="start"]'); await pause(300);
+        c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/bpmp-amend');
+        assert.strictEqual(c.body.submit, true);
+        assert.strictEqual(c.body.fileBase64, 'AAAA');
+        assert.ok(/^20\d{2}$/.test(c.body.year));
+
+        // "Pakai rekap terakhir": Excel hasil tab Unduh setahun dikirim lewat path-nya (tanpa template terpisah).
+        await page.route('**/api/a1/inspect', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ excel: 'C:\\A1\\Mode A1 - 2026.xlsx', rows: [{ masa: 'Januari', excel: { revision: 0, data: 'Lengkap' }, cache: null, pdf: true }, { masa: 'Februari', excel: null, cache: null, pdf: false }] }) }));
+        await page.click('[data-act="nik-latest"]'); await page.waitForFunction(() => /Mode A1 - 2026\.xlsx/.test(document.querySelector('.dropzone')?.innerText || ''));
+        page.once('dialog', (dlg) => dlg.accept());
+        await page.click('#rail [data-act="start"]'); await pause(300);
+        assert.strictEqual(lastCall().url, '/api/actions/bpmp-amend');
+        assert.strictEqual(lastCall().body.filePath, 'C:\\A1\\Mode A1 - 2026.xlsx');
+        assert.ok(!lastCall().body.fileBase64);
+
+        // Unduh setahun: hasil sebelumnya diperiksa per masa sebelum mulai.
+        await page.click('[data-act="a1view"][data-val="unduh"]');
+        await page.waitForSelector('[data-act="a1src-check"]');
+        await page.click('[data-act="a1src-check"]');
+        await page.waitForSelector('.mini-table');
+        const tbl = await text('.mini-table');
+        assert.ok(/Januari[\s\S]*Excel lama[\s\S]*Pakai ulang/.test(tbl) && /Februari[\s\S]*Diunduh/.test(tbl), 'tabel status per masa');
+        await page.click('#rail [data-act="start"]'); await pause(300);
+        c = lastCall();
+        assert.strictEqual(c.url, '/api/actions/download-spt');
+        assert.ok(c.body.a1Year && c.body.a1Fresh === false && c.body.a1Source === undefined);
+        await page.unroute('**/api/a1/inspect');
     });
     await test('login manual POLOS (Buka Coretax) tetap ada, terpisah dari entitas lokal berkredensial', async () => {
         fakes.ctl.manual.loggedIn = false; fakes.ctl.manual.identity = '';
@@ -678,13 +743,18 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('.nav-item[data-nav="dividen"]');
         await page.waitForSelector('.dropzone');
         assert.ok(!(await text('.col-main')).includes('Pilih entitas dulu'));
-        assert.ok(await page.locator('[data-act="import"]').isDisabled(), 'belum ada file');
-        await page.click('[data-act="pick-file"]');
-        await page.waitForSelector('.dropzone.filled');
+        assert.ok(!(await text('.col-main')).includes('Login otomatis sebagai'), 'sesi manual: tanpa login otomatis');
+        // File yang dipilih di tes entitas lokal tetap diingat halaman Dividen.
+        if (!(await page.locator('.dropzone.filled').count())) {
+            assert.ok(await page.locator('[data-act="import"]').isDisabled(), 'belum ada file');
+            await page.click('[data-act="pick-file"]');
+            await page.waitForSelector('.dropzone.filled');
+        }
         assert.ok(!(await page.locator('[data-act="import"]').isDisabled()));
         await page.click('[data-act="import"]'); await pause(300);
         assert.strictEqual(lastCall().url, '/api/actions/import-dividen');
         assert.strictEqual(lastCall().body.fileName, 'faktur-uji.xlsx');
+        assert.ok(!lastCall().body.entity, 'sesi manual: entitas tidak dikirim');
     });
     await test('entitas lokal dapat diubah lewat dialog yang sama; NPWP tiap PIC ikut ditampilkan (bukan rahasia)', async () => {
         await page.click('#entity-chip');
@@ -797,7 +867,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.fill('#au-email', 'baru@contoh.com'); await page.fill('#au-pass', 'benar');
         await page.click('[data-au="login"]');
         await page.waitForSelector('#app .sidebar');
-        assert.ok(!(await text('.sidebar')).includes('SPT PPh 21 Setahun'), 'A1 disembunyikan');
+        assert.ok(!(await text('.sidebar')).includes('Rekap PPh 21 Setahun'), 'Rekap PPh 21 Setahun (A1) disembunyikan');
         assert.ok((await text('.sidebar')).includes('Restricted Editor'));
         assert.ok(!(await visible('#btn-open-coretax')), 'tanpa Buka Coretax');
         await page.click('#entity-chip');

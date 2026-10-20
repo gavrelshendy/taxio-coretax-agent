@@ -10,6 +10,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { log, onLogLine, LOG_FILE, pendingNotices, ackNotice } = require('../lib/log');
 const state = require('../lib/state');
 const sessionStore = require('../lib/session-store');
@@ -526,7 +527,7 @@ async function prepareEntityPage(res, entity) {
         };
     }
     return {
-        label: src.label, folder: src.entity.entity_id, session: sessionOf(src),
+        label: src.label, folder: src.entity.entity_id, session: sessionOf(src), picId: src.picId, entityId: src.entity.entity_id,
         open: () => runLoginOnly({
             client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
             restricted: src.restricted, passphrase: src.passphrase, allowedEbupotSections: src.allowedEbupotSections
@@ -649,7 +650,7 @@ async function handleDownloadSpt(req, res) {
             restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase, fallbackPicIds: src.fallbackPicIds,
             onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
 
-    runOpts.a1Year=body.a1Year;
+    runOpts.a1Year=body.a1Year;runOpts.a1Fresh=!!body.a1Fresh;runOpts.a1Source=body.a1Source||undefined;
     try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     runcontrol.setJenisRequested(jenisPajakKeys);
@@ -768,23 +769,111 @@ async function handleImportPajakMasukan(req, res) {
     }
 }
 
+/** Halaman Coretax untuk Dividen. Tanpa entitas (atau sesi manual): jendela login manual seperti dulu.
+ *  Entitas dengan kredensial tersimpan (Taxio Hub / lokal): jendela PIC-nya, login otomatis.
+ *  `needCase`: impor/cek butuh kasus e-Reporting yang SUDAH terbuka di jendela itu, jadi halaman itu
+ *  dipakai apa adanya (login ulang akan memindahkannya dari kasus). */
+async function prepareDividenPage(res, entity, needCase) {
+    if (!entity || !entity.project || entity.project === 'manual') {
+        const manualPage = chrome.getManualPage();
+        if (!manualPage) { sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu' + (needCase ? ', lalu buka kasus e-Reporting.' : '.') }); return null; }
+        return { label: 'Sesi Manual', session: MANUAL_SESSION, open: async () => manualPage };
+    }
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return null;
+    if (!needCase) return target;
+    return {
+        ...target,
+        open: async () => {
+            const live = chrome.getLiveEntityPage(target.picId), who = loginStatus.get();
+            const onCase = live && /(?:case-routing|case-overview|form-render)\/[0-9a-f-]{36}/i.test(live.url());
+            if (!onCase || !who || who.picId !== target.picId || who.entityId !== target.entityId) {
+                throw new Error('Belum ada kasus e-Reporting yang terbuka untuk ' + target.label + ' - klik "Buat Kasus Baru" dulu, atau buka kasusnya (Alur Kasus) di jendela Coretax entitas ini.');
+            }
+            return live;
+        }
+    };
+}
+
+/** Mode A1 "Hasil sebelumnya": status per masa dari folder / Excel Mode A1 lama (lib/a1-source.js), sebelum
+ *  proses dimulai - mana yang datanya sudah ada (Excel lama / cache) dan apakah PDF-nya ada. Hanya membaca disk. */
+async function handleA1Inspect(req, res) {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity, year, source, saveRoot } = body || {};
+    if (!entity || !entity.entity_id) return sendJson(res, 400, { error: 'Pilih entitas dulu.' });
+    if (!/^20\d{2}$/.test(String(year))) return sendJson(res, 400, { error: 'Tahun tidak valid.' });
+    try {
+        const root = require('../automation/spt').__test.a1SaveRoot(saveRoot, entity.entity_id);
+        const a1Dir = path.join(root, entity.entity_id, 'SPT', 'A1', String(year));
+        const out = await require('../lib/a1-source').inspect({ a1Dir, source: source || undefined, year: String(year), sptDir: path.join(root, entity.entity_id, 'SPT') });
+        return sendJson(res, 200, { ...out, a1Dir });
+    } catch (e) { return sendJson(res, 400, { error: e.message }); }
+}
+
+/** Pembetulan NIK BPMP (bagian halaman Mode A1): isian NIK Baru / Nama Baru Excel Mode A1 -> Coretax lewat API
+ *  (automation/bpmp-amend.js). submit=false hanya menguji; submit=true mengirim lalu memeriksa ulang. */
+async function handleBpmpAmend(req, res) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
+    const { entity, fileBase64, filePath, year, submit, saveRoot } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (!fileBase64 && !filePath) return sendJson(res, 400, { error: 'Excel rekap belum dipilih.' });
+    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.' });
+    const amend = require('../automation/bpmp-amend');
+    let parsed;
+    // filePath: "Pakai rekap terakhir" (Excel hasil tab Unduh setahun di folder A1 entitas ini).
+    try { parsed = await amend.readTargets(fileBase64 ? Buffer.from(fileBase64, 'base64') : (/\.xlsx$/i.test(String(filePath)) ? fs.readFileSync(filePath) : (() => { throw new Error('File harus .xlsx'); })())); }
+    catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.message }); }
+    const taxYear = String(year || parsed.year || '');
+    if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Tahun pajak tidak terbaca dari Excel - pilih tahunnya.' });
+    if (!parsed.targets.length) return sendJson(res, 400, { error: 'Belum ada NIK Baru yang terisi di sheet "BPMP per NIK".' + (parsed.skipped.length ? ' ' + parsed.skipped[0] : '') });
+
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    try { runcontrol.start('Pembetulan NIK BPMP' + (submit ? '' : ' (uji)') + ' · ' + target.label, target.session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true, session: runSessionKey() });
+    try {
+        parsed.skipped.forEach((s) => log('LEWATI ' + s));
+        log('Pembetulan NIK BPMP ' + taxYear + ': ' + parsed.targets.length + ' NIK Baru di Excel · mode ' + (submit ? 'KIRIM ke Coretax' : 'UJI (tanpa simpan)') + '.');
+        const page = await target.open();
+        const outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
+        const npwp = entity.project === 'manual' ? null : entity.npwp;
+        const results = await amend.run({ context: page.context(), npwp, targets: parsed.targets, year: taxYear, submit: !!submit, outDir, emit: (m) => log(m) });
+        const count = (re) => results.filter((r) => re.test(r.status)).length;
+        log('Selesai: ' + results.length + ' bukti potong · ' + (submit ? count(/^DIBETULKAN/) + ' dibetulkan' : count(/^SIAP/) + ' siap dikirim') + ', ' + count(/^BEDA/) + ' beda nama (tidak dikirim). Cadangan + hasil di ' + outDir);
+        if (submit && count(/^DIBETULKAN/)) {
+            const { ok, bad } = await amend.check({ context: page.context(), npwp, dirs: [outDir], emit: (m) => log(m) });
+            log('Pemeriksaan ulang: ' + ok + ' benar, ' + bad + ' bermasalah.');
+            const periods = [...new Set(results.filter((r) => r.status === 'DIBETULKAN').map((r) => r.period.slice(0, 2)))].sort();
+            log('Langkah berikutnya: buat pembetulan SPT Masa PPh 21 masa ' + periods.join(', ') + '/' + taxYear + '.');
+        }
+    } catch (e) {
+        if (e && e.isStop) log('Pembetulan NIK BPMP dihentikan oleh pengguna.');
+        else log('Pembetulan NIK BPMP berhenti: ' + e.message);
+    } finally {
+        runcontrol.finish();
+    }
+}
+
 async function handleImportDividen(req, res) {
     let body;
     try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { fileBase64 } = body || {};
+    const { fileBase64, entity } = body || {};
     if (!fileBase64) return sendJson(res, 400, { error: 'File template belum dipilih.' });
-
-    const manualPage = chrome.getManualPage();
-    if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu, lalu buka kasus e-Reporting.' });
 
     let fileBuffer;
     try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
 
-    try { runcontrol.start('Impor Dividen · Sesi Manual', MANUAL_SESSION); }
+    const target = await prepareDividenPage(res, entity, true);
+    if (!target) return;
+    try { runcontrol.start('Impor Dividen · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
-        await runDividenImport({ manualPage, fileBuffer });
+        await runDividenImport({ manualPage: await target.open(), fileBuffer });
     } catch (e) {
         if (e && e.validation) { /* already logged the per-row problems */ }
         else if (e && e.isStop) log('Impor dihentikan oleh pengguna.');
@@ -797,20 +886,19 @@ async function handleImportDividen(req, res) {
 async function handleCheckDividen(req, res) {
     let body;
     try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { fileBase64 } = body || {};
+    const { fileBase64, entity } = body || {};
     if (!fileBase64) return sendJson(res, 400, { error: 'File pembanding belum dipilih.' });
-
-    const manualPage = chrome.getManualPage();
-    if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu, lalu buka kasus e-Reporting.' });
 
     let fileBuffer;
     try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
 
-    try { runcontrol.start('Cek Hasil Dividen · Sesi Manual', MANUAL_SESSION); }
+    const target = await prepareDividenPage(res, entity, true);
+    if (!target) return;
+    try { runcontrol.start('Cek Hasil Dividen · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
-        await runDividenCheck({ manualPage, fileBuffer });
+        await runDividenCheck({ manualPage: await target.open(), fileBuffer });
     } catch (e) {
         if (e && e.isStop) log('Cek Hasil dihentikan oleh pengguna.');
         else log('Gagal Cek Hasil: ' + e.message);
@@ -820,14 +908,16 @@ async function handleCheckDividen(req, res) {
 }
 
 async function handleCreateDividenCase(req, res) {
-    const manualPage = chrome.getManualPage();
-    if (!manualPage) return sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu.' });
+    let body = null;
+    try { body = await readJsonBody(req); } catch (e) { body = null; }
+    const target = await prepareDividenPage(res, body && body.entity, false);
+    if (!target) return;
 
-    try { runcontrol.start('Buat Kasus Dividen · Sesi Manual', MANUAL_SESSION); }
+    try { runcontrol.start('Buat Kasus Dividen · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
-        await openNewCase(manualPage);
+        await openNewCase(await target.open());
     } catch (e) {
         log('Gagal membuat kasus baru: ' + e.message);
     } finally {
@@ -1054,6 +1144,8 @@ function createGuiServer(port) {
             if (pathname === '/api/actions/download-pajak-masukan' && req.method === 'POST') return handleDownloadPajakMasukan(req, res);
             if (pathname === '/api/actions/download-efaktur' && req.method === 'POST') return handleDownloadEfaktur(req, res);
             if (pathname === '/api/actions/import-dividen' && req.method === 'POST') return handleImportDividen(req, res);
+            if (pathname === '/api/actions/bpmp-amend' && req.method === 'POST') return handleBpmpAmend(req, res);
+            if (pathname === '/api/a1/inspect' && req.method === 'POST') return handleA1Inspect(req, res);
             if (pathname === '/api/actions/check-dividen' && req.method === 'POST') return handleCheckDividen(req, res);
             if (pathname === '/api/actions/create-dividen-case' && req.method === 'POST') return handleCreateDividenCase(req, res);
             if (pathname === '/api/actions/login-entity' && req.method === 'POST') return handleLoginEntity(req, res);

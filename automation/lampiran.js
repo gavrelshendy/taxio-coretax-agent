@@ -1424,6 +1424,23 @@ function sptStatus(fileSuffix) {
     return m ? 'PEMBETULAN ' + m[1] : fileSuffix === undefined ? '' : 'NORMAL';
 }
 
+/** Reader of `label`'s rows from Coretax's grid API for lib/lampiran-capture.js collectTabFromRows, or
+ *  null when that lampiran has no API mapping (or it was turned off). */
+// Literal requires: pkg only bundles modules it can see by name (a require(variable) is left out of
+// the exe, which would silently put every lampiran back on the paginator).
+const LAMPIRAN_API = {
+    ICT_WIT: { load: () => require('../lib/lampiran-api-pph21'), env: 'CORETAX_PPH21_API' },
+    ICT_WT: { load: () => require('../lib/lampiran-api-unifikasi'), env: 'CORETAX_UNIFIKASI_API' },
+    VAT_VAT: { load: () => require('../lib/lampiran-api-ppn'), env: 'CORETAX_PPN_API' }
+};
+function lampiranApiReader(page, taxTypeCode, label) {
+    const spec = LAMPIRAN_API[taxTypeCode];
+    if (!spec || process.env[spec.env] === '0') return null;
+    const reader = spec.load(), grids = reader.GRIDS[label];
+    if (!grids) return null;
+    return { tables: Array.isArray(grids) ? grids.length : 1, rows: (headers, index) => reader.displayRows(page, label, headers, index) };
+}
+
 async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mode, taxYearHint = '', outputLayout = 'combined') {
     require('../lib/spt-access').assertAllowed(taxTypeCode,ctx,page);
     if (!TAXTYPE_CONFIG[taxTypeCode]) return { ok: false, error: 'Jenis SPT ini belum didukung.' };
@@ -1467,14 +1484,16 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         for (const label of labels) {
             if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label);
             await waitForTabContentStable(page, config.rootSelector);
-            // PPN straight from Coretax's grid API (lib/lampiran-api-ppn.js), checked against the
-            // table on screen. Off for now by the user's choice (2026-10-07): the paginator stays the
-            // reader; CORETAX_PPN_API=1 turns the API read on for testing.
+            // Rows straight from Coretax's grid API, checked against the tables on screen; any table
+            // that disagrees (or a code/column without a proven mapping) falls back to the paginator.
+            // On by default since 2026-10-19 (user: "kalo emang bisa dan lebih cepat gas gaperlu
+            // paginator"); CORETAX_<PPH21|UNIFIKASI|PPN>_API=0 turns one off.
             let tab = null;
-            if (taxTypeCode === 'VAT_VAT' && process.env.CORETAX_PPN_API === '1') {
+            const apiReader = lampiranApiReader(page, taxTypeCode, label);
+            if (apiReader) {
                 try {
-                    tab = await require('../lib/lampiran-capture').collectTabFromRows(page, config.rootSelector, label, (headers) => require('../lib/lampiran-api-ppn').displayRows(page, label, headers));
-                    log('[Lampiran] ' + label + ': ' + tab.tables[0].collectedRows + ' baris diambil dari API Coretax, cocok dengan tampilan.');
+                    tab = await require('../lib/lampiran-capture').collectTabFromRows(page, config.rootSelector, label, apiReader.rows, apiReader.tables);
+                    log('[Lampiran] ' + label + ': ' + tab.tables.map((t) => t.collectedRows).join(' + ') + ' baris diambil dari API Coretax, cocok dengan tampilan.');
                 } catch (e) {
                     if (e && e.isStop) throw e;
                     log('[Lampiran] ' + label + ': API tidak dipakai (' + e.message + ') - tabel dibaca halaman demi halaman.');

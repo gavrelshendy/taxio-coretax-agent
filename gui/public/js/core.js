@@ -160,7 +160,7 @@
     P.pickFile = async (title, filter) => {
         try {
             const data = await P.post('/api/actions/pick-file', { title, filter: filter || 'File Excel (*.xlsx)|*.xlsx|Semua File (*.*)|*.*' });
-            if (data && !data.canceled && data.fileBase64) return { fileName: data.fileName, fileBase64: data.fileBase64 };
+            if (data && !data.canceled && data.fileBase64) return { fileName: data.fileName, fileBase64: data.fileBase64, filePath: data.filePath };
             if (data && data.canceled) return null;
         } catch (e) { /* jatuh ke input file */ }
         return new Promise((resolve) => {

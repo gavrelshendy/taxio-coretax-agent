@@ -100,7 +100,7 @@ async function checkPph25ForMasa(page, authState, entity, mmYY, emit) {
         const paid = await billing.checkAlreadyPaid(page, authState, taxTypeCode, billing.TAX_PAYMENT_CODE, periodCode);
         if (paid) {
             const tgl = String(paid.TransactionDate || '').slice(0, 10);
-            emit('PPh 25 masa ' + mmYY + ': SUDAH DIBAYAR (Rp ' + Math.abs(Number(paid.Amount) || 0).toLocaleString('id-ID') + ', lunas di Buku Besar' + (tgl ? ', ' + tgl : '') + ').');
+            emit('PPh 25 masa ' + mmYY + ': SUDAH DIBAYAR (Rp ' + require('../lib/id-number').money(Math.abs(Number(paid.Amount) || 0)) + ', lunas di Buku Besar' + (tgl ? ', ' + tgl : '') + ').');
         } else {
             emit('PPh 25 masa ' + mmYY + ': BELUM/TIDAK ditemukan lunas di Buku Besar.');
         }
@@ -228,9 +228,9 @@ async function openLampiranView(page, row, authState, emit) {
     const config = lampiran.TAXTYPE_CONFIG[row.TaxTypeCode];
     if (!config) throw new Error('Jenis lampiran ' + row.TaxTypeCode + ' belum didukung.');
     const candidates = buildLampiranViewCandidates(row, authState);
-    // The API read of PPN rows (lib/lampiran-api-ppn.js, off by default) needs the page's grid
-    // requests and auth header, so the watch goes on before the page loads.
-    if (process.env.CORETAX_PPN_API === '1') require('../lib/returnsheet-grid-api').watchContext(page.context());
+    // The API read of lampiran rows (lib/lampiran-api-*.js) needs the page's own grid requests and
+    // auth header, so the watch goes on before the page loads.
+    if (['ICT_WIT', 'ICT_WT', 'VAT_VAT'].includes(row.TaxTypeCode)) require('../lib/returnsheet-grid-api').watchContext(page.context());
     for (let index = 0; index < candidates.length; index++) {
         const url = candidates[index];
         try {
@@ -419,7 +419,28 @@ async function processSptCombo(ctx) {
         const bpePath = path.join(saveDir, buildSptFilename(entityCode, meta.bpeToken, mmYY, pbSuffix));
         const packageModeSuffix = ctx.a1Book ? ' (Lengkap)' : lampiranMode === 'print' ? ' (Ringkas)' : lampiranMode === 'confidential' ? ' (Rahasia)' : '';
         const packagePath = path.join(ctx.finalDir || saveDir, buildSptFilename(entityCode, meta.packageToken + packageModeSuffix, mmYY, pbSuffix));
-        if (!includeLampiran && (!includeInduk || fs.existsSync(sptPath)) && (!includeBpe || fs.existsSync(bpePath))) {
+        // Mode A1 dilanjutkan: baris yang sudah lengkap sebelumnya dipakai ulang tanpa membuka Coretax lagi.
+        // Kedua PDF (Lengkap + Rahasia) harus masih ada; versi TERAKHIR masa ini juga butuh data Excel-nya,
+        // dari cache (RecordId sama) atau dari Excel Mode A1 lama (versi pembetulan sama, lib/a1-source.js).
+        // Versi lama cukup PDF-nya - Excel tahunan hanya memakai versi terakhir.
+        if (ctx.a1Book && !ctx.a1Fresh) {
+            const secretPath = path.join(ctx.finalDir, buildSptFilename(entityCode, meta.packageToken + ' (Rahasia)', mmYY, pbSuffix));
+            const pdfs = fs.existsSync(packagePath) && fs.existsSync(secretPath);
+            const { revision } = require('../lib/a1-workbook');
+            const latest = revision(row) === Math.max(...rows.map(revision));
+            const fromCache = ctx.a1Book.cached(mmYY, row);
+            const fromExcel = !fromCache && latest ? ctx.a1Book.seeded(mmYY, row) : null;
+            const sheets = fromCache || fromExcel;
+            const label = 'Baris ke-' + (i + 1) + ' (' + (row.ReturnSheetModel || 'Normal') + ')';
+            if (pdfs && (sheets || !latest)) {
+                ctx.a1Book.record(mmYY, row, sheets || undefined, true, true, !!fromExcel);
+                emit(label + ': sudah lengkap dari ' + (fromExcel ? 'Excel Mode A1 lama' : sheets ? 'proses sebelumnya' : 'proses sebelumnya (PDF versi lama)') + ' - dipakai ulang.');
+                if (onRowDone) { try { onRowDone(jenisKey, mmYY, true); } catch (e) {} }
+                continue;
+            }
+            if (sheets && !pdfs) emit(label + ': data Excel sudah ada, tetapi PDF-nya belum ada - diunduh ulang.');
+        }
+        if (!includeLampiran &&(!includeInduk || fs.existsSync(sptPath)) && (!includeBpe || fs.existsSync(bpePath))) {
             // Sudah ada dari sebelumnya - baris ini genuinely sukses (filenya nyata di disk),
             // tapi tanpa ini onRowDone tidak pernah dipanggil untuk baris ini sama sekali, jadi
             // checkbox Jenis Pajak di GUI tidak pernah ditandai selesai walau downloadnya
@@ -578,6 +599,22 @@ const SIZE_DEFAULT = 10;
  *   jenisPajakKeys (array of 'pph21'|'unifikasi'|'ppn'), masaInput (string, e.g. "0125-1225"
  *   or a single "0626"), saveRoot (optional), manualPage (optional, manual-session mode),
  *   compFolder (optional), onRowDone (optional (jenisKey, mmYY, ok) => void). */
+/** Folder simpan untuk Mode A1. Bila yang dipilih adalah folder hasil lama itu sendiri
+ *  (…\<kode>, …\<kode>\SPT, …\<kode>\SPT\A1 atau …\<kode>\SPT\A1\<tahun>), dinaikkan ke folder induknya
+ *  supaya proses melanjutkan hasil di sana, bukan membuat …\<kode>\SPT\A1\2026\<kode>\SPT\… baru. */
+function a1SaveRoot(chosen, entityCode) {
+    const root = path.resolve(chosen || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'));
+    if (!entityCode || fs.existsSync(path.join(root, entityCode, 'SPT'))) return root;
+    const parts = root.split(path.sep);
+    const i = parts.map((p) => p.toLowerCase()).lastIndexOf(String(entityCode).toLowerCase());
+    const rest = i > 0 ? parts.slice(i + 1).map((p) => p.toLowerCase()) : null;
+    if (rest && rest.length <= 3 && ['spt', 'a1', null].every((name, k) => k >= rest.length || (name ? rest[k] === name : /^20\d{2}$/.test(rest[k])))) {
+        const up = parts.slice(0, i).join(path.sep);
+        return /:$/.test(up) ? up + path.sep : up;
+    }
+    return root;
+}
+
 async function runSptDownload(opts) {
     if(opts.a1Year !== undefined || opts.jenisPajakKeys?.includes('pph21'))require('../lib/spt-access').assertAllowed('ICT_WIT',opts);
     if(opts.a1Year !== undefined && opts.restricted)throw new Error('Mode A1 tidak tersedia untuk pengguna Restricted.');
@@ -619,7 +656,18 @@ async function runSptDownload(opts) {
         throw new Error('SPT Orang Pribadi hanya bisa diproses untuk entitas Individual (login langsung, tanpa impersonate).');
     }
     const masaList = isAnnual ? parseAnnualYearListInput(opts.masaInput) : parseMasaListInput(opts.masaInput);
-    const saveRoot = opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
+    const saveRoot = a1Book ? a1SaveRoot(opts.saveRoot, entity.entity_id) : (opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'));
+    const a1Dir = a1Book ? path.join(saveRoot, entity.entity_id, 'SPT', 'A1', String(opts.a1Year)) : null;
+    if (a1Book) a1Book.cacheDir = path.join(a1Dir, '.a1-cache');
+    // Hasil sebelumnya: folder A1 standar, atau folder / Excel Mode A1 lama yang dipilih (opts.a1Source).
+    if (a1Book && !opts.a1Fresh) {
+        try {
+            const src = await require('../lib/a1-source').load({ a1Dir, source: opts.a1Source, year: opts.a1Year });
+            a1Book.readDirs = src.cacheDirs.filter((d) => path.resolve(d) !== path.resolve(a1Book.cacheDir));
+            a1Book.seed = src.seed;
+            log('Mode A1 - hasil sebelumnya: ' + (src.excel ? 'Excel ' + src.excel + ' (' + Object.keys(src.seed).length + ' masa lengkap)' : 'tanpa Excel') + (src.cacheDirs.length ? ' + cache ' + src.cacheDirs.length + ' folder' : '') + '.');
+        } catch (e) { log('Mode A1 - hasil sebelumnya tidak terbaca (' + e.message + ') - semua masa diunduh.'); }
+    }
 
     const manual = !!opts.manualPage;
     // Declared at function scope (not inside the `else` below) - loginAndImpersonate() below
@@ -762,7 +810,7 @@ async function runSptDownload(opts) {
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
                         compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual, entityName: manual ? '' : entity.entity_name,
                         includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, entityNpwp: entity.npwp, saveRoot,
-                        log: emit, a1Book, finalDir
+                        log: emit, a1Book, a1Fresh: !!opts.a1Fresh, finalDir
                     });
                     if (result.downloadedAny) stats.downloaded++;
                     // foundAny:false ("Tidak ada data untuk filter ini.") sebelumnya cuma
@@ -880,7 +928,7 @@ async function runSptDownload(opts) {
         if(a1Book)await a1Book.renderSession.close().catch(()=>{});
     }
 
-    if(a1Book){const result=await a1Book.save(path.join(saveRoot,entity.entity_id,'SPT','A1',String(opts.a1Year)),entity.entity_name);log('Mode A1: '+result.file+(result.partial?' — BELUM LENGKAP, periksa sheet Kontrol.':' — selesai.'));}
+    if(a1Book){const result=await a1Book.save(a1Dir,entity.entity_name);log('Mode A1: '+result.file+(result.partial?' — BELUM LENGKAP, periksa sheet Kontrol.':' — selesai.'));if(result.nik&&result.nik.nik)log('Mode A1: '+result.nik.nik+' NIK bermasalah ('+result.nik.bukti+' bukti potong) — lihat sheet Analisis NIK dan Draft Pembetulan.');}
 
     // Rincian eksplisit, bukan cuma "N kombinasi selesai" - angka itu sendirian ambigu karena
     // naik sama saja baik kombinasinya benar-benar mengunduh dokumen maupun cuma menemukan 0
@@ -896,4 +944,4 @@ async function runSptDownload(opts) {
 }
 
 module.exports = { runSptDownload, JENIS_PAJAK, JENIS_PAJAK_LABELS, SPT_URL,
-    __test: { buildSptFilename, buildLampiranViewCandidates, parseModelSptSuffix } };
+    __test: { buildSptFilename, buildLampiranViewCandidates, parseModelSptSuffix, a1SaveRoot } };
