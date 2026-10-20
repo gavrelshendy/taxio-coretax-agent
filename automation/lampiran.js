@@ -129,16 +129,36 @@ async function waitForTabLabels(page) {
     return best;
 }
 
-async function clickTab(page, label) {
-    const loc = page.locator(TAB_TITLE_SEL).filter({ hasText: label });
-    const n = await loc.count().catch(() => 0);
-    for (let i = 0; i < n; i++) {
-        const item = loc.nth(i);
-        if (((await item.textContent().catch(() => '')) || '').trim() === label && await item.isVisible().catch(() => false)) {
-            await item.click({ timeout: 5000 });
-            await page.waitForTimeout(1400);
-            return true;
+/** Opens tab `label`. Angular rebuilds the tab strip now and then (after the SPT page loads, after a
+ *  big table reloads): a Playwright click on a header found a moment earlier then waits for an element
+ *  that is gone and times out ("waiting for locator('.p-tabview-title')...", seen live 2026-10-20 on a
+ *  Badan with a 58.914-row L3). So the header is looked up again on every attempt, clicked with a real
+ *  (Playwright) mouse click and a short timeout - a DOM element.click() did NOT open Unifikasi's
+ *  DAFTAR-I (live 2026-10-20) - until the tab reports itself active (li.p-highlight / aria-selected),
+ *  up to 20 s. A strip without those markers is taken as open after one click, like before. */
+async function clickTab(page, label, timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs;
+    const state = () => page.evaluate(({ sel, label }) => {
+        const visible = (e) => { const r = e.getBoundingClientRect(), c = getComputedStyle(e); return r.width > 0 && r.height > 0 && c.display !== 'none' && c.visibility !== 'hidden'; };
+        const title = Array.from(document.querySelectorAll(sel)).find((e) => (e.textContent || '').trim() === label && visible(e));
+        if (!title) return 'missing';
+        const link = title.closest('a,[role=tab]') || title, li = title.closest('li');
+        if ((li && li.classList.contains('p-highlight')) || link.getAttribute('aria-selected') === 'true') return 'active';
+        return link.getAttribute('aria-selected') !== null ? 'inactive' : 'unmarked';
+    }, { sel: TAB_TITLE_SEL, label }).catch(() => 'missing');
+    while (Date.now() < deadline) {
+        const loc = page.locator(TAB_TITLE_SEL).filter({ hasText: label });
+        const n = await loc.count().catch(() => 0);
+        let clicked = false;
+        for (let i = 0; i < n && !clicked; i++) {
+            const item = loc.nth(i);
+            if (((await item.textContent({ timeout: 1000 }).catch(() => '')) || '').trim() !== label || !await item.isVisible().catch(() => false)) continue;
+            clicked = await item.click({ timeout: 3000 }).then(() => true, () => false);
         }
+        if (clicked) {
+            await page.waitForTimeout(1400);
+            if (await state() !== 'inactive') return true;
+        } else await page.waitForTimeout(500);
     }
     return false;
 }
@@ -1431,14 +1451,18 @@ function sptStatus(fileSuffix) {
 const LAMPIRAN_API = {
     ICT_WIT: { load: () => require('../lib/lampiran-api-pph21'), env: 'CORETAX_PPH21_API' },
     ICT_WT: { load: () => require('../lib/lampiran-api-unifikasi'), env: 'CORETAX_UNIFIKASI_API' },
-    VAT_VAT: { load: () => require('../lib/lampiran-api-ppn'), env: 'CORETAX_PPN_API' }
+    VAT_VAT: { load: () => require('../lib/lampiran-api-ppn'), env: 'CORETAX_PPN_API' },
+    // Badan: hanya tabel grid API (L3/L4) yang dari API, tabel lain di tab itu dibaca dari layar;
+    // format kolom dikalibrasi dari halaman 1, jadi tabel diatur dulu ke 500 baris (setUp).
+    ICT_RCIT: { load: () => require('../lib/lampiran-api-cit'), env: 'CORETAX_CIT_API', anyTables: true, setUp: true }
 };
 function lampiranApiReader(page, taxTypeCode, label) {
     const spec = LAMPIRAN_API[taxTypeCode];
     if (!spec || process.env[spec.env] === '0') return null;
     const reader = spec.load(), grids = reader.GRIDS[label];
     if (!grids) return null;
-    return { tables: Array.isArray(grids) ? grids.length : 1, rows: (headers, index) => reader.displayRows(page, label, headers, index) };
+    return { tables: spec.anyTables ? null : Array.isArray(grids) ? grids.length : 1, setUp: !!spec.setUp,
+        rows: (headers, index, shown) => reader.displayRows(page, label, headers, index, shown) };
 }
 
 async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mode, taxYearHint = '', outputLayout = 'combined') {
@@ -1492,6 +1516,10 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
             const apiReader = lampiranApiReader(page, taxTypeCode, label);
             if (apiReader) {
                 try {
+                    if (apiReader.setUp) {
+                        await setUpTables(page, label, 'full', taxTypeCode);
+                        await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
+                    }
                     tab = await require('../lib/lampiran-capture').collectTabFromRows(page, config.rootSelector, label, apiReader.rows, apiReader.tables);
                     log('[Lampiran] ' + label + ': ' + tab.tables.map((t) => t.collectedRows).join(' + ') + ' baris diambil dari API Coretax, cocok dengan tampilan.');
                 } catch (e) {
@@ -1710,7 +1738,7 @@ async function installLampiranWidget(page, { saveRoot, entityCode, compFolder, r
 module.exports = {
     installLampiranWidget, downloadLampiran, mergePdfs, compactPpnOfficialIndukPdf,
     TAXTYPE_CONFIG, sptStatus, detectActiveTaxpayerName, preparePageForPrint,
-    __test: { waitForTabLabels, trimTrailingBlankPages, pageHasVisibleMarks, decodedPageContent, paginatorIds, printPaginatorPages,
+    __test: { waitForTabLabels, clickTab, trimTrailingBlankPages, pageHasVisibleMarks, decodedPageContent, paginatorIds, printPaginatorPages,
         resetPaginators, setActivePaginatorOwner, clearPaginatorOwners, summarizePph21Grids,
         collectPph21ConfidentialSummary, replacePph21SnapshotWithOverview, printPph21ConfidentialOverview,
         replaceUnifikasiSnapshotRows, printUnifikasiApiPages, replacePpnSnapshotRows, printPpnApiPages,
