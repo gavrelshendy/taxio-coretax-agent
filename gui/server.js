@@ -33,6 +33,7 @@ const localEntities = require('../lib/local-entities');
 const localAuth = require('../lib/local-auth-client');
 const masaLib = require('../lib/masa');
 const deeplink = require('../lib/deeplink');
+const compliance = require('../lib/compliance');
 const tray = require('../lib/tray');
 const updater = require('../lib/updater');
 const { closeWindow, ensureWindowOpenOrFocused } = require('./window');
@@ -638,6 +639,16 @@ async function handleDownloadSpt(req, res) {
 
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
+    // SPT entitas Taxio Hub yang terunduh dari dashboard ikut menandai compliance di Hub, sama
+    // seperti klik Download di Hub (lib/deeplink.js). Mode A1 = rekap, bukan pelaporan: tidak.
+    const hub = entity.project === 'taxio_hub' && src.kind !== 'manual' && body.a1Year === undefined ? state.get(entity.project) : null;
+    const markHub = (jenisKey, mmYY, ok) => {
+        if (!ok || !hub) return;
+        compliance.markSptComplianceExisting(src.client, {
+            org: src.orgId, entity: src.entity.entity_id, masa: mmYY,
+            uid: hub.user && hub.user.id, uemail: hub.user && hub.user.email
+        }, jenisKey);
+    };
     // Entitas dengan >1 PIC (Taxio Hub tertaut, atau Badan lokal dengan beberapa PIC): SPT cuma
     // bisa digenerate sesuai penandatangan aslinya, jadi runSptDownload dikasih tahu PIC lain
     // yang bisa dicoba otomatis bila baris di bawah PIC terpilih gagal.
@@ -648,7 +659,7 @@ async function handleDownloadSpt(req, res) {
         : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, jenisPajakKeys, masaInput, saveRoot, checkPph25,
             includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle,
             restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase, fallbackPicIds: src.fallbackPicIds,
-            onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) };
+            onRowDone: (jenisKey, mmYY, ok) => { runcontrol.recordRowDone(jenisKey, ok); markHub(jenisKey, mmYY, ok); } };
 
     runOpts.a1Year=body.a1Year;runOpts.a1Fresh=!!body.a1Fresh;runOpts.a1Source=body.a1Source||undefined;
     try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label, sessionOf(src)); }
