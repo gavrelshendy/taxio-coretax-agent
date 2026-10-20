@@ -54,6 +54,7 @@ const {typed}=require('../lib/lampiran-export');
  // Lampiran PPh 21 / Unifikasi dari API grid = teks tabel Coretax (fixture tangkapan live, tersamarkan).
  await require('./test-id-number')();
  await require('./test-browser')();
+ await require('./test-big-table')();
  await require('./test-pph21-api-rows')();
  await require('./test-unifikasi-api-rows')();
  require('./test-spt-bpe-package');

@@ -1539,9 +1539,23 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         // (named after Taxio's entity code when there is one, else the taxpayer's name - see lib/spt-filenames.js)
         const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'',ctx.entityCode||entity);
         const entityNpwp = ctx.entityNpwp || await detectActiveTaxpayerTin(page);
-        const result = await require('../lib/lampiran-export').renderTabs(tabs, { entity, entityNpwp, status: sptStatus(ctx.fileSuffix), period: period.headerLabel, title: config.title, taxTypeCode }, {
+        // A table over 5.000 rows is too large for a PDF form (lib/lampiran-big-table.js): the PDF keeps
+        // its first 5.000 rows and every row goes to a "daftar lengkap" Excel file. Not for A1
+        // (returnSheets: its recap reads every row from the render) nor Rahasia.
+        const bigTable = require('../lib/lampiran-big-table');
+        const bigLists = ctx.returnSheets || mode === 'confidential' ? [] : bigTable.splitBigTables(tabs);
+        for (const tab of tabs) for (const t of tab.tables || []) { delete t.rows; delete t.headers; }
+        const meta = { entity, entityNpwp, status: sptStatus(ctx.fileSuffix), period: period.headerLabel, title: config.title, taxTypeCode };
+        const result = await require('../lib/lampiran-export').renderTabs(tabs, meta, {
             mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession,layoutStyle:ctx.layoutStyle
         });
+        for (const list of bigLists) {
+            const file = path.join(dir, stem + ' - ' + String(list.label).replace(/[\/:*?"<>|]/g, '_') + ' (daftar lengkap).xlsx');
+            await bigTable.writeFullList(file, list, meta);
+            result.paths.push(file);
+            const { money } = require('../lib/id-number');
+            log('[Lampiran] ' + list.label + ': ' + money(list.rows.length) + ' baris - PDF memuat ' + money(bigTable.BIG_ROWS) + ' baris pertama; daftar lengkap: ' + path.basename(file));
+        }
         if (mode === 'confidential' && format === 'both') {
             const pdf = await downloadLampiran(page, { ...ctx, lampiranFormat: 'pdf' }, taxpayerId, recordId, taxTypeCode, mode, taxYearHint, outputLayout);
             if (!pdf.ok) throw new Error(pdf.error);
