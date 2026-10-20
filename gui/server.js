@@ -433,7 +433,7 @@ function currentUserId() {
  *  jalur yang sudah ada sejak awal aplikasi; TETAP ADA berdampingan dengan entitas lokal
  *  berkredensial (yang sekarang login otomatis, lihat resolveEntitySource). Mengembalikan
  *  { manualPage, runEntity }, atau null setelah membalas galat. */
-function prepareManual(res) {
+async function prepareManual(res) {
     if (anyRestricted()) {
         sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai login manual.' });
         return null;
@@ -443,7 +443,20 @@ function prepareManual(res) {
         sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Buka Coretax", login dulu, lalu coba lagi.' });
         return null;
     }
-    return { manualPage, runEntity: { entity_id: 'Manual', entity_name: 'Sesi Manual', npwp: '', individual: false } };
+    return { manualPage, ...await manualIdentity() };
+}
+
+/** The taxpayer active in the manual window (as the dashboard shows it, "NPWP · NAMA"), so a manual
+ *  run's log tag, result folder and file names carry that entity instead of "Manual" (user request
+ *  2026-10-20). Read at the start of the run; "Manual" when nothing can be read yet. */
+async function manualIdentity() {
+    const identity = String((await chrome.getManualStatus().catch(() => null) || {}).identity || '');
+    const npwp = (identity.match(/\d{15,16}/) || [''])[0];
+    const name = identity.replace(/\d{15,16}/g, '').replace(/^[\s·|-]+|[\s·|-]+$/g, '').replace(/\s+/g, ' ').trim();
+    if (!name) return { runEntity: { entity_id: 'Manual', entity_name: 'Sesi Manual', npwp, individual: false }, label: 'Sesi Manual', tag: 'Manual' };
+    // Tag: the name without its legal form ("PT", ", PT", "CV", "Tbk"), short enough for a log prefix.
+    const tag = name.replace(/^(PT|CV|UD|PD|YAYASAN)\.?\s+/i, '').replace(/[,\s]+(PT|CV|TBK|PERSERO|\(PERSERO\))\.?$/i, '').trim().slice(0, 16) || name.slice(0, 16);
+    return { runEntity: { entity_id: sanitizeFolder(name), entity_name: name, npwp, individual: false }, label: name, tag };
 }
 
 /** SATU tempat yang menentukan bagaimana sebuah entitas terpilih dijalankan, dipakai semua
@@ -461,9 +474,9 @@ function prepareManual(res) {
  *     fallbackPicIds, label } */
 async function resolveEntitySource(res, entity) {
     if (entity.project === 'manual') {
-        const m = prepareManual(res);
+        const m = await prepareManual(res);
         if (!m) return null;
-        return { kind: 'manual', manualPage: m.manualPage, runEntity: m.runEntity, label: 'Sesi Manual' };
+        return { kind: 'manual', manualPage: m.manualPage, runEntity: m.runEntity, label: m.label, tag: m.tag };
     }
     if (entity.project === 'local') {
         if (anyRestricted()) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai entitas lokal.' }); return null; }
@@ -503,7 +516,7 @@ async function resolveEntitySource(res, entity) {
  *  /api/sessions/list, jadi tab sesi di dashboard bisa mencocokkan prosesnya. */
 const MANUAL_SESSION = { key: 'manual', tag: 'Manual' };
 function sessionOf(src) {
-    if (!src || src.kind === 'manual') return MANUAL_SESSION;
+    if (!src || src.kind === 'manual') return src && src.tag ? { ...MANUAL_SESSION, tag: src.tag } : MANUAL_SESSION;
     const id = String((src.entity && src.entity.entity_id) || '');
     // Entitas lokal ber-id internal ("local:<uuid>"): labelnya pakai kata pertama namanya.
     const tag = id.startsWith('local:') ? String((src.entity && src.entity.entity_name) || 'Lokal').split(/[\s,]+/)[0] : id;
@@ -788,7 +801,8 @@ async function prepareDividenPage(res, entity, needCase) {
     if (!entity || !entity.project || entity.project === 'manual') {
         const manualPage = chrome.getManualPage();
         if (!manualPage) { sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu' + (needCase ? ', lalu buka kasus e-Reporting.' : '.') }); return null; }
-        return { label: 'Sesi Manual', session: MANUAL_SESSION, open: async () => manualPage };
+        const who = await manualIdentity();
+        return { label: who.label, session: { ...MANUAL_SESSION, tag: who.tag }, open: async () => manualPage };
     }
     const target = await prepareEntityPage(res, entity);
     if (!target) return null;

@@ -1452,14 +1452,16 @@ const LAMPIRAN_API = {
     ICT_WIT: { load: () => require('../lib/lampiran-api-pph21'), env: 'CORETAX_PPH21_API' },
     ICT_WT: { load: () => require('../lib/lampiran-api-unifikasi'), env: 'CORETAX_UNIFIKASI_API' },
     VAT_VAT: { load: () => require('../lib/lampiran-api-ppn'), env: 'CORETAX_PPN_API' },
-    // Badan: hanya tabel grid API (L3/L4) yang dari API, tabel lain di tab itu dibaca dari layar;
-    // format kolom dikalibrasi dari halaman 1, jadi tabel diatur dulu ke 500 baris (setUp).
-    ICT_RCIT: { load: () => require('../lib/lampiran-api-cit'), env: 'CORETAX_CIT_API', anyTables: true, setUp: true }
+    // SPT Tahunan (Badan, OP), setiap lampiran: tabel yang berhalaman (dan L3/L4/L9 Badan) dari API,
+    // tabel yang sudah tampil utuh dibaca dari layar; format kolom dikalibrasi dari halaman 1, jadi
+    // tabel diatur dulu ke ukuran halaman terbesar (setUp).
+    ICT_RCIT: { load: () => require('../lib/lampiran-api-cit'), env: 'CORETAX_CIT_API', anyTables: true, setUp: true, allLabels: true },
+    ICT_PIT: { load: () => require('../lib/lampiran-api-cit'), env: 'CORETAX_PIT_API', anyTables: true, setUp: true, allLabels: true }
 };
 function lampiranApiReader(page, taxTypeCode, label) {
     const spec = LAMPIRAN_API[taxTypeCode];
     if (!spec || process.env[spec.env] === '0') return null;
-    const reader = spec.load(), grids = reader.GRIDS[label];
+    const reader = spec.load(), grids = reader.GRIDS[label] || (spec.allLabels ? [] : null);
     if (!grids) return null;
     return { tables: spec.anyTables ? null : Array.isArray(grids) ? grids.length : 1, setUp: !!spec.setUp,
         rows: (headers, index, shown) => reader.displayRows(page, label, headers, index, shown) };
@@ -1524,7 +1526,8 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
                     log('[Lampiran] ' + label + ': ' + tab.tables.map((t) => t.collectedRows).join(' + ') + ' baris diambil dari API Coretax, cocok dengan tampilan.');
                 } catch (e) {
                     if (e && e.isStop) throw e;
-                    log('[Lampiran] ' + label + ': API tidak dipakai (' + e.message + ') - tabel dibaca halaman demi halaman.');
+                    // A tab whose tables all fit on screen needs no API: read as before, nothing to report.
+                    if (!/tidak ada tabel yang diambil lewat API/.test(e.message)) log('[Lampiran] ' + label + ': API tidak dipakai (' + e.message + ') - tabel dibaca halaman demi halaman.');
                 }
             }
             if (!tab) {
@@ -1539,8 +1542,8 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         // (named after Taxio's entity code when there is one, else the taxpayer's name - see lib/spt-filenames.js)
         const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'',ctx.entityCode||entity);
         const entityNpwp = ctx.entityNpwp || await detectActiveTaxpayerTin(page);
-        // A table over 5.000 rows is too large for a PDF form (lib/lampiran-big-table.js): the PDF keeps
-        // its first 5.000 rows and every row goes to a "daftar lengkap" Excel file. Not for A1
+        // A table over 1.000 rows is too large for a PDF form (lib/lampiran-big-table.js): the PDF keeps
+        // its first 50 rows and every row goes to a "daftar lengkap" Excel file. Not for A1
         // (returnSheets: its recap reads every row from the render) nor Rahasia.
         const bigTable = require('../lib/lampiran-big-table');
         const bigLists = ctx.returnSheets || mode === 'confidential' ? [] : bigTable.splitBigTables(tabs);
@@ -1554,7 +1557,7 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
             await bigTable.writeFullList(file, list, meta);
             result.paths.push(file);
             const { money } = require('../lib/id-number');
-            log('[Lampiran] ' + list.label + ': ' + money(list.rows.length) + ' baris - PDF memuat ' + money(bigTable.BIG_ROWS) + ' baris pertama; daftar lengkap: ' + path.basename(file));
+            log('[Lampiran] ' + list.label + ': ' + money(list.rows.length) + ' baris (lebih dari ' + money(bigTable.BIG_ROWS) + ') - PDF memuat ' + money(bigTable.SHOWN_ROWS) + ' baris pertama; daftar lengkap: ' + path.basename(file));
         }
         if (mode === 'confidential' && format === 'both') {
             const pdf = await downloadLampiran(page, { ...ctx, lampiranFormat: 'pdf' }, taxpayerId, recordId, taxTypeCode, mode, taxYearHint, outputLayout);
