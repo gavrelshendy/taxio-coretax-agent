@@ -138,27 +138,36 @@ async function waitForTabLabels(page) {
  *  up to 20 s. A strip without those markers is taken as open after one click, like before. */
 async function clickTab(page, label, timeoutMs = 20000) {
     const deadline = Date.now() + timeoutMs;
-    const state = () => page.evaluate(({ sel, label }) => {
+    // One look at the strip: where the tab is now (centre, scrolled into view), whether it is active, and
+    // whether the strip marks its active tab at all (Coretax: li.p-highlight + aria-selected only there).
+    const look = () => page.evaluate(({ sel, label }) => {
         const visible = (e) => { const r = e.getBoundingClientRect(), c = getComputedStyle(e); return r.width > 0 && r.height > 0 && c.display !== 'none' && c.visibility !== 'hidden'; };
-        const title = Array.from(document.querySelectorAll(sel)).find((e) => (e.textContent || '').trim() === label && visible(e));
-        if (!title) return 'missing';
-        const link = title.closest('a,[role=tab]') || title, li = title.closest('li');
-        if ((li && li.classList.contains('p-highlight')) || link.getAttribute('aria-selected') === 'true') return 'active';
-        return link.getAttribute('aria-selected') !== null ? 'inactive' : 'unmarked';
-    }, { sel: TAB_TITLE_SEL, label }).catch(() => 'missing');
+        const titles = Array.from(document.querySelectorAll(sel)).filter(visible);
+        const isActive = (t) => { const link = t.closest('a,[role=tab]') || t, li = t.closest('li'); return !!(li && li.classList.contains('p-highlight')) || link.getAttribute('aria-selected') === 'true'; };
+        const title = titles.find((e) => (e.textContent || '').trim() === label);
+        if (!title) return { found: false };
+        // Centred, not 'nearest': scrolled down in a long lampiran, 'nearest' parks the strip under
+        // Coretax's fixed top bar and the click lands on the bar (live 2026-10-20, L4 never opened).
+        title.scrollIntoView({ block: 'center', inline: 'center' });
+        const r = title.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+        const hit = document.elementFromPoint(x, y), tab = title.closest('li') || title.closest('a,[role=tab]') || title;
+        return { found: true, active: isActive(title), marked: titles.some(isActive), x, y, clickable: !!hit && (tab.contains(hit) || title.contains(hit)) };
+    }, { sel: TAB_TITLE_SEL, label }).catch(() => ({ found: false }));
     while (Date.now() < deadline) {
-        const loc = page.locator(TAB_TITLE_SEL).filter({ hasText: label });
-        const n = await loc.count().catch(() => 0);
-        let clicked = false;
-        for (let i = 0; i < n && !clicked; i++) {
-            const item = loc.nth(i);
-            if (((await item.textContent({ timeout: 1000 }).catch(() => '')) || '').trim() !== label || !await item.isVisible().catch(() => false)) continue;
-            clicked = await item.click({ timeout: 3000 }).then(() => true, () => false);
-        }
-        if (clicked) {
-            await page.waitForTimeout(1400);
-            if (await state() !== 'inactive') return true;
-        } else await page.waitForTimeout(500);
+        const before = await look();
+        if (before.found && before.active) { await page.waitForTimeout(600); return true; }
+        if (!before.found) { await page.waitForTimeout(500); continue; }
+        // Something lies over the tab (fixed bar, overlay): back to the top of the page, then look again.
+        if (!before.clickable) { await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {}); await page.waitForTimeout(400); continue; }
+        // A real mouse click at the tab's position, not on an element handle: Coretax keeps rebuilding
+        // the strip, and a handle found a moment earlier is already gone (live 2026-10-20, MERATUS
+        // LINE: count()=1 yet every locator action waited for a detached L1-D until it timed out).
+        await page.mouse.click(before.x, before.y).catch(() => {});
+        await page.waitForTimeout(1400);
+        const after = await look();
+        if (after.found && after.active) return true;
+        // A strip that never marks an active tab cannot be checked: one click is all the old code did.
+        if (after.found && !after.marked) return true;
     }
     return false;
 }
@@ -1452,11 +1461,12 @@ const LAMPIRAN_API = {
     ICT_WIT: { load: () => require('../lib/lampiran-api-pph21'), env: 'CORETAX_PPH21_API' },
     ICT_WT: { load: () => require('../lib/lampiran-api-unifikasi'), env: 'CORETAX_UNIFIKASI_API' },
     VAT_VAT: { load: () => require('../lib/lampiran-api-ppn'), env: 'CORETAX_PPN_API' },
-    // SPT Tahunan (Badan, OP), setiap lampiran: tabel yang berhalaman (dan L3/L4/L9 Badan) dari API,
-    // tabel yang sudah tampil utuh dibaca dari layar; format kolom dikalibrasi dari halaman 1, jadi
-    // tabel diatur dulu ke ukuran halaman terbesar (setUp).
-    ICT_RCIT: { load: () => require('../lib/lampiran-api-cit'), env: 'CORETAX_CIT_API', anyTables: true, setUp: true, allLabels: true },
-    ICT_PIT: { load: () => require('../lib/lampiran-api-cit'), env: 'CORETAX_PIT_API', anyTables: true, setUp: true, allLabels: true }
+    // SPT Tahunan (Badan, OP), setiap lampiran: tabel yang berhalaman (dan L3/L4/L9/L10-A Badan) dari
+    // API, tabel yang sudah tampil utuh dibaca dari layar; format kolom dikalibrasi dari halaman 1.
+    // Tanpa mengatur ukuran halaman dulu: itu memakan waktu (L9 MERATUS LINE 79 dtk untuk 12 tabel) dan
+    // kebenaran tidak bergantung padanya - pilihan field yang ambigu tetap diuji di SEMUA baris.
+    ICT_RCIT: { load: () => require('../lib/lampiran-api-cit'), env: 'CORETAX_CIT_API', anyTables: true, setUp: false, allLabels: true },
+    ICT_PIT: { load: () => require('../lib/lampiran-api-cit'), env: 'CORETAX_PIT_API', anyTables: true, setUp: false, allLabels: true }
 };
 function lampiranApiReader(page, taxTypeCode, label) {
     const spec = LAMPIRAN_API[taxTypeCode];
@@ -1504,12 +1514,25 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         const entity = sanitizeFilenamePart(ctx.entityName || await detectActiveTaxpayerName(page) || ctx.entityCode || 'SPT');
         const dir = ctx.outputDir || path.join(ctx.saveRoot, entity, 'SPT', String(period.year));
         fs.mkdirSync(dir, { recursive: true });
+        // CORETAX_LAMPIRAN_TRACE=1: how long each step of each tab takes (diagnosis of a slow tab).
+        // A table that remembers another page or a filter (Coretax's grid-state in localStorage) is
+        // read wrong - by the API check and by the page-by-page path alike: start over from page 1.
+        if (await returnsheetGridApi.resetGridState(page)) {
+            log('[Lampiran] Posisi halaman/filter tabel yang tersimpan di Coretax dikembalikan ke halaman 1 - halaman SPT dimuat ulang.');
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+        }
+        const traceOn = process.env.CORETAX_LAMPIRAN_TRACE === '1';
+        let traceAt = Date.now();
+        const trace = (what) => { if (traceOn) { log('[Lampiran trace] ' + what + ': ' + (Date.now() - traceAt) + ' ms'); traceAt = Date.now(); } };
         const labels = (await waitForTabLabels(page)).filter(label => !/^induk$/i.test(label) && (!ctx.onlyLabels?.length || ctx.onlyLabels.includes(label)));
+        trace('daftar tab');
         if (!labels.length) throw new Error('Lampiran belum tersedia.');
         const tabs = [],confidentialSummaries=[];
         for (const label of labels) {
             if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label);
+            trace(label + ' klik tab');
             await waitForTabContentStable(page, config.rootSelector);
+            trace(label + ' tunggu isi stabil');
             // Rows straight from Coretax's grid API, checked against the tables on screen; any table
             // that disagrees (or a code/column without a proven mapping) falls back to the paginator.
             // On by default since 2026-10-19 (user: "kalo emang bisa dan lebih cepat gas gaperlu
@@ -1521,19 +1544,26 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
                     if (apiReader.setUp) {
                         await setUpTables(page, label, 'full', taxTypeCode);
                         await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
+                        trace(label + ' atur ukuran halaman');
                     }
                     tab = await require('../lib/lampiran-capture').collectTabFromRows(page, config.rootSelector, label, apiReader.rows, apiReader.tables);
                     log('[Lampiran] ' + label + ': ' + tab.tables.map((t) => t.collectedRows).join(' + ') + ' baris diambil dari API Coretax, cocok dengan tampilan.');
                 } catch (e) {
                     if (e && e.isStop) throw e;
                     // A tab whose tables all fit on screen needs no API: read as before, nothing to report.
+                    if (/tidak ada tabel yang diambil lewat API/.test(e.message)) apiReader.benign = true;
                     if (!/tidak ada tabel yang diambil lewat API/.test(e.message)) log('[Lampiran] ' + label + ': API tidak dipakai (' + e.message + ') - tabel dibaca halaman demi halaman.');
                 }
+                trace(label + ' baca lewat API');
             }
+            // Diagnosis only (CORETAX_API_ONLY=1): stop at the API's reason instead of paging for minutes.
+            if (!tab && process.env.CORETAX_API_ONLY === '1' && apiReader && !apiReader.benign) throw new Error(label + ': API ditolak (CORETAX_API_ONLY) - lihat log');
             if (!tab) {
                 await setUpTables(page, label, 'full', taxTypeCode);
                 await waitForTabContentStable(page, config.rootSelector, { minWaitMs: 700, timeoutMs: 8000 });
+                trace(label + ' atur ukuran halaman (paginator)');
                 tab = await require('../lib/lampiran-capture').collectTab(page, config.rootSelector, label);
+                trace(label + ' baca halaman demi halaman');
             }
             tabs.push(tab);
             if(ctx.returnSheets&&taxTypeCode==='ICT_WIT'&&PPH21_API_GRIDS[label]){try{confidentialSummaries.push(await collectPph21ConfidentialSummary(page,label));}catch(e){log('[Lampiran] Ringkasan Confidential '+label+' gagal dibaca: '+e.message);}}
@@ -1553,7 +1583,9 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
             mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession,layoutStyle:ctx.layoutStyle
         });
         for (const list of bigLists) {
-            const file = path.join(dir, stem + ' - ' + String(list.label).replace(/[\/:*?"<>|]/g, '_') + ' (daftar lengkap).xlsx');
+            // L9 can hold several big tables (MERATUS LINE: 19.788 and 49.999 rows): one file each.
+            const several = bigLists.filter((l) => l.label === list.label).length > 1;
+            const file = path.join(dir, stem + ' - ' + String(list.label).replace(/[\/:*?"<>|]/g, '_') + (several ? ' tabel ' + (list.index + 1) : '') + ' (daftar lengkap).xlsx');
             await bigTable.writeFullList(file, list, meta);
             result.paths.push(file);
             const { money } = require('../lib/id-number');
