@@ -163,6 +163,9 @@ async function main(deepLinkUrl) {
     deeplink.registerProtocolHandler();
     openWindow('http://127.0.0.1:' + GUI_PORT + '/');
     if (deepLinkUrl) deeplink.dispatch(deepLinkUrl).catch((e) => log('Deep link gagal: ' + e.message));
+    // Chrome bawaan disiapkan di latar sejak awal (sekali saja), supaya biasanya sudah siap sebelum
+    // otomasi pertama; otomasi yang lebih dulu jalan menunggu unduhan yang sama, bukan mengunduh ulang.
+    require('./lib/browser').ensure();
 
     // Auto-update: explicit user request 2026-08-07, checked once per startup - runs in the
     // background (never awaited here) so a slow/failed GitHub check never delays the dashboard

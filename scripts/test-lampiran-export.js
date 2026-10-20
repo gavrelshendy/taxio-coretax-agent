@@ -51,6 +51,11 @@ const {typed}=require('../lib/lampiran-export');
  assert.equal(translated.tables[0].sourceTotals[0].label,'JUMLAH PAJAK PENGHASILAN YANG HARUS DIBAYAR');assert(!(await p.locator('tfoot').textContent()).includes('(Coretax)'));
  await require('./test-a1-workbook')();
  await require('./test-a1-access')();
+ // Lampiran PPh 21 / Unifikasi dari API grid = teks tabel Coretax (fixture tangkapan live, tersamarkan).
+ await require('./test-id-number')();
+ await require('./test-browser')();
+ await require('./test-pph21-api-rows')();
+ await require('./test-unifikasi-api-rows')();
  require('./test-spt-bpe-package');
  // Exercise every production rendering callback from the packaged executable too.
  const {renderTabs}=require('../lib/lampiran-export');

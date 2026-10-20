@@ -245,7 +245,7 @@ async function createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nomin
     const hasSubmit = await submitBtn.isVisible({ timeout: 5000 }).catch(() => false);
     if (!hasSubmit) throw new Error('Tombol "Unduh Kode Billing" tidak ditemukan.');
 
-    chrome.markAutomatedDownload(page, true);
+    await chrome.markAutomatedDownload(page, true);
     try {
         const [download] = await Promise.all([
             page.waitForEvent('download', { timeout: 30000 }),
@@ -257,7 +257,7 @@ async function createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nomin
         await download.delete().catch(() => {});
         return buffer;
     } finally {
-        chrome.markAutomatedDownload(page, false);
+        await chrome.markAutomatedDownload(page, false);
     }
 }
 
@@ -417,7 +417,7 @@ async function runBillingPph25(opts) {
     // again.
     const paid = await checkAlreadyPaid(page, authState, taxTypeCode, TAX_PAYMENT_CODE, taxPeriodCode);
     if (paid) {
-        log('PPh 25 masa ' + mmYY + ' SUDAH DIBAYAR (Rp ' + Number(paid.Amount).toLocaleString('id-ID') + ', lunas di Buku Besar, ' + paid.TransactionDate + ') - dilewati, tidak membuat kode baru.');
+        log('PPh 25 masa ' + mmYY + ' SUDAH DIBAYAR (Rp ' + require('../lib/id-number').money(paid.Amount) + ', lunas di Buku Besar, ' + paid.TransactionDate + ') - dilewati, tidak membuat kode baru.');
         return { created: false, reason: 'already_paid', paidAmount: paid.Amount };
     }
 
@@ -426,7 +426,7 @@ async function runBillingPph25(opts) {
     // with the PDF locally even when this run doesn't create anything new.
     const dup = await findLikelyExistingBilling(page, authState, nominal, taxPeriodCode);
     if (dup) {
-        log('Kode Billing dengan nominal sama (Rp ' + nominal.toLocaleString('id-ID') + ') sudah aktif: ' + dup.BillingCode + ' (kedaluwarsa ' + dup.BillingCodeExpirationTime + ') - dilewati, mengunduh yang sudah ada.');
+        log('Kode Billing dengan nominal sama (Rp ' + require('../lib/id-number').money(nominal) + ') sudah aktif: ' + dup.BillingCode + ' (kedaluwarsa ' + dup.BillingCodeExpirationTime + ') - dilewati, mengunduh yang sudah ada.');
         const buffer = await downloadExistingBillingCode(page, authState, dup);
         const filePath = saveBillingPdf(entity, mmYY, buffer, opts.saveRoot, opts.compFolder);
         log('Kode Billing PPh 25 (sudah ada) diunduh: ' + path.basename(filePath));

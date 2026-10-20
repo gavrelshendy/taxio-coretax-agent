@@ -1,14 +1,13 @@
 {
   "name": "coretax-agent",
-  "version": "2.0.9",
+  "version": "3.0.0",
   "private": true,
   "description": "Standalone desktop app for Coretax automation - connects directly to your Taxio/Taxio.me account (email+password) and drives Coretax DJP via Playwright, controlled through a local GUI dashboard instead of a console.",
   "main": "main.js",
   "bin": "main.js",
   "scripts": {
     "start": "node main.js",
-    "build": "pkg .",
-    "postbuild": "node scripts/hide-console.js"
+    "build": "node scripts/build-exe.js --out-path dist"
   },
   "pkg": {
     "scripts": [
@@ -22,7 +21,8 @@
       "lib/lampiran-*.js",
       "lib/lampiran-per11-layout-*.json",
       "lib/fonts/**/*",
-      "scripts/test-lampiran-export.js"
+      "scripts/test-lampiran-export.js",
+      "scripts/fixtures/*.json"
     ],
     "targets": [
       "node22-win-x64"
@@ -37,6 +37,7 @@
     "playwright": "1.61.1"
   },
   "devDependencies": {
-    "@yao-pkg/pkg": "^6.21.0"
+    "@yao-pkg/pkg": "^6.21.0",
+    "resedit": "^2.0.3"
   }
 }

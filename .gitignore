@@ -1,5 +1,8 @@
 node_modules/
 dist/
+dist-*/
+build/
+.smoke-output/
 *.exe
 *.log
 .dev-inspect/
@@ -7,7 +10,8 @@ dist/
 _scratch/
 scratch/
 test/
-fixtures/
+# Tangkapan live berisi data klien (root saja); scripts/fixtures/ = fixture uji tersamarkan, ikut git.
+/fixtures/
 output/
 Test Impor Dividen*.xlsx
 Control Hasil Impor*.xlsx
