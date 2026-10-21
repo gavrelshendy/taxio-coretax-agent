@@ -1573,24 +1573,18 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         const stem = require('../lib/spt-filenames').filename(taxTypeCode,period.fileLabel,'Lampiran - '+(mode==='print'?'Ringkas':'Lengkap'),ctx.fileSuffix,'',ctx.entityCode||entity);
         const entityNpwp = ctx.entityNpwp || await detectActiveTaxpayerTin(page);
         // A table over 1.000 rows is too large for a PDF form (lib/lampiran-big-table.js): the PDF keeps
-        // its first 50 rows and every row goes to a "daftar lengkap" Excel file. Not for A1
-        // (returnSheets: its recap reads every row from the render) nor Rahasia.
+        // its first rows (Lengkap 1.000, Ringkas 50) and every row goes onto its own sheet of the
+        // lampiran's Excel, which is then made even for a PDF-only request. Not for A1 (returnSheets:
+        // its recap reads every row from the render) nor Rahasia.
         const bigTable = require('../lib/lampiran-big-table');
-        const bigLists = ctx.returnSheets || mode === 'confidential' ? [] : bigTable.splitBigTables(tabs);
+        const bigLists = ctx.returnSheets || mode === 'confidential' ? [] : bigTable.splitBigTables(tabs, mode === 'print' ? bigTable.SHOWN_ROWS : bigTable.BIG_ROWS);
         for (const tab of tabs) for (const t of tab.tables || []) { delete t.rows; delete t.headers; }
         const meta = { entity, entityNpwp, status: sptStatus(ctx.fileSuffix), period: period.headerLabel, title: config.title, taxTypeCode };
         const result = await require('../lib/lampiran-export').renderTabs(tabs, meta, {
-            mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession,layoutStyle:ctx.layoutStyle
+            mode: mode === 'confidential' ? 'full' : mode, format: mode === 'confidential' ? 'excel' : format, dir, stem, outputLayout,renderSession:ctx.renderSession,layoutStyle:ctx.layoutStyle, bigLists
         });
-        for (const list of bigLists) {
-            // L9 can hold several big tables (MERATUS LINE: 19.788 and 49.999 rows): one file each.
-            const several = bigLists.filter((l) => l.label === list.label).length > 1;
-            const file = path.join(dir, stem + ' - ' + String(list.label).replace(/[\/:*?"<>|]/g, '_') + (several ? ' tabel ' + (list.index + 1) : '') + ' (daftar lengkap).xlsx');
-            await bigTable.writeFullList(file, list, meta);
-            result.paths.push(file);
-            const { money } = require('../lib/id-number');
-            log('[Lampiran] ' + list.label + ': ' + money(list.rows.length) + ' baris (lebih dari ' + money(bigTable.BIG_ROWS) + ') - PDF memuat ' + money(bigTable.SHOWN_ROWS) + ' baris pertama; daftar lengkap: ' + path.basename(file));
-        }
+        const { money } = require('../lib/id-number');
+        for (const list of bigLists) log('[Lampiran] ' + list.label + ': ' + money(list.rows.length) + ' baris (lebih dari ' + money(bigTable.BIG_ROWS) + ') - PDF memuat baris 1–' + money(list.shown) + '; seluruh baris di sheet "' + list.sheetName + '" pada ' + path.basename(result.excelPath || ''));
         if (mode === 'confidential' && format === 'both') {
             const pdf = await downloadLampiran(page, { ...ctx, lampiranFormat: 'pdf' }, taxpayerId, recordId, taxTypeCode, mode, taxYearHint, outputLayout);
             if (!pdf.ok) throw new Error(pdf.error);
