@@ -151,24 +151,35 @@ async function clickTab(page, label, timeoutMs = 20000) {
         title.scrollIntoView({ block: 'center', inline: 'center' });
         const r = title.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
         const hit = document.elementFromPoint(x, y), tab = title.closest('li') || title.closest('a,[role=tab]') || title;
-        return { found: true, active: isActive(title), marked: titles.some(isActive), x, y, clickable: !!hit && (tab.contains(hit) || title.contains(hit)) };
+        const desc = (e) => e ? e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : '') : '-';
+        return { found: true, active: isActive(title), marked: titles.some(isActive), x: Math.round(x), y: Math.round(y), clickable: !!hit && (tab.contains(hit) || title.contains(hit)),
+            cover: desc(hit), viewport: window.innerWidth + 'x' + window.innerHeight };
     }, { sel: TAB_TITLE_SEL, label }).catch(() => ({ found: false }));
+    // Ways to click, taken in turn until the tab is active: a real mouse click at its position (Coretax
+    // keeps rebuilding the strip, so a handle found a moment earlier is already gone - live 2026-10-20,
+    // MERATUS LINE), the tab link's own click() in the page, then Playwright's click with force. One of
+    // them failed in a user's window and not in mine (2026-10-21), so none is relied on alone.
+    const ways = [
+        async (s) => { if (s.clickable) await page.mouse.click(s.x, s.y); else await page.evaluate(() => window.scrollTo(0, 0)); },
+        () => page.evaluate(({ sel, label }) => { const t = Array.from(document.querySelectorAll(sel)).find((e) => (e.textContent || '').trim() === label); const link = t && (t.closest('a,[role=tab]') || t); if (link) { for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) link.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window })); link.click(); } }, { sel: TAB_TITLE_SEL, label }),
+        () => page.locator(TAB_TITLE_SEL).filter({ hasText: label }).first().click({ force: true, timeout: 2500 })
+    ];
+    let last = { found: false }, attempt = 0;
     while (Date.now() < deadline) {
-        const before = await look();
-        if (before.found && before.active) { await page.waitForTimeout(600); return true; }
-        if (!before.found) { await page.waitForTimeout(500); continue; }
-        // Something lies over the tab (fixed bar, overlay): back to the top of the page, then look again.
-        if (!before.clickable) { await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {}); await page.waitForTimeout(400); continue; }
-        // A real mouse click at the tab's position, not on an element handle: Coretax keeps rebuilding
-        // the strip, and a handle found a moment earlier is already gone (live 2026-10-20, MERATUS
-        // LINE: count()=1 yet every locator action waited for a detached L1-D until it timed out).
-        await page.mouse.click(before.x, before.y).catch(() => {});
-        await page.waitForTimeout(1400);
+        last = await look();
+        if (last.found && last.active) { await page.waitForTimeout(attempt ? 1400 : 600); return true; }
+        if (!last.found) { await page.waitForTimeout(500); continue; }
+        await ways[attempt++ % ways.length](last).catch(() => {});
+        await page.waitForTimeout(1200);
         const after = await look();
-        if (after.found && after.active) return true;
+        if (after.found && after.active) { await page.waitForTimeout(400); return true; }
         // A strip that never marks an active tab cannot be checked: one click is all the old code did.
         if (after.found && !after.marked) return true;
+        last = after;
     }
+    clickTab.lastFailure = last.found
+        ? 'tab ada, tidak aktif setelah ' + attempt + ' klik; titik (' + last.x + ',' + last.y + ') tertutup ' + (last.clickable ? 'tidak' : last.cover) + ', jendela ' + last.viewport
+        : 'tab "' + label + '" tidak terlihat';
     return false;
 }
 
@@ -1529,7 +1540,7 @@ async function downloadLampiran(page, ctx, taxpayerId, recordId, taxTypeCode, mo
         if (!labels.length) throw new Error('Lampiran belum tersedia.');
         const tabs = [],confidentialSummaries=[];
         for (const label of labels) {
-            if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label);
+            if (!await clickTab(page, label)) throw new Error('Lampiran tidak dapat dibuka: ' + label + (clickTab.lastFailure ? ' (' + clickTab.lastFailure + ')' : ''));
             trace(label + ' klik tab');
             await waitForTabContentStable(page, config.rootSelector);
             trace(label + ' tunggu isi stabil');
