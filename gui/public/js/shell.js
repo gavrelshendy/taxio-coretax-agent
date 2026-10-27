@@ -206,6 +206,7 @@
         app.addEventListener('click', (e) => {
             const nav = e.target.closest('[data-nav]'); if (nav) return S.go(nav.dataset.nav);
             if (e.target.closest('#entity-chip')) return E.openPalette();
+            const sr = e.target.closest('[data-sess-relogin]'); if (sr) return E.reloginSession(sr.dataset.sessRelogin, sr);
             const sm = e.target.closest('[data-sess]'); if (sm) return E.selectSession(sm.dataset.sess);
             const sd = e.target.closest('[data-sess-drop]'); if (sd) return E.openSessionPopover(sd.dataset.sessDrop, sd);
             const sc = e.target.closest('[data-sess-close]'); if (sc) return closeSession(sc.dataset.sessClose, sc);
