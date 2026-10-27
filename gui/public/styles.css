@@ -415,6 +415,8 @@ kbd { font: 500 11px var(--font-mono); color: var(--muted); background: #fff; bo
 .sess-main .t span { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 .sess-drop, .sess-x { border: 0; background: none; color: var(--muted); padding: 0 7px; cursor: pointer; display: flex; align-items: center; }
 .sess-drop { border-left: 1px solid var(--line); }
+.sess-relogin { display: inline-flex; align-items: center; gap: 5px; margin: 5px 4px 5px 0; padding: 0 9px; border: 1px solid var(--accent); border-radius: 9px; background: var(--surface); color: var(--accent-ink); font-size: 11.5px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.sess-relogin:hover { background: var(--accent-soft); }
 .sess-drop:hover, .sess-x:hover { background: var(--surface-2); color: var(--ink); }
 .sess-new { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border: 1px dashed var(--line-strong); border-radius: 12px; background: none; color: var(--accent-ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .sess-new:hover { background: var(--accent-soft); }

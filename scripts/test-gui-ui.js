@@ -516,6 +516,29 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForFunction(() => window.Pilot.state.sessions.length === 1, null, { timeout: 6000 });
         await sessionsGoneThenReselect();
     });
+    await test('sesi kedaluwarsa ("Belum login"): tombol Login ulang login lagi di jendela PIC yang sama', async () => {
+        fakes.ctl.sessions = [{ picId: 'p-andi', kind: 'entity', open: true, loggedIn: false, identity: '' }, { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0123 · CV Sample Niaga Mandiri' }];
+        await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 2, null, { timeout: 6000 });
+        const tabs = page.locator('.sess-tab');
+        assert.ok((await tabs.nth(0).textContent()).includes('Belum login'), 'tab sesi kedaluwarsa bertuliskan Belum login');
+        assert.strictEqual(await tabs.nth(0).locator('.sess-relogin').count(), 1, 'tombol Login ulang ada di sesi yang tidak login');
+        assert.strictEqual(await tabs.nth(1).locator('.sess-relogin').count(), 0, 'sesi yang masih login tanpa tombol Login ulang');
+        await shot('sesi-login-ulang');
+        calls.length = 0;
+        await tabs.nth(0).locator('.sess-relogin').click();
+        await pause(300);
+        const lg = calls.find((c) => c.url === '/api/actions/login-entity');
+        assert.ok(lg && lg.body.entity.pic_id === 'p-andi' && /Sejahtera/.test(lg.body.entity.entity_name), 'login otomatis entitas terpilih lewat PIC sesi itu');
+        // Sesi PIC lain berentitas banyak dan tak terbaca entitasnya: pilih entitas dulu.
+        fakes.ctl.sessions = [fakes.ctl.sessions[0], { picId: 'p-rina', kind: 'entity', open: true, loggedIn: false, identity: '' }];
+        await page.waitForFunction(() => document.querySelectorAll('.sess-relogin').length === 2, null, { timeout: 6000 });
+        calls.length = 0;
+        await page.locator('.sess-tab').nth(1).locator('.sess-relogin').click();
+        await page.waitForSelector('.sess-pop');
+        assert.ok(!calls.some((c) => c.url === '/api/actions/login-entity'), 'tanpa entitas yang jelas, belum ada login sebelum entitas dipilih');
+        await page.keyboard.press('Escape');
+        await sessionsGoneThenReselect();
+    });
     await test('memilih PIC pada entitas Hub ber-PIC banyak langsung memicu login otomatis (tanpa klik Masuk Coretax terpisah)', async () => {
         calls.length = 0;
         await page.keyboard.press('Control+k');

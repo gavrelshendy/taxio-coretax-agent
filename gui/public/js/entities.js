@@ -161,6 +161,24 @@
         if (!ent) { P.info('Entitas yang sedang terbuka di sesi ini belum bisa dikenali. Pilih entitasnya lewat panah di tab sesi.'); return; }
         E.select(ent, picId);
     };
+    /** "Login ulang" di tab sesi yang sudah tidak login: sesi manual membuka/menampilkan lagi jendela
+     *  login manualnya; sesi PIC menjalankan login otomatis yang sama dengan memilih entitas
+     *  (/api/actions/login-entity memakai ulang jendela PIC itu). Entitasnya: pilihan sekarang bila
+     *  milik PIC ini, entitas terakhir di jendela itu, satu-satunya entitas PIC, atau dipilih dulu. */
+    E.reloginSession = function (picId, anchor) {
+        const s = E.sessions().find((x) => x.picId === picId); if (!s) return;
+        if (s.kind === 'manual') return P.manual.open();
+        const cur = E.current();
+        const list = E.sessionEntities(picId);
+        const ent = (cur && cur.pic_id === picId) ? null : (E.sessionEntity(s) || (list.length === 1 ? list[0] : null));
+        if (!(cur && cur.pic_id === picId) && !ent) {
+            if (!list.length) { P.info('Belum ada entitas yang tertaut ke PIC sesi ini. Pilih entitas lewat Sesi baru.'); return; }
+            P.info('Pilih entitas untuk login ulang sesi ini.');
+            return E.openSessionPopover(picId, anchor);
+        }
+        if (ent) E.select(ent, picId);
+        autoLoginAfterSelect();
+    };
     E.sessionStripHtml = function () {
         const sess = E.sessions();
         if (!sess.length) return '';
@@ -177,8 +195,11 @@
             const run = P.run.busy(s.picId) ? P.run.runOf(s.picId) : null;
             const num = run ? P.icon('loader', 12, 'spin', 2.6) : String(i + 1);
             const tip = run ? 'Sedang berjalan: ' + run.label + (run.paused ? ' (dijeda)' : '') : 'Pakai sesi ini untuk unduhan';
+            // Jendela masih terbuka tapi Coretax tidak lagi login (sesi kedaluwarsa): login ulang di jendela itu.
+            const relogin = !run && !s.loggedIn && !s.identity;
             return '<div class="sess-tab' + (active ? ' active' : '') + (run ? ' busy' : '') + '">'
                 + '<button type="button" class="sess-main" data-sess="' + id + '" title="' + P.esc(tip) + '" aria-pressed="' + active + '"><span class="n">' + num + '</span><span class="t"><b>' + P.esc(who) + '</b><span>' + P.esc(run ? (run.paused ? 'Dijeda' : 'Sedang berjalan') : idText) + '</span></span></button>'
+                + (relogin ? '<button type="button" class="sess-relogin" data-sess-relogin="' + id + '" title="Sesi Coretax ini sudah tidak login - login ulang di jendela yang sama">' + P.icon('retry', 13, '', 2.2) + 'Login ulang</button>' : '')
                 + (manual ? '' : '<button type="button" class="sess-drop" data-sess-drop="' + id + '" aria-label="Pilih entitas di sesi ini" title="Ganti entitas di jendela ini · ' + n + ' entitas">' + P.icon('down', 14) + '</button>')
                 + '<button type="button" class="sess-x" data-sess-close="' + id + '" aria-label="Tutup sesi ini" title="Tutup jendela ini">' + P.icon('x', 13) + '</button></div>';
         }).join('');
