@@ -36,6 +36,14 @@ const {typed}=require('../lib/lampiran-export');
  await p.evaluate(()=>{let page=0;const a=document.getElementById('a');const draw=()=>{a.querySelector('tbody').innerHTML=Array.from({length:page===2?1:10},(_,i)=>'<tr><td>'+(i+1)+'</td><td>'+((page*10)+i+1)+'</td></tr>').join('');a.querySelector('.p-paginator span').textContent='Menampilkan '+(page*10+1)+' dari 21 entri';a.querySelector('.p-paginator-first').disabled=page===0;a.querySelector('.p-paginator-next').disabled=page===2;};a.querySelector('.p-paginator-first').onclick=()=>{page=0;draw()};a.querySelector('.p-paginator-next').onclick=()=>{page++;document.getElementById('c').style.display='none';draw()};draw();});
  p.setDefaultTimeout(3000);
  const three=await collectTab(p,'#root','Tiga tabel');assert.equal(three.tables.length,3);assert.equal(three.tables[0].collectedRows,21);
+ // pkg menyimpan file di luar pkg.assets sebagai bytecode tanpa teks sumber, sehingga page.evaluate(fungsi) gagal di exe
+ // saja (Pilot 3.0.6 MERATUS LINE 2026-10-21: "Lampiran tidak dapat dibuka: L1-D (tab tidak terlihat)").
+ {const {clickTab}=require('../automation/lampiran').__test;
+  for(const [file,fn] of [['automation/lampiran.js',clickTab],['lib/returnsheet-grid-api.js',require('../lib/returnsheet-grid-api').resetGridState],['automation/bpmp-amend.js',require('../automation/bpmp-amend').run]])
+   assert(!/\[native code\]/.test(String(fn)),file+' tanpa teks sumber di exe - tambahkan ke pkg.assets');
+  await p.setContent('<ul>'+['Induk','L1-D'].map((l,i)=>'<li class="'+(i?'':'p-highlight')+'"><a role="tab" aria-selected="'+!i+'"><span class="p-tabview-title">'+l+'</span></a></li>').join('')+'</ul>');
+  await p.evaluate(()=>document.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>document.querySelectorAll('li').forEach(li=>{const on=li.contains(a);li.classList.toggle('p-highlight',on);li.firstChild.setAttribute('aria-selected',String(on));}))));
+  assert(await clickTab(p,'L1-D',5000),'clickTab L1-D: '+clickTab.lastFailure);}
 ﻿ // Pemeriksaan tampilan yang dulu ada di sini (opsi PDF lampiran tersembunyi saat format Excel, tombol A1 dan PPh 21
  // untuk Restricted, tab fitur) terikat ke id elemen dashboard lama. Sejak dashboard ditulis ulang (Taxio Pilot)
  // pemeriksaan yang sama dijalankan di scripts/test-gui-ui.js terhadap tampilan yang sebenarnya.
