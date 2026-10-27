@@ -18,3 +18,7 @@ Control Hasil Impor*.xlsx
 Cek Hasil Dividen*.xlsx
 *.pdf
 .claude/settings.local.json
+# Kunci & rahasia — repo ini PUBLIC, jangan pernah commit file env
+.env
+.env.*
+!.env.example
