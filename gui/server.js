@@ -292,12 +292,16 @@ async function handleEntities(req, res, mode) {
     for (const projectId of connectedIds) {
         const s = state.get(projectId);
         try {
+            await sessionStore.refreshIfNeeded(s.client);
             const hasOwnerColumn = !!PROJECTS_WITH_OWNER_COLUMN[projectId];
             const list = await entitiesLib.listAutomatableEntities(s.client, s.orgId, s.user.id, hasOwnerColumn, mode);
             list.forEach((e) => { e.project = projectId; e.project_label = PROJECTS[projectId].label; });
             all.push(...list);
         } catch (e) {
-            errors.push(PROJECTS[projectId].label + ': ' + e.message);
+            // Sejak penguncian kredensial Taxio Hub (2026-10-21) coretax_pics hanya bisa dibaca saat login;
+            // permintaan tanpa sesi yang sah (token gagal diperbarui) ditolak dengan 42501.
+            const expired = e.code === '42501' || /permission denied/i.test(e.message || '');
+            errors.push(PROJECTS[projectId].label + ': ' + (expired ? 'sesi login sudah kedaluwarsa - putuskan lalu hubungkan ulang akun ini.' : e.message));
         }
     }
     // Satu baris per entitas: entitas dengan 2 PIC memilih PIC di dalam barisnya (sebelumnya
