@@ -427,6 +427,8 @@
             html += '<button type="button" class="pal-add" data-act="add"><span class="ent-av" style="background:var(--accent-soft);color:var(--accent)">' + P.icon('plus', 18, '', 2.2) + '</span><span>Tambah entitas baru</span></button>';
         }
         const seen = new Set();
+        // Galat pemuatan (mis. sesi Taxio Hub kedaluwarsa) dulu hanya terlihat sebagai "Belum ada entitas."
+        (E.errors || []).forEach((m) => { html += '<div class="pal-note" style="color:var(--danger, #dc2626)">' + P.icon('warn', 15) + '<span>' + P.esc(m) + '</span></div>'; });
 
         const me = E.manualEntity();
         if (me) { html += '<div class="pal-sec">SESI YANG SEDANG TERBUKA</div>' + rowHtml(me, push(me)); }
