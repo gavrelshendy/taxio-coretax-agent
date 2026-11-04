@@ -505,6 +505,11 @@ async function resolveEntitySource(res, entity) {
     const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
     const linkedOthers = await entitiesLib.getOtherLinkedPicIds(s.client, s.orgId, entity.entity_id, entity.pic_id).catch(() => []);
     const authorized = await entitiesLib.resolveAuthorizedPic(s.client, s.orgId, entity.pic_id, linkedOthers);
+    // A session that failed to refresh makes every PIC read anonymous, which Taxio Hub refuses the
+    // same way it refuses a PIC you may not use (Louis Fernando, editor, 2026-11-04) - say which.
+    if (authorized.denied && !(await s.client.auth.getUser().then(({ data, error }) => !error && data && data.user).catch(() => false))) {
+        sendJson(res, 401, { error: (PROJECTS[entity.project] || {}).label + ': sesi login sudah kedaluwarsa - putuskan lalu hubungkan ulang akun ini.' }); return null;
+    }
     if (authorized.denied) { sendJson(res, 403, { error: 'Anda tidak berwenang memakai PIC yang dipilih untuk entitas ini di Taxio Hub. Pilih PIC lain di palet entitas, atau minta admin memberi akses.' }); return null; }
     const passphrase = authorized.passphrase;
     const fallbackPicIds = authorized.fallbackPicIds;
