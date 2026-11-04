@@ -403,7 +403,7 @@
         const data = (r) => r.cache ? 'Cache · pembetulan ' + r.cache.revision : r.excel && /^Lengkap/.test(r.excel.data) ? 'Excel lama · pembetulan ' + r.excel.revision : r.excel ? esc(r.excel.data) : '—';
         const plan = (r) => (r.cache || (r.excel && /^Lengkap/.test(r.excel.data))) && r.pdf ? '<b>Pakai ulang</b>*' : r.excel && /Belum ada SPT/.test(r.excel.data) ? 'Dicek ulang' : 'Diunduh';
         const rows = i.rows.map((r) => '<tr><td>' + r.masa + '</td><td>' + data(r) + '</td><td style="text-align:center">' + (r.pdf ? '✓' : '—') + '</td><td>' + plan(r) + '</td></tr>').join('');
-        return buttons + '<div class="hint" style="margin-top:10px">' + (i.excel ? 'Excel: ' + esc(i.excel) : 'Tidak ada Excel rekap lama (Mode A1 - ' + st.year + '.xlsx) di sumber ini.') + (i.excelError ? ' <span class="warn">(' + esc(i.excelError) + ')</span>' : '') + '</div>'
+        return buttons + '<div class="hint" style="margin-top:10px">' + (i.excel ? 'Excel: ' + esc(i.excel) : 'Tidak ada Excel rekap lama (… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx) di sumber ini.') + (i.excelError ? ' <span class="warn">(' + esc(i.excelError) + ')</span>' : '') + '</div>'
             + '<table class="mini-table" style="width:100%;margin-top:6px;font-size:12.5px;border-collapse:collapse"><thead><tr><th style="text-align:left">Masa</th><th style="text-align:left">Data sebelumnya</th><th>PDF</th><th style="text-align:left">Rencana</th></tr></thead><tbody>' + rows + '</tbody></table>'
             + '<div class="hint" style="margin-top:6px">* Dipakai ulang bila versi SPT (pembetulan) di Coretax masih sama; bila ada pembetulan baru, masa itu diunduh. Rinciannya muncul di log saat proses berjalan.</div>';
     }
@@ -459,7 +459,7 @@
         init(year, years) { return { file: null, submit: false, year, years, latestError: '' }; },
         main(st) {
             const step = (n, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + n + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
-            // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (Mode A1 - <tahun>.xlsx).
+            // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (<kode> <tahun> - Rekap SPT PPh 21 Setahun (A1).xlsx).
             return P.card(1, 'Excel rekap', '<span>Hasil tab "Unduh setahun"</span>', '<div class="hint" style="font-size:13.5px">Tidak perlu template: pakai Excel hasil tab <b>Unduh setahun</b> (<b>Mode A1 - ' + st.year + '.xlsx</b>). Di sheet <b>BPMP per NIK</b>, NIK yang salah berwarna kuning dan kolom hijau <b>NIK Baru</b> / <b>Nama Baru</b> sudah terisi usulan bila ada - cocokkan dengan KTP, lengkapi yang kosong, simpan, lalu pilih filenya di sini. Baris yang kolom hijaunya kosong tidak disentuh.</div>'
                     + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Pakai rekap terakhir (' + st.year + ')</button></div>'
                     + (st.latestError ? '<div class="hint warn">' + esc(st.latestError) + '</div>' : '')

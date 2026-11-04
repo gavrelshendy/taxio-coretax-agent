@@ -986,7 +986,7 @@ async function runSptDownload(opts) {
         if(a1Book)await a1Book.renderSession.close().catch(()=>{});
     }
 
-    if(a1Book){const result=await a1Book.save(a1Dir,entity.entity_name);log('Mode A1: '+result.file+(result.partial?' — BELUM LENGKAP, periksa sheet Kontrol.':' — selesai.'));if(result.nik&&result.nik.nik)log('Mode A1: '+result.nik.nik+' NIK bermasalah ('+result.nik.bukti+' bukti potong) — lihat sheet Analisis NIK dan Draft Pembetulan.');}
+    if(a1Book){const result=await a1Book.save(a1Dir,entity.entity_name,entity.entity_id);log('Mode A1: '+result.file+(result.partial?' — BELUM LENGKAP, periksa sheet Kontrol.':' — selesai.'));if(result.nik&&result.nik.nik)log('Mode A1: '+result.nik.nik+' NIK bermasalah ('+result.nik.bukti+' bukti potong) — lihat sheet Analisis NIK dan Draft Pembetulan.');}
 
     // Rincian eksplisit, bukan cuma "N kombinasi selesai" - angka itu sendirian ambigu karena
     // naik sama saja baik kombinasinya benar-benar mengunduh dokumen maupun cuma menemukan 0
