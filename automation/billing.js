@@ -93,10 +93,14 @@ function attachApiAuthCapture(page) {
     });
     return state;
 }
+/** Waits for x-dgt-code too (2026-11-03): a run that fired before Angular's first request carrying
+ *  it sent "x-dgt-code": null, and get-tax-period answered 500 "BitConverter.ToInt32 - Destination
+ *  array is not long enough" (EKO SANJOYO, three runs in a row, each within ~1 dtk of starting).
+ *  dgtCode stays optional past the deadline - it is not proven required on every endpoint. */
 async function waitForAuthCaptured(authState, timeoutMs) {
     const start = Date.now();
-    while (!authState.authorization || !authState.taxpayerId) {
-        if (Date.now() - start > timeoutMs) return false;
+    while (!authState.authorization || !authState.taxpayerId || !authState.dgtCode) {
+        if (Date.now() - start > timeoutMs) return !!(authState.authorization && authState.taxpayerId);
         await _sleep(300);
     }
     return true;
@@ -172,11 +176,33 @@ function mmYYToStartDatePrefix(mmYY) {
     return '20' + yy + '-' + mm + '-';
 }
 
+/** Same MM+MM+YYYY form spt.js's mmYYToTaxPeriodCode uses (verified live against ledger and
+ *  activebillingcode/list PeriodCodes). Only a fallback for the two guards when get-tax-period
+ *  keeps failing - the wizard still picks the period by its label, and refuses one Coretax does
+ *  not offer. */
+function mmYYToFallbackPeriodCode(mmYY) {
+    const mm = mmYY.slice(0, 2);
+    return mm + mm + '20' + mmYY.slice(2);
+}
+
+/** get-tax-period is retried (2026-11-03): Coretax answers it with intermittent 500s. Between
+ *  attempts the self-billing page is reloaded so fresh auth headers are captured. Returns null when
+ *  every attempt failed on the server side; a period missing from a good list still throws. */
 async function resolveTaxPeriodCode(page, authState, taxTypeAndPaymentCode, mmYY) {
-    const { status, json } = await apiPost(page, authState, API_PAYMENT + '/createbillingcode/get-tax-period', {
-        TaxpayerAggregateIdentifier: authState.taxpayerId, TaxTypeAndTaxPaymentCode: taxTypeAndPaymentCode, LanguageId: 'id-ID'
-    });
-    if (status !== 200 || !json || json.IsSuccessful === false) throw new Error('Gagal mengambil daftar periode: HTTP ' + status);
+    let status = 0, json = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        ({ status, json } = await apiPost(page, authState, API_PAYMENT + '/createbillingcode/get-tax-period', {
+            TaxpayerAggregateIdentifier: authState.taxpayerId, TaxTypeAndTaxPaymentCode: taxTypeAndPaymentCode, LanguageId: 'id-ID'
+        }));
+        if (status === 200 && json && json.IsSuccessful !== false) break;
+        if (attempt === 3) { log('Daftar periode Coretax tetap gagal (HTTP ' + status + ') setelah 3 percobaan - lanjut dengan kode periode ' + mmYYToFallbackPeriodCode(mmYY) + '.'); return null; }
+        log('Daftar periode Coretax gagal (HTTP ' + status + ', percobaan ' + attempt + '/3) - memuat ulang halaman lalu mencoba lagi...');
+        await runcontrol.checkpoint();
+        authState.dgtCode = null;
+        await page.goto(SELF_BILLING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        await waitForAuthCaptured(authState, 15000);
+        await _sleep(1500 * attempt);
+    }
     const prefix = mmYYToStartDatePrefix(mmYY);
     const match = (json.Payload || []).find((r) => r.ParameterDataList && String(r.ParameterDataList.StartDate || '').indexOf(prefix) === 0);
     if (!match) throw new Error('Masa pajak ' + mmYY + ' tidak tersedia untuk pembuatan Kode Billing (mungkin sudah lewat atau belum dibuka Coretax).');
@@ -200,7 +226,7 @@ async function selectDropdownOption(page, triggerSelector, labelRegex, label) {
     await page.locator(triggerSelector).click({ timeout: 8000, force: true });
     await page.waitForTimeout(700);
     const option = page.locator('.p-dropdown-item, .p-dropdown-items li, [role="option"]').filter({ hasText: labelRegex }).first();
-    const visible = await option.isVisible({ timeout: 5000 }).catch(() => false);
+    const visible = await option.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
     if (!visible) throw new Error('Opsi "' + label + '" tidak ditemukan di dropdown Coretax - mungkin belum dibuka atau formatnya berubah.');
     await option.click({ timeout: 5000, force: true });
     await page.waitForTimeout(400);
@@ -222,19 +248,31 @@ async function createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nomin
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(1500);
 
-    await selectDropdownOption(page, '#TaxTypeTaxPayment', new RegExp('^' + escapeRegex(taxTypeAndPaymentCode)), taxTypeAndPaymentCode);
+    // The period list is Coretax's own get-tax-period call, fired when the KAP is picked - the
+    // same endpoint that answers intermittent 500s. Picking the KAP again refetches it.
     const periodLabel = mmYYToPeriodLabel(mmYY);
-    await selectDropdownOption(page, '#TaxPeriod', new RegExp('^' + escapeRegex(periodLabel) + '$'), periodLabel);
+    for (let attempt = 1; ; attempt++) {
+        try {
+            await selectDropdownOption(page, '#TaxTypeTaxPayment', new RegExp('^' + escapeRegex(taxTypeAndPaymentCode)), taxTypeAndPaymentCode);
+            await selectDropdownOption(page, '#TaxPeriod', new RegExp('^' + escapeRegex(periodLabel) + '$'), periodLabel);
+            break;
+        } catch (e) {
+            if (attempt === 3) throw e;
+            log(e.message + ' (percobaan ' + attempt + '/3) - memilih ulang KAP-KJS agar Coretax memuat ulang daftar periode...');
+            await page.keyboard.press('Escape').catch(() => {});
+            await page.waitForTimeout(2000 * attempt);
+        }
+    }
 
     const nextBtn2 = page.locator('#Next');
-    const hasNext2 = await nextBtn2.isVisible({ timeout: 5000 }).catch(() => false);
+    const hasNext2 = await nextBtn2.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
     if (!hasNext2) throw new Error('Tombol Lanjut step 2 tidak ditemukan setelah memilih KAP-KJS/Periode.');
     await nextBtn2.click({ timeout: 5000, force: true });
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(1500);
 
     const amountInput = page.locator('#AmountInput');
-    const hasAmount = await amountInput.isVisible({ timeout: 8000 }).catch(() => false);
+    const hasAmount = await amountInput.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
     if (!hasAmount) throw new Error('Field Nominal (step 3) tidak ditemukan - kemungkinan wizard Coretax berubah.');
     await amountInput.click({ timeout: 5000 });
     await amountInput.fill(String(nominal), { timeout: 5000 });
@@ -242,13 +280,13 @@ async function createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nomin
     await page.waitForTimeout(500);
 
     const submitBtn = page.locator('[id="Download Billing Code"]');
-    const hasSubmit = await submitBtn.isVisible({ timeout: 5000 }).catch(() => false);
+    const hasSubmit = await submitBtn.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
     if (!hasSubmit) throw new Error('Tombol "Unduh Kode Billing" tidak ditemukan.');
 
     await chrome.markAutomatedDownload(page, true);
     try {
         const [download] = await Promise.all([
-            page.waitForEvent('download', { timeout: 30000 }),
+            page.waitForEvent('download', { timeout: 60000 }),
             submitBtn.click({ timeout: 5000, force: true })
         ]);
         const tmpPath = await download.path();
@@ -409,7 +447,7 @@ async function runBillingPph25(opts) {
 
     const taxTypeCode = TAX_TYPE_CODE[entity.individual ? 'individual' : 'badan'];
     const taxTypeAndPaymentCode = taxTypeCode + '-' + TAX_PAYMENT_CODE;
-    const taxPeriodCode = await resolveTaxPeriodCode(page, authState, taxTypeAndPaymentCode, mmYY);
+    const taxPeriodCode = await resolveTaxPeriodCode(page, authState, taxTypeAndPaymentCode, mmYY) || mmYYToFallbackPeriodCode(mmYY);
 
     // Check 1: already paid? (Buku Besar) - this is the definitive check; a paid period drops
     // off the active-codes list entirely, so this MUST run before the Nominal-based duplicate
@@ -434,7 +472,21 @@ async function runBillingPph25(opts) {
     }
 
     await runcontrol.checkpoint();
-    const buffer = await createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nominal);
+    let buffer;
+    try {
+        buffer = await createBillingCodeByClick(page, taxTypeAndPaymentCode, mmYY, nominal);
+    } catch (e) {
+        // The submit can create the code on Coretax's side while the PDF download never arrives
+        // (SOHENDRA, SO 2026-11-03: "Timeout ... waiting for event download"). Clicking again would
+        // make a second code, so look it up instead and download that one.
+        if (!/waiting for event "download"/.test(String(e && e.message))) throw e;
+        log('PDF Kode Billing tidak terunduh dalam 60 dtk - memeriksa apakah kodenya sudah terbentuk di Coretax...');
+        let made = null;
+        for (let i = 0; i < 4 && !made; i++) { await _sleep(3000); made = await findLikelyExistingBilling(page, authState, nominal, taxPeriodCode); }
+        if (!made) throw new Error('Coretax tidak mengirim PDF Kode Billing dalam 60 dtk dan kodenya belum muncul di Daftar Kode Billing Aktif. Cek di Coretax sebelum mencoba lagi agar tidak terbuat ganda.');
+        log('Kode Billing ternyata sudah terbentuk: ' + made.BillingCode + ' - mengunduh PDF-nya.');
+        buffer = await downloadExistingBillingCode(page, authState, made);
+    }
 
     const filePath = saveBillingPdf(entity, mmYY, buffer, opts.saveRoot, opts.compFolder);
     log('Kode Billing PPh 25 dibuat: ' + path.basename(filePath));
