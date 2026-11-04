@@ -296,9 +296,9 @@ const SIZE_STEPS = [10, 25, 50, 100, 250, 500];
  *  it. Throws with `.isSessionExpired = true` on a 401. */
 async function fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeState, emit) {
     const filters = [
-        { PropertyName: 'TaxTypeCode', Value: taxTypeCodes, MatchMode: 'contains', CaseSensitive: true, AsString: false },
-        { PropertyName: 'TaxPeriodCode', Value: taxPeriodCode, MatchMode: 'equals', CaseSensitive: true, AsString: false }
+        { PropertyName: 'TaxTypeCode', Value: taxTypeCodes, MatchMode: 'contains', CaseSensitive: true, AsString: false }
     ];
+    if (taxPeriodCode) filters.push({ PropertyName: 'TaxPeriodCode', Value: taxPeriodCode, MatchMode: 'equals', CaseSensitive: true, AsString: false });
     const all = [];
     let first = 0;
     for (;;) {
@@ -319,6 +319,60 @@ async function fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeSt
         first += sizeState.current;
     }
     return all;
+}
+
+const ID_MONTHS = ['januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november', 'desember'];
+const FISCAL_LABEL = /\b([A-Za-z]+)\s+(\d{4})\s*-\s*([A-Za-z]+)\s+(\d{4})\b/;
+
+/** Tahun buku tidak sama dengan tahun kalender (2026-11-04: masa "Juli 2025 - Juni 2026" di
+ *  Coretax) - annualYearToTaxPeriodCode hanya membentuk "0112YYYY", jadi entitas itu selalu
+ *  "Tidak ada data". Yang diminta tahun pajak Y = tahun buku yang DIMULAI di tahun Y. Kode periode
+ *  tahun buku seperti itu belum pernah terlihat live, jadi tidak ditebak: semua SPT tahunan jenis
+ *  ini diambil, lalu tahun mulainya dibaca dari label masa pada baris ("Juli 2025 - Juni 2026")
+ *  bila ada, atau dari kode SSEEYYYY yang menyeberang tahun (SS > EE) - YYYY tahun mulai ATAU
+ *  tahun akhir; bila keduanya memberi jawaban berbeda untuk baris yang ada, berhenti dan sebutkan
+ *  masa yang tersedia daripada mengunduh tahun yang salah. */
+async function resolveFiscalYearRows(page, authState, taxTypeCodes, year, sizeState, emit) {
+    const all = await fetchAllRows(page, authState, taxTypeCodes, null, sizeState, () => {});
+    const periods = new Map();
+    for (const row of all) {
+        const m = /^(\d{2})(\d{2})(\d{4})$/.exec(String(row.TaxPeriodCode || ''));
+        if (!m || m[1] === m[2] || (m[1] === '01' && m[2] === '12')) continue;
+        const label = Object.values(row).map((v) => typeof v === 'string' && FISCAL_LABEL.exec(v)).find((x) => x && ID_MONTHS.includes(x[1].toLowerCase()));
+        const crosses = +m[1] > +m[2], y = +m[3];
+        const starts = label ? [+label[2]] : crosses ? [y, y - 1] : [y];
+        if (!periods.has(row.TaxPeriodCode)) periods.set(row.TaxPeriodCode, { code: row.TaxPeriodCode, starts, label: label ? label[0] : '', rows: [] });
+        periods.get(row.TaxPeriodCode).rows.push(row);
+    }
+    const describe = (p) => (p.label || 'kode ' + p.code);
+    if (!periods.size) return null;
+    // Coretax encodes every such code the same way, so one code that settles whether YYYY is the
+    // start or the end year settles all of them: a row's own label, or a reading that would put
+    // the end of the tahun buku after today (no SPT exists for a year that has not ended).
+    const now = new Date(), nowIndex = now.getFullYear() * 12 + now.getMonth();
+    let yearIsStart = null;
+    for (const p of periods.values()) {
+        const y = +p.code.slice(4), ee = +p.code.slice(2, 4);
+        if (p.starts.length === 1 && p.label) { yearIsStart = p.starts[0] === y; break; }
+        if (p.starts.length > 1 && (y + 1) * 12 + ee - 1 > nowIndex) yearIsStart = false;
+    }
+    if (yearIsStart !== null) for (const p of periods.values()) if (p.starts.length > 1) p.starts = [yearIsStart ? +p.code.slice(4) : +p.code.slice(4) - 1];
+    const sure = [...periods.values()].filter((p) => p.starts.length === 1 && p.starts[0] === +year);
+    const maybe = [...periods.values()].filter((p) => p.starts.length > 1 && p.starts.includes(+year));
+    if (sure.length === 1 && !maybe.length) {
+        emit('Tahun buku tidak sama dengan tahun kalender: tahun pajak ' + year + ' = ' + describe(sure[0]) + '.');
+        return { rows: sure[0].rows, taxPeriodCode: sure[0].code };
+    }
+    if (!sure.length && maybe.length === 1) {
+        const p = maybe[0], mm = (n) => ID_MONTHS[+n - 1];
+        const a = mm(p.code.slice(0, 2)) + ' ' + p.code.slice(4) + ' - ' + mm(p.code.slice(2, 4)) + ' ' + (+p.code.slice(4) + 1);
+        const b = mm(p.code.slice(0, 2)) + ' ' + (+p.code.slice(4) - 1) + ' - ' + mm(p.code.slice(2, 4)) + ' ' + p.code.slice(4);
+        throw new Error('Tahun buku entitas ini tidak sama dengan tahun kalender, dan kode masa Coretax ' + p.code + ' bisa berarti "' + a + '" atau "' + b
+            + '". Belum bisa dipastikan mana yang tahun pajak ' + year + ' - laporkan ke pengembang beserta masa yang terlihat di Coretax.');
+    }
+    if (sure.length + maybe.length > 1) throw new Error('Tahun pajak ' + year + ' cocok dengan lebih dari satu masa tahunan: ' + [...sure, ...maybe].map(describe).join(', ') + '.');
+    emit('Masa tahunan yang ada untuk entitas ini: ' + [...periods.values()].map(describe).join(', ') + ' - tidak ada yang dimulai di tahun ' + year + '.');
+    return null;
 }
 
 /** CONFIRMED LIVE 2026-08-05 (real user report - generate suddenly failing with HTTP 400 on
@@ -401,9 +455,13 @@ const GENERATE_POLL_WAIT_MS = 5000;
 async function processSptCombo(ctx) {
     const { page, authState, saveDir, entityCode, entityNpwp, mmYY, taxTypeCodes, sizeState, compFolder, onRowDone, signParam, isAnnual,
         includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, saveRoot, log: emit } = ctx;
-    const taxPeriodCode = isAnnual ? annualYearToTaxPeriodCode(mmYY) : mmYYToTaxPeriodCode(mmYY);
+    let taxPeriodCode = isAnnual ? annualYearToTaxPeriodCode(mmYY) : mmYYToTaxPeriodCode(mmYY);
     let downloadedAny = false;
-    const rows = await fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeState, emit);
+    let rows = await fetchAllRows(page, authState, taxTypeCodes, taxPeriodCode, sizeState, emit);
+    if (isAnnual && !rows.length) {
+        const fiscal = await resolveFiscalYearRows(page, authState, taxTypeCodes, mmYY, sizeState, emit);
+        if (fiscal) ({ rows, taxPeriodCode } = fiscal);
+    }
     if(ctx.a1Book)ctx.a1Book.register(mmYY,rows);
     if (!rows.length) { emit('Tidak ada data untuk filter ini.'); return { downloadedAny: false, foundAny: false }; }
     emit('Total data: ' + rows.length + ' baris.');
