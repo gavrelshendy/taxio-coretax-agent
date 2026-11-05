@@ -714,13 +714,16 @@ async function runSptDownload(opts) {
         throw new Error('SPT Orang Pribadi hanya bisa diproses untuk entitas Individual (login langsung, tanpa impersonate).');
     }
     const masaList = isAnnual ? parseAnnualYearListInput(opts.masaInput) : parseMasaListInput(opts.masaInput);
-    const saveRoot = a1Book ? a1SaveRoot(opts.saveRoot, entity.entity_id) : (opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'));
-    const a1Dir = a1Book ? path.join(saveRoot, entity.entity_id, 'SPT', 'A1', String(opts.a1Year)) : null;
-    if (a1Book) a1Book.cacheDir = path.join(a1Dir, '.a1-cache');
+    // Mode A1: rekap ke folder Tax Server entitas bila ada (lib/a1-paths.js); PDF & cache tetap di folder lokal.
+    const a1P = a1Book ? require('../lib/a1-paths').a1Paths({ entity, year: opts.a1Year, root: a1SaveRoot(opts.saveRoot, entity.entity_id), outDir: opts.a1OutDir || undefined }) : null;
+    const saveRoot = a1Book ? a1P.root : (opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'));
+    const a1Dir = a1Book ? a1P.outDir : null;
+    if (a1Book) { a1Book.cacheDir = a1P.cacheDir; log('Mode A1 - rekap disimpan ke ' + a1Dir + (a1P.taxServer ? ' (folder Tax Server).' : '.')); }
     // Hasil sebelumnya: folder A1 standar, atau folder / Excel Mode A1 lama yang dipilih (opts.a1Source).
     if (a1Book && !opts.a1Fresh) {
         try {
-            const src = await require('../lib/a1-source').load({ a1Dir, source: opts.a1Source, year: opts.a1Year });
+            const src = await require('../lib/a1-source').load({ a1Dir: a1P.readDirs, source: opts.a1Source, year: opts.a1Year });
+            if (src.excel && path.resolve(path.dirname(src.excel)) !== path.resolve(a1Dir)) a1Book.previousFile = src.excel;
             a1Book.readDirs = src.cacheDirs.filter((d) => path.resolve(d) !== path.resolve(a1Book.cacheDir));
             a1Book.seed = src.seed;
             log('Mode A1 - hasil sebelumnya: ' + (src.excel ? 'Excel ' + src.excel + ' (' + Object.keys(src.seed).length + ' masa lengkap)' : 'tanpa Excel') + (src.cacheDirs.length ? ' + cache ' + src.cacheDirs.length + ' folder' : '') + '.');
