@@ -22,3 +22,6 @@ Cek Hasil Dividen*.xlsx
 .env
 .env.*
 !.env.example
+# Data klien yang ditaruh di root (KK, template impor BPA1/BPMP/BP21 terisi, dll.) - repo PUBLIC, jangan pernah ikut.
+/*.xlsx
+!/Template Impor Dividen - Coretax Agent.xlsx

@@ -986,7 +986,9 @@ async function runSptDownload(opts) {
         if(a1Book)await a1Book.renderSession.close().catch(()=>{});
     }
 
-    if(a1Book){const result=await a1Book.save(a1Dir,entity.entity_name,entity.entity_id);log('Mode A1: '+result.file+(result.partial?' — BELUM LENGKAP, periksa sheet Kontrol.':' — selesai.'));if(result.nik&&result.nik.nik)log('Mode A1: '+result.nik.nik+' NIK bermasalah ('+result.nik.bukti+' bukti potong) — lihat sheet Analisis NIK dan Draft Pembetulan.');}
+    if(a1Book){const result=await a1Book.save(a1Dir,entity.entity_name,entity.entity_id);
+     // Bukti potong e-Bupot sekarang vs yang terlapor di SPT (lib/ebupot-vs-spt.js); gagal tidak menggagalkan rekapnya.
+     if(page&&!stopped){try{await require('../lib/ebupot-vs-spt').run({context:page.context(),npwp:entity.npwp||null,file:result.file,year:opts.a1Year,emit:log});}catch(e){log('Cek e-Bupot vs SPT gagal: '+e.message);}}log('Mode A1: '+result.file+(result.partial?' — BELUM LENGKAP, periksa sheet Ringkasan.':' — selesai.'));if(result.nik&&result.nik.nik)log('Mode A1: '+result.nik.nik+' NIK bermasalah ('+result.nik.bukti+' bukti potong) — lihat sheet NIK (kolom Kategori) dan Pembetulan.');}
 
     // Rincian eksplisit, bukan cuma "N kombinasi selesai" - angka itu sendirian ambigu karena
     // naik sama saja baik kombinasinya benar-benar mengunduh dokumen maupun cuma menemukan 0

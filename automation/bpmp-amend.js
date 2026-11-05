@@ -1,5 +1,5 @@
 /* Pembetulan NIK BPMP Telah Terbit lewat API Coretax (tanpa mengetik di formulir), dari kolom hijau
- * NIK Baru / Nama Baru sheet "BPMP per NIK" Excel Mode A1. Dipakai menu OTOMASI "Pembetulan NIK BPMP"
+ * NIK Baru / Nama Baru sheet "NIK" Excel Rekap PPh 21 Setahun (A1). Dipakai menu OTOMASI "Pembetulan NIK BPMP"
  * (gui/server.js) dan scripts/bpmp-amend.js.
  *
  * Alurnya sama dengan formulir "Ubah" Coretax: NIK baru divalidasi lewat /taxpayerdetail (respons terenkripsi
@@ -21,29 +21,35 @@ const TEMP = '9990000000999000';
 // Boleh berubah karena pembetulan; kolom lain harus identik dengan cadangan.
 const ALLOWED = new Set(['RecordId', 'WithholdingslipsAggregateIdentifier', 'TaxIdentificationNumber', 'Name', 'WithholdingSlipsStatus', 'CreationDate', 'IsReportedToTaxReturn', 'LastUpdatedDate', 'WithholdingSlipsDate']);
 
-/** Isian NIK Baru / Nama Baru dari sheet "BPMP per NIK" (Excel Mode A1 format terbaru). */
+/** Isian NIK Baru / Nama Baru dari sheet "NIK" (rekap 2026-11-05, judul kolom di baris 1), atau "BPMP per NIK"
+ *  Excel Mode A1 sebelumnya (judul kolom di baris 5). Kolom dicari menurut judulnya, bukan posisinya. */
 async function readTargets(source) {
     const wb = new ExcelJS.Workbook();
     if (Buffer.isBuffer(source)) await wb.xlsx.load(source); else await wb.xlsx.readFile(source);
-    const ws = wb.getWorksheet('BPMP per NIK');
-    if (!ws) throw new Error('Sheet "BPMP per NIK" tidak ada - pakai Excel Mode A1 format terbaru.');
-    const head = ws.getRow(5).values;
-    if (head[3] !== 'NIK lama (dari #)' || head[4] !== 'NIK Baru' || head[5] !== 'Nama Baru') throw new Error('Kolom NIK Baru / Nama Baru tidak ditemukan - susun ulang Excel dengan format terbaru.');
+    const ws = wb.getWorksheet('NIK') || wb.getWorksheet('BPMP per NIK');
+    if (!ws) throw new Error('Sheet "NIK" tidak ada - pakai Excel Rekap PPh 21 Setahun (A1) format terbaru.');
+    // Baris judul: kolom A = "NIK" dan B = "Nama" (sheet NIK: baris 6, di bawah kop dan total; BPMP per NIK lama: baris 5).
+    let headRow = 0; ws.eachRow((row, n) => { if (!headRow && n <= 10 && String(row.getCell(1).value || '').trim() === 'NIK' && String(row.getCell(2).value || '').trim() === 'Nama') headRow = n; });
+    if (!headRow) throw new Error('Judul kolom sheet ' + ws.name + ' tidak ditemukan - susun ulang Excel dengan format terbaru.');
+    const col = new Map();
+    ws.getRow(headRow).eachCell((c, i) => col.set(String(c.value || '').trim(), i));
+    const [cNik, cOld, cNew, cName] = ['NIK', 'NIK lama (dari #)', 'NIK Baru', 'Nama Baru'].map((h) => col.get(h));
+    if (!cNik || !cOld || !cNew || !cName) throw new Error('Kolom NIK Baru / Nama Baru tidak ditemukan di sheet ' + ws.name + ' - susun ulang Excel dengan format terbaru.');
     const text = (v) => v && typeof v === 'object' ? ('result' in v ? v.result : v.text) : v;
     const targets = [], skipped = [];
     ws.eachRow((row, n) => {
-        if (n < 6) return;
-        const nik = String(text(row.getCell(1).value) || '').trim(); if (!/^\d{16}$/.test(nik)) return;
-        const raw = text(row.getCell(4).value); if (raw === null || raw === undefined || raw === '') return;
-        const old = nik === TEMP ? String(text(row.getCell(3).value) || '').trim() : nik;
+        if (n <= headRow) return;
+        const nik = String(text(row.getCell(cNik).value) || '').trim(); if (!/^\d{16}$/.test(nik)) return;
+        const raw = text(row.getCell(cNew).value); if (raw === null || raw === undefined || raw === '') return;
+        const old = nik === TEMP ? String(text(row.getCell(cOld).value) || '').trim() : nik;
         if (typeof raw === 'number') { skipped.push(old + ': NIK Baru tersimpan sebagai angka (digit akhir bisa hilang) - ketik ulang sebagai teks.'); return; }
-        const newNik = String(raw).trim(), newName = String(text(row.getCell(5).value) || '').trim();
+        const newNik = String(raw).trim(), newName = String(text(row.getCell(cName).value) || '').trim();
         if (!/^\d{16}$/.test(newNik)) { skipped.push(old + ': NIK Baru "' + newNik + '" bukan 16 digit.'); return; }
         if (!newName) { skipped.push(old + ': Nama Baru kosong.'); return; }
         if (!/^\d{16}$/.test(old)) { skipped.push((old || nik) + ': NIK lama tidak terbaca.'); return; }
         targets.push({ temp: nik === TEMP, old, newNik, newName });
     });
-    // Hasil pembetulan sebelumnya (sheet "Hasil Pembetulan", lib/bpmp-report.js) - untuk melanjutkan tanpa mengulang.
+    // Hasil pembetulan sebelumnya (sheet "Pembetulan", lib/bpmp-report.js) - untuk melanjutkan tanpa mengulang.
     const previous = require('../lib/bpmp-report').readPrevious(wb);
     // Tahun dari kop lampiran ("... · Tahun 2026").
     let year = null;
@@ -87,11 +93,12 @@ async function openSession(context, npwp) {
     if (!auth.claims) { await close(); throw new Error('Sesi API e-Bupot Coretax tidak tertangkap - pastikan jendela PIC sudah login.'); }
     if (npwp && auth.claims.sub !== npwp) { await close(); throw new Error('Jendela Coretax sedang sebagai ' + auth.claims.sub + ' (' + auth.claims.full_name + '), bukan ' + npwp + ' - dihentikan.'); }
     const post = (url, body) => page.evaluate(async ([url, body, a]) => { const r = await fetch(url, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', Authorization: a.authorization, 'x-dgt-code': a.dgtCode }, body: JSON.stringify(body) }); let j = null; try { j = await r.json(); } catch (e) {} return { status: r.status, json: j }; }, [url, body, auth]);
-    const list = async (endpoint, code) => {
+    // property: filter masa - TaxPeriodCode (BPMP, BP21), IncomePeriodCodeEnd (BPA1; automation/ebupot.js PERIOD_FILTER_PROPERTY).
+    const list = async (endpoint, code, property = 'TaxPeriodCode') => {
         const rows = [];
         for (let first = 0; ; first += 500) {
-            const r = await post(API + '/' + endpoint, { First: first, Rows: 500, SortField: '', SortOrder: 1, Filters: [{ PropertyName: 'TaxPeriodCode', Value: code, MatchMode: 'equals', CaseSensitive: true, AsString: false }], LanguageId: 'id-ID', TaxpayerAggregateIdentifier: auth.claims.taxpayer_id });
-            if (r.status !== 200 || !r.json) throw new Error('Daftar BPMP ' + code + ' gagal: HTTP ' + r.status);
+            const r = await post(API + '/' + endpoint, { First: first, Rows: 500, SortField: '', SortOrder: 1, Filters: [{ PropertyName: property, Value: code, MatchMode: 'equals', CaseSensitive: true, AsString: false }], LanguageId: 'id-ID', TaxpayerAggregateIdentifier: auth.claims.taxpayer_id });
+            if (r.status !== 200 || !r.json) throw new Error('Daftar ' + endpoint + ' ' + code + ' gagal: HTTP ' + r.status);
             const d = (r.json.Payload && r.json.Payload.Data) || []; rows.push(...d);
             if (d.length < 500) break;
         }
@@ -105,7 +112,7 @@ async function openSession(context, npwp) {
  *  dirapikan. 'similar': jumlah kata sama, tiap kata berawalan huruf sama dan beda paling banyak sepertiga
  *  hurufnya (jarak edit), total beda <= 3 huruf, dan minimal satu kata persis sama. Nama satu kata tidak pernah
  *  'similar' (RINA/RITA bisa dua orang berbeda)
- *  - salah eja seperti FAHRUL RIZAL / FAHROR RIZAL. Selain itu 'different': kemungkinan NIK milik orang lain. */
+ *  - salah eja seperti BUDI SANTOSO / BUDI SANTOSA. Selain itu 'different': kemungkinan NIK milik orang lain. */
 const normName = (s) => String(s || '').toUpperCase().replace(/[^A-Z\s]/g, ' ').replace(/\s+/g, ' ').trim();
 function editDistance(a, b) {
     let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -148,7 +155,7 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
             const slips = all.filter((r) => t.temp ? String(r.Name || '').trim().endsWith('#' + t.old) && r.TaxIdentificationNumber === TEMP : r.TaxIdentificationNumber === t.old);
             if (!slips.length) {
                 const done = (previous.get(t.old) || []).filter((p) => /^DIBETULKAN/.test(p.status));
-                emit(done.length ? 'SUDAH ' + t.old + ' -> ' + done[0].newNik + ' ' + done[0].name + ': ' + done.length + ' bukti potong dibetulkan ' + done[0].at + ' (sheet Hasil Pembetulan) - dilewati.' : t.old + ': tidak ada BPMP terbit ber-NIK ini (mungkin sudah dibetulkan).');
+                emit(done.length ? 'SUDAH ' + t.old + ' -> ' + done[0].newNik + ' ' + done[0].name + ': ' + done.length + ' bukti potong dibetulkan ' + done[0].at + ' (sheet Pembetulan) - dilewati.' : t.old + ': tidak ada BPMP terbit ber-NIK ini (mungkin sudah dibetulkan).');
                 continue;
             }
             if (!checked.has(t.newNik)) checked.set(t.newNik, await s.lookup(t.newNik));
@@ -226,7 +233,7 @@ async function check({ context, npwp, dirs, emit = () => {} }) {
     return { ok, bad, details };
 }
 
-/** NIK bermasalah, aturan yang sama dengan sheet BPMP per NIK Mode A1 (lib/a1-workbook.js nikIssues): NIK
+/** NIK bermasalah, aturan yang sama dengan sheet NIK rekap Mode A1 (lib/a1-workbook.js nikIssues): NIK
  *  sementara, atau nomor urut 0000. Ditambah: bukan 16 digit. Pegawai asing (paspor, bukan NIK) dikecualikan. */
 function nikProblem(slip) {
     const id = String(slip.TaxIdentificationNumber || '').trim();
@@ -243,17 +250,20 @@ function nikProblem(slip) {
  *  Tidak bergantung pada SPT Masa (Mode A1 baru berubah setelah SPT Masa-nya dibetulkan). */
 async function sweep({ context, npwp, year, outDir, emit = () => {} }) {
     const s = await openSession(context, npwp);
-    const problems = [], sptMasa = [];
+    const problems = [], sptMasa = [], amendedSlips = [];
     let total = 0;
     try {
         for (let m = 1; m <= 12; m++) {
             const mm = String(m).padStart(2, '0'), rows = await s.list('getebupotmpissued', mm + mm + year);
             total += rows.length;
-            for (const r of rows) { const why = nikProblem(r); if (why) problems.push({ nik: r.TaxIdentificationNumber, name: String(r.Name || '').trim(), number: r.WithholdingSlipsNumber, masa: mm, status: r.WithholdingSlipsStatus, why }); }
+            const gross = (r) => Number(r.GrossIncome ?? r.TaxBase) || 0, tax = (r) => Number(r.IncomeTaxWithheld ?? r.IncomeTax) || 0;
+            for (const r of rows) { const why = nikProblem(r); if (why) problems.push({ nik: r.TaxIdentificationNumber, name: String(r.Name || '').trim(), number: r.WithholdingSlipsNumber, masa: mm, status: r.WithholdingSlipsStatus, why, gross: gross(r), tax: tax(r) }); }
             // Bukti potong pembetulan yang belum dilaporkan di SPT = SPT Masa masa ini belum dibetulkan. (Semua 24 cadangan
-            // BKA 2026-11-05 bernilai IsReportedToTaxReturn true sebelum dibetulkan; nilai sesudah SPT pembetulan belum terlihat live.)
+            // uji live 2026-11-05 bernilai IsReportedToTaxReturn true sebelum dibetulkan; nilai sesudah SPT pembetulan belum terlihat live.)
             const amended = rows.filter((r) => r.WithholdingSlipsStatus === 'AMENDMENT');
             if (amended.length) sptMasa.push({ masa: mm, amended: amended.length, notReported: amended.filter((r) => !r.IsReportedToTaxReturn).length });
+            // Per bukti potong, supaya Ringkasan bisa menghitungnya dengan COUNTIFS dari sheet Pembetulan.
+            for (const r of amended) amendedSlips.push({ number: r.WithholdingSlipsNumber, masa: mm, nik: r.TaxIdentificationNumber, name: String(r.Name || "").trim(), reported: !!r.IsReportedToTaxReturn, gross: gross(r), tax: tax(r) });
         }
     } finally { await s.close(); }
     const people = [...new Set(problems.map((p) => p.nik + '|' + p.name))];
@@ -265,7 +275,7 @@ async function sweep({ context, npwp, year, outDir, emit = () => {} }) {
     }
     const pending = sptMasa.filter((m) => m.notReported).map((m) => m.masa);
     if (sptMasa.length) emit(pending.length ? 'SPT MASA PPh 21 belum dibetulkan: masa ' + pending.join(', ') + '/' + year + ' (bukti potong pembetulannya belum dilaporkan di SPT).' : 'SPT MASA PPh 21: semua bukti potong pembetulan ' + year + ' sudah dilaporkan di SPT.');
-    return { total, problems, people: people.length, sptMasa, checkedAt: new Date() };
+    return { total, problems, people: people.length, sptMasa, amendedSlips, checkedAt: new Date() };
 }
 
-module.exports = { readTargets, run, check, sweep, nikProblem, nameMatch };
+module.exports = { readTargets, run, check, sweep, nikProblem, nameMatch, openSession };
