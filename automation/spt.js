@@ -862,7 +862,8 @@ async function runSptDownload(opts) {
         const { mmYY, comboLabel } = combo;
         const emit = (m) => log('[SPT ' + comboLabel + '] ' + m);
         try {
-            const finalDir = path.join(saveRoot, entity.entity_id, 'SPT', mmYY);
+            // Mode A1 dengan folder Tax Server: PDF SPT per masa ikut ke folder A1 preparation (nama file sudah memuat masanya).
+            const finalDir = a1Book && a1P.taxServer ? a1P.outDir : path.join(saveRoot, entity.entity_id, 'SPT', mmYY);
             if(a1Book)fs.mkdirSync(finalDir,{recursive:true});
             const saveDir = a1Book ? fs.mkdtempSync(path.join(os.tmpdir(),'coretax-a1-')) : finalDir;
             for (let sessionRetries = 0; ; sessionRetries++) {
