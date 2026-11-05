@@ -515,7 +515,7 @@ async function resolveEntitySource(res, entity) {
     const fallbackPicIds = authorized.fallbackPicIds;
     return {
         kind: 'auto', client: s.client, orgId: s.orgId, picId: authorized.picId,
-        entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual },
+        entity: { entity_id: entity.entity_id, entity_name: entity.entity_name, npwp: entity.npwp, individual: entity.individual, taxserver_folder: entity.taxserver_folder || '' },
         restricted, allowedEbupotSections, passphrase, fallbackPicIds, label: entity.entity_name
     };
 }
@@ -838,10 +838,9 @@ async function handleA1Inspect(req, res) {
     if (!entity || !entity.entity_id) return sendJson(res, 400, { error: 'Pilih entitas dulu.' });
     if (!/^20\d{2}$/.test(String(year))) return sendJson(res, 400, { error: 'Tahun tidak valid.' });
     try {
-        const root = require('../automation/spt').__test.a1SaveRoot(saveRoot, entity.entity_id);
-        const a1Dir = path.join(root, entity.entity_id, 'SPT', 'A1', String(year));
-        const out = await require('../lib/a1-source').inspect({ a1Dir, source: source || undefined, year: String(year), sptDir: path.join(root, entity.entity_id, 'SPT') });
-        return sendJson(res, 200, { ...out, a1Dir });
+        const p = require('../lib/a1-paths').a1Paths({ entity, saveRoot, year: String(year) });
+        const out = await require('../lib/a1-source').inspect({ a1Dir: p.readDirs, source: source || undefined, year: String(year), sptDir: p.sptDir });
+        return sendJson(res, 200, { ...out, a1Dir: p.outDir, taxServer: p.taxServer });
     } catch (e) { return sendJson(res, 400, { error: e.message }); }
 }
 
@@ -945,7 +944,7 @@ async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
         const outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP');
         const sweepRes = await amend.sweep({ context: page.context(), npwp: entity.project === 'manual' ? null : entity.npwp, year: taxYear, outDir, emit: (m) => log(m) });
         // Kolom Cek Coretax (sheet Pembetulan) + status SPT Masa (Ringkasan) di rekap terakhir entitas ini, bila ada.
-        const rekap = entity.entity_id ? require('../lib/a1-source').resolve({ a1Dir: path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), entity.entity_id, 'SPT', 'A1', taxYear), year: taxYear }).excel : null;
+        const rekap = entity.entity_id ? require('../lib/a1-source').resolve({ a1Dir: require('../lib/a1-paths').a1Paths({ entity, saveRoot, year: taxYear }).readDirs, year: taxYear }).excel : null;
         if (rekap) {
             const out = await require('../lib/bpmp-report').writeReport({ file: rekap, year: taxYear, results: [], sweep: sweepRes });
             log('Status ditulis ke ' + out.file + (out.locked ? ' (Excel rekap sedang terbuka - disimpan sebagai file terpisah).' : '.'));
