@@ -408,24 +408,25 @@
             + '<div class="hint" style="margin-top:6px">* Dipakai ulang bila versi SPT (pembetulan) di Coretax masih sama; bila ada pembetulan baru, masa itu diunduh. Rinciannya muncul di log saat proses berjalan.</div>';
     }
 
-    // Halaman Mode A1 = Unduh setahun + Pembetulan NIK BPMP (nikForm di bawah), dipilih di bagian atas.
+    // Halaman Mode A1 = Unduh setahun + Pembetulan NIK BPMP (nikForm) + XML BPA1 dari Draft SPT Desember (bpa1Form), dipilih di atas.
     // Antrean banyak entitas hanya untuk Unduh: pembetulan memakai Excel satu entitas.
     let a1View = 'unduh';
     const a1 = createPage({
-        id: 'a1', get batch() { return a1View !== 'nik'; },
+        id: 'a1', get batch() { return a1View === 'unduh'; },
         init() {
             const y = P.today().getFullYear(), years = Array.from({ length: y - 2025 + 1 }, (_, i) => 2025 + i);
-            return { view: a1View, year: y, years, fresh: false, nik: { file: null, submit: false, year: y, years } };
+            return { view: a1View, year: y, years, fresh: false, nik: { file: null, submit: false, year: y, years }, bpa1: { file: null, year: y, years, result: null, error: '', outDir: '' } };
         },
         main(st, api) {
-            const tabs = '<div style="margin-bottom:4px">' + P.seg('a1view', [{ value: 'unduh', label: 'Unduh setahun' }, { value: 'nik', label: 'Pembetulan NIK BPMP' }], st.view) + '</div>';
+            const tabs = '<div style="margin-bottom:4px">' + P.seg('a1view', [{ value: 'unduh', label: 'Unduh setahun' }, { value: 'nik', label: 'Pembetulan NIK BPMP' }, { value: 'bpa1', label: 'XML BPA1 Desember' }], st.view) + '</div>';
             if (st.view === 'nik') return tabs + nikForm.main(st.nik, api);
+            if (st.view === 'bpa1') return tabs + bpa1Form.main(st.bpa1, api);
             const out = (icon, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + P.icon(icon, 18) + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
             return tabs + P.card(1, 'Tahun pajak', '<span>Mulai 2025 · seluruh masa Jan–Des sekaligus</span>', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
                 + P.card(2, 'Yang dihasilkan', '<span>Pengaturan dikunci untuk hasil terlengkap</span>', '<div class="stack">'
                     + out('file', 'PDF lengkap', 'Induk, BPE, dan Lampiran seluruh baris, untuk semua versi SPT.') + out('lock', 'PDF rahasia', 'Lampiran tanpa rincian penerima, untuk semua versi SPT.')
-                    + out('sheet', 'Excel tahunan', 'Memakai versi terakhir tiap masa. Satu sheet per lampiran, dengan kolom Masa, total per masa, dan total setahun.')
-                    + out('warn', 'Sheet Kontrol', 'Masa tanpa SPT atau yang gagal dibaca dicatat di sini. Data yang gagal tidak diganti dengan versi lama.') + '</div>')
+                    + out('sheet', 'Excel tahunan', 'Versi terakhir tiap masa: Ringkasan, NIK, Pembetulan, Draft SPT Desember, lalu satu sheet per lampiran (kolom Masa, total di atas yang ikut filter).')
+                    + out('warn', 'Ringkasan', 'Masa tanpa SPT atau yang gagal dibaca dicatat di sini, bersama jumlah bukti potong yang masih bermasalah. Data yang gagal tidak diganti dengan versi lama.') + '</div>')
                 + P.card(3, 'Hasil sebelumnya', '<span>' + (st.source ? 'Sumber: ' + esc(st.source) : 'Folder "Simpan ke"') + '</span>', '<div class="chips c2 wide">'
                     + '<button type="button" class="chip" data-act="a1fresh" data-val="0" aria-pressed="' + !st.fresh + '">Lanjutkan<span class="hint">Masa yang sudah lengkap dipakai ulang. Hanya masa baru dan pembetulan baru yang diunduh.</span></button>'
                     + '<button type="button" class="chip" data-act="a1fresh" data-val="1" aria-pressed="' + st.fresh + '">Ulang dari awal<span class="hint">Seluruh masa diunduh ulang dari Coretax.</span></button></div>'
@@ -434,6 +435,7 @@
         act(act, d, st, api) {
             if (act === 'a1view') { st.view = a1View = d.val; if (st.view === 'nik' && P.batch.count() >= 2) P.batch.clear(); return true; }
             if (st.view === 'nik') return nikForm.act(act, d, st.nik, api);
+            if (st.view === 'bpa1') return bpa1Form.act(act, d, st.bpa1, api);
             if (act === 'a1src-excel') { P.pickFile('Pilih Excel rekap sebelumnya').then((f) => { if (f && f.filePath) { st.source = f.filePath; a1Inspect(st, api); } else if (f) alert('Path file tidak terbaca - pilih lewat dialog Windows.'); }); return false; }
             if (act === 'a1src-clear') { st.source = null; a1Inspect(st, api); return false; }
             if (act === 'a1src-check') { a1Inspect(st, api); return false; }
@@ -441,15 +443,60 @@
         },
         rail(st, api) {
             if (st.view === 'nik') return nikForm.rail(st.nik, api);
+            if (st.view === 'bpa1') return bpa1Form.rail(st.bpa1, api);
             const ent = api.entity();
             return railCard({ big: 12, unit: 'masa · PPh 21/26 · ' + st.year, rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))]], ready: readiness(ent), blocked: restricted() ? 'Tidak tersedia untuk pengguna Restricted' : '', notes: [['lock', 'var(--muted)', 'Tidak tersedia untuk pengguna Restricted.']] });
         },
         async start(st, api) {
             if (st.view === 'nik') return nikForm.start(st.nik, api);
+            if (st.view === 'bpa1') return bpa1Form.start(st.bpa1, api);
             if (restricted()) throw new Error('Rekap PPh 21 Setahun tidak tersedia untuk pengguna Restricted.');
             await P.post('/api/actions/download-spt', { entity: api.entity(), a1Year: String(st.year), a1Fresh: st.fresh, a1Source: !st.fresh && st.source ? st.source : undefined, saveRoot: P.saveRoot() || undefined });
         }
     });
+
+    // =========================================================
+    // XML BPA1 Desember (bagian dari halaman Mode A1): XML impor BPA1 dari sheet Draft SPT Desember rekap (lib/a1-desember.js).
+    // Tidak membuka Coretax - XML diimpor sendiri di e-Bupot BPA1 (masuk Belum Terbit).
+    // =========================================================
+    const bpa1Form = {
+        main(st) {
+            const r = st.result;
+            return P.card(1, 'Excel rekap', '<span>Sheet Draft SPT Desember yang sudah diisi</span>', '<div class="hint" style="font-size:13.5px">Isi kolom hijau sheet <b>Draft SPT Desember</b> (Status PTKP, penghasilan dari KK), simpan, lalu pilih rekapnya di sini. Pegawai tanpa penghasilan dilewati.</div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="bpa1-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Pakai rekap terakhir (' + st.year + ')</button></div>'
+                    + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…atau pilih Excel rekap lain</span>') + '<button type="button" class="link" data-act="bpa1-pick">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>')
+                + P.card(2, 'Simpan XML ke', '<span>' + (st.outDir ? esc(st.outDir) : 'Folder yang sama dengan Excel rekap') + '</span>', '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-act="bpa1-outdir">' + P.icon('folder', 15) + 'Pilih folder…</button>' + (st.outDir ? '<button type="button" class="btn btn-sm" data-act="bpa1-outdir-clear">Sama dengan rekap</button>' : '') + '</div>')
+                + P.card(3, 'Tahun pajak', '', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="bpa1-year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
+                + (st.error ? P.card(4, 'Belum bisa dibuat', '', '<div class="hint warn" style="white-space:pre-line">' + esc(st.error) + '</div>') : '')
+                + (r ? P.card(4, 'XML siap diimpor', '', '<div class="stack"><div class="doc-row"><span class="ico">' + P.icon('check', 18) + '</span><div class="t"><b>' + r.count + ' BPA1</b><span>' + esc(r.file) + '</span></div></div>'
+                    + '<div class="hint">PPh 21 setahun (hitungan draft): Rp ' + esc(r.totalTax) + ' · PPh Desember: Rp ' + esc(r.totalDes) + (r.skipped ? ' · ' + r.skipped + ' baris tanpa penghasilan dilewati' : '') + '. Impor di Coretax: e-Bupot › BPA1 › Impor Data; hasilnya masuk Belum Terbit.</div></div>') : '');
+        },
+        async act(act, d, st, api) {
+            if (act === 'bpa1-year') { st.year = Number(d.val); return true; }
+            if (act === 'bpa1-outdir') { try { const r = await P.post('/api/actions/pick-folder', { title: 'Pilih folder untuk menyimpan XML BPA1' }); if (r && r.folderPath) { st.outDir = r.folderPath; api.redraw(); } } catch (e) { alert(e.message); } return false; }
+            if (act === 'bpa1-outdir-clear') { st.outDir = ''; return true; }
+            if (act === 'bpa1-pick') { const f = await P.pickFile('Pilih Excel Rekap PPh 21 Setahun (A1)'); if (f) { st.file = f; st.result = null; st.error = ''; const m = /(20\d{2})/.exec(f.fileName); if (m && st.years.includes(Number(m[1]))) st.year = Number(m[1]); api.redraw(); } return false; }
+            if (act === 'bpa1-latest') {
+                const ent = api.entity(); if (!ent) { st.error = 'Pilih entitas dulu.'; api.redraw(); return false; }
+                try { const r = await P.post('/api/a1/inspect', { entity: ent, year: String(st.year), saveRoot: P.saveRoot() || undefined }); if (r && r.excel) { st.file = { fileName: r.excel.split(/[\\/]/).pop(), filePath: r.excel }; st.error = ''; } else st.error = 'Belum ada Excel rekap ' + st.year + ' untuk entitas ini - jalankan Unduh setahun dulu, atau pilih filenya.'; }
+                catch (e) { st.error = e.message; }
+                st.result = null; api.redraw(); return false;
+            }
+            return false;
+        },
+        rail(st, api) {
+            const ent = api.entity();
+            return railCard({ rows: [['Entitas', esc(ent && ent.project !== 'manual' ? ent.entity_name : '-')], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Belum dipilih</span>'], ['Tahun', String(st.year)]],
+                ready: true, blocked: !st.file ? 'Pilih Excel rekap dulu' : !st.file.filePath ? 'Pilih lewat dialog Windows (path dibutuhkan)' : '', cta: 'Buat XML BPA1', icon: 'file',
+                notes: [['shield', 'var(--green)', 'Hanya membuat file XML; tidak ada yang dikirim ke Coretax.']] });
+        },
+        async start(st, api) {
+            st.error = ''; st.result = null;
+            try { st.result = await P.post('/api/a1/bpa1-xml', { filePath: st.file.filePath, year: String(st.year), outDir: st.outDir || undefined }); }
+            catch (e) { st.error = e.message; }
+            api.redraw();
+        }
+    };
 
     // =========================================================
     // Pembetulan NIK BPMP (bagian dari halaman Mode A1) - NIK Baru / Nama Baru dari Excel Mode A1 dibetulkan
@@ -460,7 +507,7 @@
         main(st) {
             const step = (n, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + n + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
             // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (<kode> <tahun> - Rekap SPT PPh 21 Setahun (A1).xlsx).
-            return P.card(1, 'Excel rekap', '<span>Hasil tab "Unduh setahun"</span>', '<div class="hint" style="font-size:13.5px">Tidak perlu template: pakai Excel hasil tab <b>Unduh setahun</b> (<b>… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx</b>). Di sheet <b>BPMP per NIK</b>, NIK yang salah berwarna kuning dan kolom hijau <b>NIK Baru</b> / <b>Nama Baru</b> sudah terisi usulan bila ada - cocokkan dengan KTP, lengkapi yang kosong, simpan, lalu pilih filenya di sini. Baris yang kolom hijaunya kosong tidak disentuh.</div>'
+            return P.card(1, 'Excel rekap', '<span>Hasil tab "Unduh setahun"</span>', '<div class="hint" style="font-size:13.5px">Tidak perlu template: pakai Excel hasil tab <b>Unduh setahun</b> (<b>… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx</b>). Di sheet <b>NIK</b>, NIK yang salah berwarna kuning (filter kolom <b>Kategori</b>) dan kolom hijau <b>NIK Baru</b> / <b>Nama Baru</b> sudah terisi usulan bila ada - cocokkan dengan KTP, lengkapi yang kosong, simpan, lalu pilih filenya di sini. Baris yang kolom hijaunya kosong tidak disentuh.</div>'
                     + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Pakai rekap terakhir (' + st.year + ')</button></div>'
                     + (st.latestError ? '<div class="hint warn">' + esc(st.latestError) + '</div>' : '')
                     + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…atau pilih Excel rekap lain</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>')
@@ -470,7 +517,7 @@
                     + step('2', 'Bukti potong dibetulkan, bukan dibatalkan', 'Nomor bukti potong tetap; statusnya menjadi Pembetulan dan versi lama pindah ke Tidak Valid. Tanggal pemotongan menjadi tanggal pembetulan (perilaku standar Coretax). Data dicadangkan dulu dan diperiksa ulang per kolom sesudahnya.')
                     + step('3', 'Disisir ulang setahun', 'Sesudah kirim, seluruh BPMP Telah Terbit Januari-Desember diperiksa langsung dari Coretax. Log menyebut "tidak ada NIK bermasalah lagi", atau daftar NIK yang masih tersisa (termasuk yang tidak ada di Excel).')
                     + step('4', 'SPT Masa ikut dibetulkan', 'Masa yang bukti potongnya dibetulkan perlu pembetulan SPT Masa PPh 21; daftarnya muncul di log. Setelah itu jalankan tab Unduh setahun dengan "Lanjutkan" - hanya masa yang berubah yang diunduh.') + '</div>'
-                    + '<div style="margin-top:12px">' + P.checkRow('nik-similar', st.allowSimilar, 'Kirim juga yang namanya mirip (beda ejaan, mis. FAHRUL / FAHROR RIZAL) - dipakai nama resmi Coretax. Cocokkan KTP dulu.') + '</div>'
+                    + '<div style="margin-top:12px">' + P.checkRow('nik-similar', st.allowSimilar, 'Kirim juga yang namanya mirip (beda ejaan, mis. BUDI SANTOSO / SANTOSA) - dipakai nama resmi Coretax. Cocokkan KTP dulu.') + '</div>'
                     + '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="btn btn-sm" data-act="nik-sweep">' + P.icon('shield', 15) + 'Periksa NIK bermasalah ' + st.year + ' (tanpa mengubah)</button></div>');
         },
         async act(act, d, st, api) {
@@ -506,7 +553,7 @@
         },
         async start(st, api) {
             if (restricted()) throw new Error('Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.');
-            if (!window.confirm('Betulkan NIK di Coretax untuk ' + (api.entity().entity_name || 'entitas ini') + '?\n\nTiap NIK Baru dicek dulu; hanya bukti potong yang nama resminya sama dengan Nama Baru' + (st.allowSimilar ? ' atau mirip (pakai nama resmi Coretax)' : '') + ' yang dibetulkan. Hasil dan riwayatnya ditulis ke sheet Hasil Pembetulan di Excel ini.')) return;
+            if (!window.confirm('Betulkan NIK di Coretax untuk ' + (api.entity().entity_name || 'entitas ini') + '?\n\nTiap NIK Baru dicek dulu; hanya bukti potong yang nama resminya sama dengan Nama Baru' + (st.allowSimilar ? ' atau mirip (pakai nama resmi Coretax)' : '') + ' yang dibetulkan. Hasilnya ditulis ke sheet Pembetulan dan Ringkasan di Excel ini.')) return;
             // filePath ikut dikirim bila ada, supaya laporan ditulis kembali ke Excel yang sama.
             await P.post('/api/actions/bpmp-amend', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.filePath || undefined, fileName: st.file.fileName, year: String(st.year), submit: true, allowSimilar: !!st.allowSimilar, saveRoot: P.saveRoot() || undefined });
         }
