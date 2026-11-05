@@ -26,7 +26,12 @@ fs.rmSync(tmp, { recursive: true, force: true });
 console.log('a1-paths ok');
 
 // Deep link mode-a1 dari Taxio Hub: a1_year dan a1_folder harus ikut terbaca (dulu terbuang -> "tahun tidak valid ()").
-const { parseIncomingUrl } = require(A + 'lib/deeplink');
-const dl = parseIncomingUrl('taxio-coretax://login?entity=CTH&action=mode-a1&a1_year=2026&a1_folder=' + encodeURIComponent('C:\X\Contoh Jaya, PT\2026\A1 preparation'));
-assert.equal(dl.action, 'mode-a1'); assert.equal(dl.a1_year, '2026'); assert.equal(dl.a1_folder, 'C:\X\Contoh Jaya, PT\2026\A1 preparation');
+const { parseIncomingUrl, validA1Year, validA1Folder } = require(A + 'lib/deeplink');
+const HUB_DIR = 'C:\\X\\Contoh Jaya, PT\\2026\\A1 preparation';
+const dl = parseIncomingUrl('taxio-coretax://login?entity=CTH&action=mode-a1&a1_year=2026&a1_folder=' + encodeURIComponent(HUB_DIR));
+assert.equal(dl.action, 'mode-a1'); assert.equal(dl.a1_year, '2026'); assert.equal(dl.a1_folder, HUB_DIR);
+// Validasi yang dipakai dispatch (dulu regex tahun rusak -> "tahun tidak valid (2026)").
+assert(validA1Year(dl.a1_year) && validA1Year('2025') && !validA1Year('2024') && !validA1Year('') && !validA1Year('20x6'), 'tahun mode-a1');
+assert(validA1Folder(dl.a1_folder) && validA1Folder('C:\\X\\2026\\A1 Preparation\\'), 'folder A1 sah');
+assert(!validA1Folder('C:\\Windows') && !validA1Folder('A1 preparation') && !validA1Folder(''), 'folder lain ditolak');
 console.log('deep link mode-a1 ok');
