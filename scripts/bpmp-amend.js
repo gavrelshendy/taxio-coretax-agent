@@ -28,5 +28,6 @@ const arg = (name, def) => { const i = process.argv.indexOf('--' + name); return
         const periods = [...new Set(results.filter((r) => r.status === 'DIBETULKAN').map((r) => r.period.slice(0, 2)))];
         console.log('SPT Masa PPh 21 yang perlu pembetulan: masa ' + periods.join(', ') + '/' + year);
     }
+    if (submit) await amend.sweep({ context, npwp, year, outDir, emit: console.log });
     process.exit(0);
 })().catch((e) => { console.error(e.message); process.exit(1); });
