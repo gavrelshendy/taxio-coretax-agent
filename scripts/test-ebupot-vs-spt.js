@@ -37,7 +37,22 @@ module.exports = async function () {
     assert.equal(by('21-1').kind, 'Berubah'); assert.match(by('21-1').detail, /kode objek pajak 21-100-20 → 21-100-21, bruto 2.000.000 → 2.500.000, PPh 50.000 → 62.500/);
     assert.equal(by('21-2').kind, 'Dihapus'); assert.equal(by('21-3').kind, 'Baru'); assert.equal(by('21-3').gross, 700000);
     assert(!by('MP-1') && !by('A1-1')); assert(result.same.has('MP-1') && result.same.has('A1-1'));
-    assert.deepEqual(result.counts.BP21, { compared: 1, changed: 1, removed: 1, added: 1 });
+    assert.deepEqual(result.counts.BP21, { compared: 1, changed: 1, removed: 1, added: 1, replaced: 0, cancel: 0, cancelled: 0 });
+
+    // Diterbitkan ulang (bukti lama dibatalkan, nomor baru untuk NIK & masa yang sama): bukan "dihapus" + "baru".
+    // Nilai sama = cocok; nilai beda = satu baris di nomor baru. Bruto & PPh 0: masih terbit = Batalkan, sudah hilang = beres.
+    const sp = (number, nik, gross, tax) => [number, { masa: 9, number, nik, name: 'P' + nik.slice(-1), kop: '21-100-01', gross, tax }];
+    const eb = (no, nik, gross, tax) => ({ WithholdingSlipsNumber: no, TaxIdentificationNumber: nik, TaxObjectCode: '21-100-01', GrossIncome: gross, IncomeTaxWithheld: tax, _masa: 9 });
+    const re = cmp.compare({ bpmp: new Map([sp('OLD-1', '1111111111110001', 6834300, 85429), sp('OLD-2', '1111111111110002', 0, 0), sp('OLD-3', '1111111111110003', 13040500, 521620), sp('OLD-4', '1111111111110004', 0, 0), sp('KEEP-5', '1111111111110005', 0, 0)]), bpa1: new Map(), bp21: new Map() },
+        { bpmp: new Map([['NEW-1', eb('NEW-1', '1111111111110001', 6834300, 85429)], ['NEW-2', eb('NEW-2', '1111111111110002', 6360138, 63601)], ['NEW-3', eb('NEW-3', '1111111111110003', 4033373, 0)], ['KEEP-5', eb('KEEP-5', '1111111111110005', 0, 0)], ['NEW-6', eb('NEW-6', '1111111111110006', 0, 0)]]), bpa1: new Map(), bp21: new Map() });
+    const rb = (no) => re.diffs.find((d) => d.number === no);
+    assert(re.same.has('OLD-1') && re.same.has('NEW-1') && !rb('NEW-1') && !rb('OLD-1'), 'nomor baru, nilai sama = cocok');
+    assert.equal(rb('NEW-2').kind, 'Diganti'); assert.match(rb('NEW-2').detail, /OLD-2 → NEW-2\): bruto 0 → 6.360.138, PPh 0 → 63.601/);
+    assert.equal(rb('NEW-3').kind, 'Diganti'); assert(!rb('OLD-2') && !rb('OLD-3'), 'nomor lama tidak jadi "dihapus"');
+    assert(!rb('OLD-4'), 'bernilai 0 dan sudah tidak terbit = sudah dibatalkan');
+    assert.equal(rb('KEEP-5').kind, 'Batalkan'); assert.equal(rb('NEW-6').kind, 'Batalkan');
+    assert.deepEqual(re.counts.BPMP, { compared: 1, changed: 2, removed: 0, added: 0, replaced: 3, cancel: 2, cancelled: 1 });
+    assert.equal(re.replaced.get('OLD-2'), 'NEW-2');
 
     // Ke rekap: sheet Pembetulan (Jenis, Selisih, Dilaporkan = Belum), catatan di L-III, Ringkasan.
     await report.writeReport({ file, year: '2026', results: [], compare: result });
