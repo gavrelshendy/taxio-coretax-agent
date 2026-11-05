@@ -483,6 +483,13 @@ async function processSptCombo(ctx) {
         // Versi lama cukup PDF-nya - Excel tahunan hanya memakai versi terakhir.
         if (ctx.a1Book && !ctx.a1Fresh) {
             const secretPath = path.join(ctx.finalDir, buildSptFilename(entityCode, meta.packageToken + ' (Rahasia)', mmYY, pbSuffix));
+            // PDF dari proses sebelumnya di lokasi lama (folder A1 preparation langsung, atau folder lokal per masa):
+            // dipindah ke lokasi sekarang, supaya Lanjutkan tidak mengunduh ulang masa yang sudah lengkap.
+            for (const want of [packagePath, secretPath]) {
+                if (fs.existsSync(want)) continue;
+                const old = (ctx.a1PdfFallback || []).map((d) => path.join(d, path.basename(want))).find((p) => p !== want && fs.existsSync(p));
+                if (old) { try { fs.mkdirSync(path.dirname(want), { recursive: true }); fs.renameSync(old, want); } catch (e) { try { fs.copyFileSync(old, want); } catch (e2) {} } }
+            }
             const pdfs = fs.existsSync(packagePath) && fs.existsSync(secretPath);
             const { revision } = require('../lib/a1-workbook');
             const latest = revision(row) === Math.max(...rows.map(revision));
@@ -862,8 +869,8 @@ async function runSptDownload(opts) {
         const { mmYY, comboLabel } = combo;
         const emit = (m) => log('[SPT ' + comboLabel + '] ' + m);
         try {
-            // Mode A1 dengan folder Tax Server: PDF SPT per masa ikut ke folder A1 preparation (nama file sudah memuat masanya).
-            const finalDir = a1Book && a1P.taxServer ? a1P.outDir : path.join(saveRoot, entity.entity_id, 'SPT', mmYY);
+            // Mode A1 dengan folder Tax Server: PDF SPT per masa ke subfolder SPT di folder A1 preparation (nama file memuat masanya).
+            const finalDir = a1Book && a1P.taxServer ? a1P.pdfDir : path.join(saveRoot, entity.entity_id, 'SPT', mmYY);
             if(a1Book)fs.mkdirSync(finalDir,{recursive:true});
             const saveDir = a1Book ? fs.mkdtempSync(path.join(os.tmpdir(),'coretax-a1-')) : finalDir;
             for (let sessionRetries = 0; ; sessionRetries++) {
@@ -872,7 +879,8 @@ async function runSptDownload(opts) {
                         page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
                         compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual, entityName: manual ? '' : entity.entity_name,
                         includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, entityNpwp: entity.npwp, saveRoot,
-                        log: emit, a1Book, a1Fresh: !!opts.a1Fresh, finalDir
+                        log: emit, a1Book, a1Fresh: !!opts.a1Fresh, finalDir,
+                        a1PdfFallback: a1Book ? [a1P.outDir, path.join(saveRoot, entity.entity_id, 'SPT', mmYY)] : null
                     });
                     if (result.downloadedAny) stats.downloaded++;
                     // foundAny:false ("Tidak ada data untuk filter ini.") sebelumnya cuma

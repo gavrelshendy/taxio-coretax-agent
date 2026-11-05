@@ -44,6 +44,10 @@ module.exports = async function () {
     for (const h of ['Posisi', 'Kode Objek Pajak', 'Fasilitas', 'ID TKU Pemotong', 'Masa Awal', 'Masa Akhir']) assert.equal(ws.getCell(spareRow + 24, col(h)).value, null, 'cadangan ' + h + ' kosong');
     assert.match(ws.getCell(spareRow, col('Jumlah Bulan')).value.formula, /^IF\(A\d+="",""/); assert.equal(ws.getCell(spareRow, col('Jumlah Bulan')).value.result ?? '', '');
     assert.equal(ws.getCell(spareRow + 25, col('NIK')).value, null);
+    // Warna: isian pegawai yang ada hijau muda; baris cadangan tanpa warna tetapi tetap bisa diisi.
+    const argb = (c) => (c.fill && c.fill.fgColor && c.fill.fgColor.argb) || null;
+    assert.equal(argb(ws.getCell(iz._row, col('Gaji'))), 'FFE2EFDA');
+    for (const h of ['NIK', 'Status PTKP', 'Gaji', 'Masa Awal']) { assert.equal(argb(ws.getCell(spareRow + 3, col(h))), null, 'cadangan ' + h + ' tanpa warna'); assert.equal(ws.getCell(spareRow + 3, col(h)).protection.locked, false); }
     assert(ws.getCell(spareRow, col('Biaya Jabatan')).value.formula); assert.equal(ws.getCell(iz._row, col('Status PTKP')).dataValidation.type, 'list');
     { const nk = wb.getWorksheet('NIK'); let unlocked = 0; nk.eachRow((r) => { if (r.getCell(4).protection && r.getCell(4).protection.locked === false) unlocked++; }); assert(unlocked >= 3, 'NIK Baru terbuka'); }
 

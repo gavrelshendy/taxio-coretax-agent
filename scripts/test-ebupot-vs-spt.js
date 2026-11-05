@@ -60,7 +60,10 @@ module.exports = async function () {
     const pb = wb.getWorksheet('Pembetulan'), h = report.headerMap(pb), row = (no) => { let f = null; pb.eachRow((r, n) => { if (n > 1 && r.getCell(h.get('Nomor Bukti Potong')).value === no) f = r; }); return f; };
     const v = (no, k) => { const c = row(no).getCell(h.get(k)).value; return c && typeof c === 'object' && 'result' in c ? c.result : c; };
     assert.equal(v('21-1', 'Jenis'), 'e-Bupot ≠ SPT'); assert.equal(v('21-1', 'Dilaporkan di SPT'), 'Belum'); assert.match(v('21-1', 'Selisih e-Bupot vs SPT'), /^Berubah sesudah SPT dilaporkan: kode objek pajak/);
-    assert.equal(v('21-3', 'Penghasilan Bruto (Rp)'), 700000); assert.equal(v('21-3', 'Masa'), 'Maret');
+    // Penghasilan Bruto / PPh = nilai di SPT; Bruto / PPh e-Bupot = nilai e-Bupot sekarang (21-3 belum ada di SPT).
+    assert.equal(v('21-3', 'Penghasilan Bruto (Rp)') ?? '', ''); assert.equal(v('21-3', 'Bruto e-Bupot (Rp)'), 700000); assert.equal(v('21-3', 'PPh e-Bupot (Rp)'), 0); assert.equal(v('21-3', 'Masa'), 'Maret');
+    assert.deepEqual(['Penghasilan Bruto (Rp)', 'PPh (Rp)', 'Bruto e-Bupot (Rp)', 'PPh e-Bupot (Rp)'].map((k) => v('21-1', k)), [2000000, 50000, 2500000, 62500]);
+    assert.equal(row('21-1').getCell(h.get('Bruto e-Bupot (Rp)')).numFmt, '#,##0');
     assert.equal(v('MP-2', 'Jenis'), 'NIK bermasalah', 'jenis asal (NIK sementara) tetap'); assert.match(v('MP-2', 'Selisih e-Bupot vs SPT'), /NIK 9990000000999000 → 2222222222220001/);
     const l3 = wb.getWorksheet('L-III'); let head = 0; l3.eachRow((r, n) => { if (!head && r.getCell(1).value === 'Masa') head = n; });
     const lh = report.headerMap(l3, head), note = (no) => { let x = null; l3.eachRow((r, n) => { if (n > head && r.getCell(lh.get('Nomor Bukti Potong')).value === no) x = r.getCell(lh.get('Catatan Pembetulan')).value; }); return x; };
