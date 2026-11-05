@@ -24,3 +24,9 @@ const r = require(A + 'lib/a1-source').resolve({ a1Dir: a1Paths({ entity: ent, y
 assert(r.excel && r.excel.startsWith(p.localDir), 'rekap lokal terbaca');
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('a1-paths ok');
+
+// Deep link mode-a1 dari Taxio Hub: a1_year dan a1_folder harus ikut terbaca (dulu terbuang -> "tahun tidak valid ()").
+const { parseIncomingUrl } = require(A + 'lib/deeplink');
+const dl = parseIncomingUrl('taxio-coretax://login?entity=CTH&action=mode-a1&a1_year=2026&a1_folder=' + encodeURIComponent('C:\X\Contoh Jaya, PT\2026\A1 preparation'));
+assert.equal(dl.action, 'mode-a1'); assert.equal(dl.a1_year, '2026'); assert.equal(dl.a1_folder, 'C:\X\Contoh Jaya, PT\2026\A1 preparation');
+console.log('deep link mode-a1 ok');
