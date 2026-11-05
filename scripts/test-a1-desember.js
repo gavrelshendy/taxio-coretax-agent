@@ -24,6 +24,10 @@ module.exports = async function () {
     assert.deepEqual(wb.worksheets.map((s) => s.name).slice(0, 4), ['Ringkasan', 'NIK', 'Pembetulan', 'Draft SPT Desember']);
     let d = desember.readDraft(wb);
     assert.deepEqual(d.rows.map((o) => o.NIK), ['2222222222220001', '3401010101900001'], 'pegawai di masa terakhir (November), urut nama; BUDI yang keluar Juni tidak ikut');
+    // BUDI: BPMP berhenti Juni tanpa BPA1 -> dicatat di Ringkasan baris 7 (setiap pegawai tetap harus dibuatkan BPA1).
+    assert.deepEqual(saved.noA1, [{ nik: '1111111111110001', name: 'BUDI', last: 'Juni' }]);
+    assert.match(wb.getWorksheet('Ringkasan').getCell('A7').value, /^Belum dibuatkan BPA1 \(1 pegawai.*BUDI \(1111111111110001, BPMP terakhir Juni\)/);
+    assert.equal(wb.getWorksheet('Ringkasan').getCell('A8').value, 'Masa', 'tabel Ringkasan tetap di baris 8');
     const iz = d.rows.find((o) => o.NIK === '3401010101900001'), ci = d.rows.find((o) => o.NIK === '2222222222220001');
     assert.equal(iz['Masa Awal'], 4); assert.equal(iz['Masa Akhir'], 12); assert.equal(iz['ID TKU Pemotong'], tku); assert.equal(ci.Fasilitas, 'DTP'); assert.equal(iz.Fasilitas, 'N/A');
     assert.equal(iz['PPh Jan-Nov (L-IA)'], 834539); assert.equal(iz['Bruto Jan-Nov (L-IA)'], 57909039);
@@ -36,7 +40,10 @@ module.exports = async function () {
     assert.equal(ws.getCell(iz._row, col('Gaji')).protection.locked, false); assert.equal(ws.getCell(iz._row, col('Status PTKP')).protection.locked, false);
     assert.notEqual((ws.getCell(iz._row, col('PPh 21 Setahun')).protection || {}).locked, false); assert.notEqual((ws.getCell(iz._row, col('NIK')).protection || {}).locked, false);
     const spareRow = iz._row + 1; assert.equal(ws.getCell(spareRow, col('NIK')).value, null); assert.equal(ws.getCell(spareRow, col('NIK')).protection.locked, false);
-    assert.equal(ws.getCell(spareRow + 24, col('Masa Awal')).value, 12); assert.equal(ws.getCell(spareRow + 25, col('NIK')).value, null);
+    // Baris cadangan benar-benar kosong (tanpa Staff / 21-100-01 / N/A / ID TKU / Masa 12 bawaan) sampai NIK diisi.
+    for (const h of ['Posisi', 'Kode Objek Pajak', 'Fasilitas', 'ID TKU Pemotong', 'Masa Awal', 'Masa Akhir']) assert.equal(ws.getCell(spareRow + 24, col(h)).value, null, 'cadangan ' + h + ' kosong');
+    assert.match(ws.getCell(spareRow, col('Jumlah Bulan')).value.formula, /^IF\(A\d+="",""/); assert.equal(ws.getCell(spareRow, col('Jumlah Bulan')).value.result ?? '', '');
+    assert.equal(ws.getCell(spareRow + 25, col('NIK')).value, null);
     assert(ws.getCell(spareRow, col('Biaya Jabatan')).value.formula); assert.equal(ws.getCell(iz._row, col('Status PTKP')).dataValidation.type, 'list');
     { const nk = wb.getWorksheet('NIK'); let unlocked = 0; nk.eachRow((r) => { if (r.getCell(4).protection && r.getCell(4).protection.locked === false) unlocked++; }); assert(unlocked >= 3, 'NIK Baru terbuka'); }
 
