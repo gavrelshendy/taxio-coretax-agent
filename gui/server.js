@@ -839,7 +839,7 @@ async function handleA1Inspect(req, res) {
     if (!/^20\d{2}$/.test(String(year))) return sendJson(res, 400, { error: 'Tahun tidak valid.' });
     try {
         const p = require('../lib/a1-paths').a1Paths({ entity, saveRoot, year: String(year) });
-        const out = await require('../lib/a1-source').inspect({ a1Dir: p.readDirs, source: source || undefined, year: String(year), sptDir: p.sptDir, pdfDir: p.taxServer ? p.outDir : undefined });
+        const out = await require('../lib/a1-source').inspect({ a1Dir: p.readDirs, source: source || undefined, year: String(year), sptDir: p.sptDir, pdfDir: p.taxServer ? [p.pdfDir, p.outDir] : undefined });
         return sendJson(res, 200, { ...out, a1Dir: p.outDir, taxServer: p.taxServer });
     } catch (e) { return sendJson(res, 400, { error: e.message }); }
 }

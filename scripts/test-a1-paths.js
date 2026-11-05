@@ -11,6 +11,7 @@ let p = a1Paths({ entity: ent, year: '2026', root: local });
 assert.equal(p.outDir, path.join(pf, 'Grup X', 'Contoh Jaya, PT', '2026', 'A1 preparation'));
 assert.equal(p.cacheDir, path.join(local, 'CTH', 'SPT', 'A1', '2026', '.a1-cache'));
 assert.deepEqual(p.readDirs, [p.outDir, p.localDir]); assert(p.taxServer);
+assert.equal(p.pdfDir, path.join(p.outDir, 'SPT'), 'PDF SPT di subfolder SPT folder A1 preparation');
 assert.equal(entityTaxServerDir({ taxserver_folder: '%PROJECT_FILES%\\Grup X\\Contoh Jaya, PT' }), path.join(pf, 'Grup X', 'Contoh Jaya, PT'));
 assert.equal(entityTaxServerDir({ taxserver_folder: '%OTHER%\\x' }), null);
 assert.equal(entityTaxServerDir({ taxserver_folder: 'Grup X\\Tidak Ada' }), null, 'folder entitas harus sudah ada');
