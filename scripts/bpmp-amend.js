@@ -1,7 +1,7 @@
 // Pembetulan NIK BPMP dari terminal (logikanya di automation/bpmp-amend.js; di aplikasi: menu OTOMASI
 // "Pembetulan NIK BPMP"). Memakai jendela Chrome PIC yang sudah login + impersonate (port CDP-nya).
 //
-//   node scripts/bpmp-amend.js --excel "<Mode A1.xlsx>" --port 9741 --npwp 0753828391541000 [--year 2026] [--submit] [--only <NIK lama>]
+//   node scripts/bpmp-amend.js --excel "<Mode A1.xlsx>" --port 9741 --npwp 0753828391541000 [--year 2026] [--submit] [--mirip] [--only <NIK lama>]
 //
 // Tanpa --submit: hanya validasi NIK + pratinjau. Dengan --submit: kirim, lalu pemeriksaan per kolom otomatis.
 const path = require('path');
@@ -10,9 +10,9 @@ const amend = require('../automation/bpmp-amend');
 const arg = (name, def) => { const i = process.argv.indexOf('--' + name); return i > 0 ? process.argv[i + 1] : def; };
 
 (async () => {
-    const excel = arg('excel'), port = arg('port'), npwp = arg('npwp'), only = arg('only'), submit = process.argv.includes('--submit');
-    if (!excel || !port || !npwp) throw new Error('Pakai: --excel <file> --port <port CDP PIC> --npwp <NPWP entitas> [--year <tahun>] [--submit] [--only <NIK lama>]');
-    const { targets, skipped, year: excelYear } = await amend.readTargets(excel);
+    const excel = arg('excel'), port = arg('port'), npwp = arg('npwp'), only = arg('only'), submit = process.argv.includes('--submit'), allowSimilar = process.argv.includes('--mirip');
+    if (!excel || !port || !npwp) throw new Error('Pakai: --excel <file> --port <port CDP PIC> --npwp <NPWP entitas> [--year <tahun>] [--submit] [--mirip] [--only <NIK lama>]');
+    const { targets, skipped, year: excelYear, previous } = await amend.readTargets(excel);
     const year = arg('year', excelYear);
     if (!year) throw new Error('Tahun tidak terbaca dari Excel - isi --year.');
     skipped.forEach((s) => console.log('LEWATI ' + s));
@@ -20,14 +20,20 @@ const arg = (name, def) => { const i = process.argv.indexOf('--' + name); return
     console.log('Isian NIK Baru di Excel: ' + targets.length + (only ? ' (dipilih ' + list.length + ')' : '') + ' · tahun ' + year + ' · mode ' + (submit ? 'KIRIM' : 'UJI (tanpa simpan)'));
     const outDir = path.join(path.dirname(excel), 'Pembetulan NIK BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
     const context = (await chromium.connectOverCDP('http://127.0.0.1:' + port)).contexts()[0];
-    const results = await amend.run({ context, npwp, targets: list, year, submit, outDir, emit: console.log });
+    const results = await amend.run({ context, npwp, targets: list, year, submit, outDir, allowSimilar, previous, emit: console.log });
+    let checks = null;
     console.log('Selesai: ' + results.length + ' bukti potong · cadangan + hasil.json di ' + outDir);
-    if (submit && results.some((r) => r.status === 'DIBETULKAN')) {
-        const { ok, bad } = await amend.check({ context, npwp, dirs: [outDir], emit: console.log });
+    if (submit && results.some((r) => /^DIBETULKAN/.test(r.status))) {
+        const { ok, bad, details } = await amend.check({ context, npwp, dirs: [outDir], emit: console.log });
+        checks = details;
         console.log('Pemeriksaan ulang: ' + ok + ' benar, ' + bad + ' bermasalah.');
-        const periods = [...new Set(results.filter((r) => r.status === 'DIBETULKAN').map((r) => r.period.slice(0, 2)))];
+        const periods = [...new Set(results.filter((r) => /^DIBETULKAN/.test(r.status)).map((r) => r.period.slice(0, 2)))];
         console.log('SPT Masa PPh 21 yang perlu pembetulan: masa ' + periods.join(', ') + '/' + year);
     }
-    if (submit) await amend.sweep({ context, npwp, year, outDir, emit: console.log });
+    if (submit) {
+        const sweep = await amend.sweep({ context, npwp, year, outDir, emit: console.log });
+        const out = await require('../lib/bpmp-report').writeReport({ file: excel, year, results, checks, sweep });
+        console.log('Laporan: ' + out.file + (out.locked ? ' (Excel rekap sedang terbuka - disimpan terpisah)' : ''));
+    }
     process.exit(0);
 })().catch((e) => { console.error(e.message); process.exit(1); });

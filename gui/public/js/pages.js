@@ -456,7 +456,7 @@
     // langsung di e-Bupot (automation/bpmp-amend.js): cek dulu tanpa simpan, lalu kirim + pemeriksaan ulang.
     // =========================================================
     const nikForm = {
-        init(year, years) { return { file: null, submit: false, year, years, latestError: '' }; },
+        init(year, years) { return { file: null, submit: false, allowSimilar: false, year, years, latestError: '' }; },
         main(st) {
             const step = (n, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + n + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
             // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (<kode> <tahun> - Rekap SPT PPh 21 Setahun (A1).xlsx).
@@ -470,6 +470,7 @@
                     + step('2', 'Bukti potong dibetulkan, bukan dibatalkan', 'Nomor bukti potong tetap; statusnya menjadi Pembetulan dan versi lama pindah ke Tidak Valid. Tanggal pemotongan menjadi tanggal pembetulan (perilaku standar Coretax). Data dicadangkan dulu dan diperiksa ulang per kolom sesudahnya.')
                     + step('3', 'Disisir ulang setahun', 'Sesudah kirim, seluruh BPMP Telah Terbit Januari-Desember diperiksa langsung dari Coretax. Log menyebut "tidak ada NIK bermasalah lagi", atau daftar NIK yang masih tersisa (termasuk yang tidak ada di Excel).')
                     + step('4', 'SPT Masa ikut dibetulkan', 'Masa yang bukti potongnya dibetulkan perlu pembetulan SPT Masa PPh 21; daftarnya muncul di log. Setelah itu jalankan tab Unduh setahun dengan "Lanjutkan" - hanya masa yang berubah yang diunduh.') + '</div>'
+                    + '<div style="margin-top:12px">' + P.checkRow('nik-similar', st.allowSimilar, 'Kirim juga yang namanya mirip (beda ejaan, mis. FAHRUL / FAHROR RIZAL) - dipakai nama resmi Coretax. Cocokkan KTP dulu.') + '</div>'
                     + '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="btn btn-sm" data-act="nik-sweep">' + P.icon('shield', 15) + 'Periksa NIK bermasalah ' + st.year + ' (tanpa mengubah)</button></div>');
         },
         async act(act, d, st, api) {
@@ -485,6 +486,7 @@
                 api.redraw(); return false;
             }
             if (act === 'year') { st.year = Number(d.val); return true; }
+            if (act === 'nik-similar') { st.allowSimilar = !st.allowSimilar; return true; }
             if (act === 'nik-sweep') {
                 if (restricted()) { alert('Tidak tersedia untuk pengguna Restricted.'); return false; }
                 const ent = api.entity();
@@ -504,8 +506,9 @@
         },
         async start(st, api) {
             if (restricted()) throw new Error('Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.');
-            if (!window.confirm('Betulkan NIK di Coretax untuk ' + (api.entity().entity_name || 'entitas ini') + '?\n\nTiap NIK Baru dicek dulu; hanya bukti potong yang nama resminya sama dengan Nama Baru yang dibetulkan. Hasilnya bisa dilihat di log.')) return;
-            await P.post('/api/actions/bpmp-amend', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.fileBase64 ? undefined : st.file.filePath, fileName: st.file.fileName, year: String(st.year), submit: true, saveRoot: P.saveRoot() || undefined });
+            if (!window.confirm('Betulkan NIK di Coretax untuk ' + (api.entity().entity_name || 'entitas ini') + '?\n\nTiap NIK Baru dicek dulu; hanya bukti potong yang nama resminya sama dengan Nama Baru' + (st.allowSimilar ? ' atau mirip (pakai nama resmi Coretax)' : '') + ' yang dibetulkan. Hasil dan riwayatnya ditulis ke sheet Hasil Pembetulan di Excel ini.')) return;
+            // filePath ikut dikirim bila ada, supaya laporan ditulis kembali ke Excel yang sama.
+            await P.post('/api/actions/bpmp-amend', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.filePath || undefined, fileName: st.file.fileName, year: String(st.year), submit: true, allowSimilar: !!st.allowSimilar, saveRoot: P.saveRoot() || undefined });
         }
     };
 

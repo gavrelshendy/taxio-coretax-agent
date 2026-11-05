@@ -851,7 +851,7 @@ async function handleBpmpAmend(req, res) {
     if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { entity, fileBase64, filePath, year, submit, saveRoot, sweepOnly } = body || {};
+    const { entity, fileBase64, filePath, year, submit, saveRoot, sweepOnly, allowSimilar } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.' });
     const amend = require('../automation/bpmp-amend');
@@ -870,29 +870,41 @@ async function handleBpmpAmend(req, res) {
     try { runcontrol.start('Pembetulan NIK BPMP' + (submit ? '' : ' (uji)') + ' · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
-    let page = null, outDir = null, npwp = null;
+    let page = null, outDir = null, npwp = null, results = [], checks = null, sweepRes = null;
     try {
         parsed.skipped.forEach((s) => log('LEWATI ' + s));
+        const done = [...parsed.previous.keys()].filter((old) => parsed.previous.get(old).some((p) => /^DIBETULKAN/.test(p.status)));
+        if (done.length) log('Riwayat di sheet Hasil Pembetulan: ' + done.length + ' NIK pernah dibetulkan - yang masih tersisa di Coretax saja yang diproses.');
         log('Pembetulan NIK BPMP ' + taxYear + ': ' + parsed.targets.length + ' NIK Baru di Excel · mode ' + (submit ? 'KIRIM ke Coretax' : 'UJI (tanpa simpan)') + '.');
         page = await target.open();
         outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
         npwp = entity.project === 'manual' ? null : entity.npwp;
-        const results = await amend.run({ context: page.context(), npwp, targets: parsed.targets, year: taxYear, submit: !!submit, outDir, emit: (m) => log(m) });
+        results = await amend.run({ context: page.context(), npwp, targets: parsed.targets, year: taxYear, submit: !!submit, outDir, allowSimilar: !!allowSimilar, previous: parsed.previous, emit: (m) => log(m) });
         const count = (re) => results.filter((r) => re.test(r.status)).length;
-        log('Selesai: ' + results.length + ' bukti potong · ' + (submit ? count(/^DIBETULKAN/) + ' dibetulkan' : count(/^SIAP/) + ' siap dikirim') + ', ' + count(/^BEDA/) + ' beda nama (tidak dikirim). Cadangan + hasil di ' + outDir);
+        log('Selesai: ' + results.length + ' bukti potong · ' + (submit ? count(/^DIBETULKAN/) + ' dibetulkan' : count(/^SIAP/) + ' siap dikirim') + ', ' + count(/^NAMA MIRIP/) + ' nama mirip, ' + count(/^BEDA/) + ' beda nama (tidak dikirim). Cadangan + hasil di ' + outDir);
         if (submit && count(/^DIBETULKAN/)) {
-            const { ok, bad } = await amend.check({ context: page.context(), npwp, dirs: [outDir], emit: (m) => log(m) });
+            const { ok, bad, details } = await amend.check({ context: page.context(), npwp, dirs: [outDir], emit: (m) => log(m) });
+            checks = details;
             log('Pemeriksaan ulang: ' + ok + ' benar, ' + bad + ' bermasalah.');
-            const periods = [...new Set(results.filter((r) => r.status === 'DIBETULKAN').map((r) => r.period.slice(0, 2)))].sort();
+            const periods = [...new Set(results.filter((r) => /^DIBETULKAN/.test(r.status)).map((r) => r.period.slice(0, 2)))].sort();
             log('Langkah berikutnya: buat pembetulan SPT Masa PPh 21 masa ' + periods.join(', ') + '/' + taxYear + '.');
         }
     } catch (e) {
+        if (e && e.results) results = e.results;
         if (e && e.isStop) { log('Pembetulan NIK BPMP dihentikan oleh pengguna.'); page = null; }
         else log('Pembetulan NIK BPMP berhenti: ' + e.message);
     }
     // Juga setelah berhenti di tengah: penyisiran menunjukkan apa yang masih tersisa.
-    try { if (submit && page) await amend.sweep({ context: page.context(), npwp, year: taxYear, outDir, emit: (m) => log(m) }); }
+    try { if (submit && page) sweepRes = await amend.sweep({ context: page.context(), npwp, year: taxYear, outDir, emit: (m) => log(m) }); }
     catch (e) { log('Penyisiran NIK gagal: ' + e.message); }
+    // Laporan + riwayat ke Excel rekap yang sama (fileBase64 tanpa path: ke file baru di folder hasil).
+    try {
+        if (submit && (results.length || sweepRes)) {
+            const out = await require('../lib/bpmp-report').writeReport({ file: filePath && /\.xlsx$/i.test(filePath) ? filePath : null,
+                newFile: path.join(outDir || os.tmpdir(), 'Hasil Pembetulan NIK BPMP ' + taxYear + '.xlsx'), year: taxYear, results, checks, sweep: sweepRes });
+            log('Laporan ditulis ke ' + out.file + ' (sheet Hasil Pembetulan, Sisa NIK Bermasalah, Status SPT Masa).' + (out.locked ? ' Excel rekap sedang terbuka, jadi disimpan sebagai file terpisah - tutup Excel lalu salin sheet-nya, atau pilih file ini di proses berikutnya.' : ''));
+        }
+    } catch (e) { log('Laporan ke Excel gagal: ' + e.message); }
     finally { runcontrol.finish(); }
 }
 
@@ -907,7 +919,13 @@ async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
     try {
         const page = await target.open();
         const outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP');
-        await amend.sweep({ context: page.context(), npwp: entity.project === 'manual' ? null : entity.npwp, year: taxYear, outDir, emit: (m) => log(m) });
+        const sweepRes = await amend.sweep({ context: page.context(), npwp: entity.project === 'manual' ? null : entity.npwp, year: taxYear, outDir, emit: (m) => log(m) });
+        // Sheet Sisa NIK Bermasalah + Status SPT Masa di rekap terakhir entitas ini, bila ada.
+        const rekap = entity.entity_id ? require('../lib/a1-source').resolve({ a1Dir: path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), entity.entity_id, 'SPT', 'A1', taxYear), year: taxYear }).excel : null;
+        if (rekap) {
+            const out = await require('../lib/bpmp-report').writeReport({ file: rekap, year: taxYear, results: [], sweep: sweepRes });
+            log('Status ditulis ke ' + out.file + (out.locked ? ' (Excel rekap sedang terbuka - disimpan sebagai file terpisah).' : '.'));
+        }
     } catch (e) {
         if (e && e.isStop) log('Penyisiran NIK dihentikan oleh pengguna.');
         else log('Penyisiran NIK gagal: ' + e.message);
