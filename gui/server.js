@@ -851,11 +851,12 @@ async function handleBpmpAmend(req, res) {
     if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { entity, fileBase64, filePath, year, submit, saveRoot } = body || {};
+    const { entity, fileBase64, filePath, year, submit, saveRoot, sweepOnly } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
-    if (!fileBase64 && !filePath) return sendJson(res, 400, { error: 'Excel rekap belum dipilih.' });
     if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.' });
     const amend = require('../automation/bpmp-amend');
+    if (sweepOnly) return handleBpmpSweep(res, amend, entity, String(year || ''), saveRoot);
+    if (!fileBase64 && !filePath) return sendJson(res, 400, { error: 'Excel rekap belum dipilih.' });
     let parsed;
     // filePath: "Pakai rekap terakhir" (Excel hasil tab Unduh setahun di folder A1 entitas ini).
     try { parsed = await amend.readTargets(fileBase64 ? Buffer.from(fileBase64, 'base64') : (/\.xlsx$/i.test(String(filePath)) ? fs.readFileSync(filePath) : (() => { throw new Error('File harus .xlsx'); })())); }
@@ -869,12 +870,13 @@ async function handleBpmpAmend(req, res) {
     try { runcontrol.start('Pembetulan NIK BPMP' + (submit ? '' : ' (uji)') + ' · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
+    let page = null, outDir = null, npwp = null;
     try {
         parsed.skipped.forEach((s) => log('LEWATI ' + s));
         log('Pembetulan NIK BPMP ' + taxYear + ': ' + parsed.targets.length + ' NIK Baru di Excel · mode ' + (submit ? 'KIRIM ke Coretax' : 'UJI (tanpa simpan)') + '.');
-        const page = await target.open();
-        const outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
-        const npwp = entity.project === 'manual' ? null : entity.npwp;
+        page = await target.open();
+        outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
+        npwp = entity.project === 'manual' ? null : entity.npwp;
         const results = await amend.run({ context: page.context(), npwp, targets: parsed.targets, year: taxYear, submit: !!submit, outDir, emit: (m) => log(m) });
         const count = (re) => results.filter((r) => re.test(r.status)).length;
         log('Selesai: ' + results.length + ' bukti potong · ' + (submit ? count(/^DIBETULKAN/) + ' dibetulkan' : count(/^SIAP/) + ' siap dikirim') + ', ' + count(/^BEDA/) + ' beda nama (tidak dikirim). Cadangan + hasil di ' + outDir);
@@ -885,8 +887,30 @@ async function handleBpmpAmend(req, res) {
             log('Langkah berikutnya: buat pembetulan SPT Masa PPh 21 masa ' + periods.join(', ') + '/' + taxYear + '.');
         }
     } catch (e) {
-        if (e && e.isStop) log('Pembetulan NIK BPMP dihentikan oleh pengguna.');
+        if (e && e.isStop) { log('Pembetulan NIK BPMP dihentikan oleh pengguna.'); page = null; }
         else log('Pembetulan NIK BPMP berhenti: ' + e.message);
+    }
+    // Juga setelah berhenti di tengah: penyisiran menunjukkan apa yang masih tersisa.
+    try { if (submit && page) await amend.sweep({ context: page.context(), npwp, year: taxYear, outDir, emit: (m) => log(m) }); }
+    catch (e) { log('Penyisiran NIK gagal: ' + e.message); }
+    finally { runcontrol.finish(); }
+}
+
+/** Penyisiran saja (tanpa Excel, tanpa mengubah apa pun): masih ada NIK bermasalah di BPMP Telah Terbit tahun ini? */
+async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
+    if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Pilih tahun pajak dulu.' });
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    try { runcontrol.start('Penyisiran NIK BPMP ' + taxYear + ' · ' + target.label, target.session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true, session: runSessionKey() });
+    try {
+        const page = await target.open();
+        const outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP');
+        await amend.sweep({ context: page.context(), npwp: entity.project === 'manual' ? null : entity.npwp, year: taxYear, outDir, emit: (m) => log(m) });
+    } catch (e) {
+        if (e && e.isStop) log('Penyisiran NIK dihentikan oleh pengguna.');
+        else log('Penyisiran NIK gagal: ' + e.message);
     } finally {
         runcontrol.finish();
     }
@@ -1096,37 +1120,13 @@ function handleEvents(req, res) {
     req.on('close', () => { clearInterval(keepAlive); unsubscribe(); });
 }
 
-const { exec: execChild } = require('child_process');
-
-// Escape a value for safe embedding inside a PowerShell single-quoted string literal: the only
-// metacharacter that matters there is the single quote itself, escaped by doubling it. Without
-// this, a `'` in title/filter would break out of the quotes and inject arbitrary PowerShell.
-function psSingleQuote(s) { return String(s == null ? '' : s).replace(/'/g, "''"); }
-
-function nativePickFile(title, filter) {
-    return new Promise((resolve) => {
-        const psScript = `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = '${psSingleQuote(title || 'Pilih File')}'; $f.Filter = '${psSingleQuote(filter || 'Semua File (*.*)|*.*')}'; $f.ShowHelp = $false; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }; $top.Dispose()`;
-        execChild(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { windowsHide: true }, (err, stdout) => {
-            if (err || !stdout) resolve(null);
-            else resolve(stdout.trim());
-        });
-    });
-}
-
-function nativePickFolder(title) {
-    return new Promise((resolve) => {
-        const psScript = `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${psSingleQuote(title || 'Pilih Folder')}'; $f.ShowNewFolderButton = $true; $top = New-Object System.Windows.Forms.Form; $top.TopMost = $true; if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }; $top.Dispose()`;
-        execChild(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { windowsHide: true }, (err, stdout) => {
-            if (err || !stdout) resolve(null);
-            else resolve(stdout.trim());
-        });
-    });
-}
+const fileDialog = require('../lib/file-dialog');
 
 async function handlePickFile(req, res) {
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { }
-    const filePath = await nativePickFile(body.title, body.filter);
+    const filePath = await fileDialog.pick({ kind: 'file', title: body.title || 'Pilih File', filter: body.filter || 'Semua File (*.*)|*.*' });
+    if (filePath && filePath.busy) return sendJson(res, 200, { canceled: true, busy: true });
     if (!filePath) return sendJson(res, 200, { canceled: true });
     let fileBase64 = null;
     let fileName = path.basename(filePath);
@@ -1142,12 +1142,14 @@ async function handlePickFile(req, res) {
 async function handlePickFolder(req, res) {
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { }
-    const folderPath = await nativePickFolder(body.title);
+    const folderPath = await fileDialog.pick({ kind: 'folder', title: body.title || 'Pilih Folder' });
+    if (folderPath && folderPath.busy) return sendJson(res, 200, { canceled: true, busy: true });
     if (!folderPath) return sendJson(res, 200, { canceled: true });
     return sendJson(res, 200, { folderPath });
 }
 
 function createGuiServer(port) {
+    fileDialog.warm();
     const server = http.createServer((req, res) => runcontrol.isolate(() => route(req, res)));
     function route(req, res) {
         const url = new URL(req.url, 'http://127.0.0.1');

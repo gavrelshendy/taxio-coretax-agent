@@ -181,4 +181,40 @@ async function check({ context, npwp, dirs, emit = () => {} }) {
     return { ok, bad };
 }
 
-module.exports = { readTargets, run, check };
+/** NIK bermasalah, aturan yang sama dengan sheet BPMP per NIK Mode A1 (lib/a1-workbook.js nikIssues): NIK
+ *  sementara, atau nomor urut 0000. Ditambah: bukan 16 digit. Pegawai asing (paspor, bukan NIK) dikecualikan. */
+function nikProblem(slip) {
+    const id = String(slip.TaxIdentificationNumber || '').trim();
+    if (slip.IsForeignEmployee) return null;
+    if (id === TEMP) { const m = /#\s*(\S+)\s*$/.exec(String(slip.Name || '')); return 'NIK sementara' + (m ? ' (NIK lama ' + m[1] + ')' : ''); }
+    if (!/^\d{16}$/.test(id)) return 'bukan 16 digit';
+    if (id.endsWith('0000')) return 'nomor urut 0000';
+    return null;
+}
+
+/** Penyisiran setahun (hanya membaca): seluruh BPMP Telah Terbit Januari-Desember `year`, langsung dari Coretax,
+ *  diperiksa dengan nikProblem. Menjawab "masih ada NIK bermasalah?" setelah pembetulan - termasuk NIK yang
+ *  tidak ada di Excel, baris yang dilewati, beda nama, dan bukti potong yang terbit setelah rekap dibuat.
+ *  Tidak bergantung pada SPT Masa (Mode A1 baru berubah setelah SPT Masa-nya dibetulkan). */
+async function sweep({ context, npwp, year, outDir, emit = () => {} }) {
+    const s = await openSession(context, npwp);
+    const problems = [];
+    let total = 0;
+    try {
+        for (let m = 1; m <= 12; m++) {
+            const mm = String(m).padStart(2, '0'), rows = await s.list('getebupotmpissued', mm + mm + year);
+            total += rows.length;
+            for (const r of rows) { const why = nikProblem(r); if (why) problems.push({ nik: r.TaxIdentificationNumber, name: String(r.Name || '').trim(), number: r.WithholdingSlipsNumber, masa: mm, status: r.WithholdingSlipsStatus, why }); }
+        }
+    } finally { await s.close(); }
+    const people = [...new Set(problems.map((p) => p.nik + '|' + p.name))];
+    if (outDir) { fs.mkdirSync(outDir, { recursive: true }); fs.writeFileSync(path.join(outDir, 'penyisiran-nik-' + year + '.json'), JSON.stringify({ year, total, problems }, null, 1)); }
+    if (!problems.length) emit('PENYISIRAN ' + year + ': ' + total + ' BPMP Telah Terbit diperiksa - tidak ada NIK bermasalah lagi.');
+    else {
+        emit('PENYISIRAN ' + year + ': ' + total + ' BPMP Telah Terbit diperiksa - MASIH ADA ' + people.length + ' NIK bermasalah di ' + problems.length + ' bukti potong:');
+        for (const p of problems) emit('MASIH  ' + p.nik + ' ' + p.name + ' · ' + p.number + ' masa ' + p.masa + '/' + year + ' · ' + p.why);
+    }
+    return { total, problems, people: people.length };
+}
+
+module.exports = { readTargets, run, check, sweep, nikProblem };

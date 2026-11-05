@@ -460,7 +460,7 @@
         main(st) {
             const step = (n, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + n + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
             // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (<kode> <tahun> - Rekap SPT PPh 21 Setahun (A1).xlsx).
-            return P.card(1, 'Excel rekap', '<span>Hasil tab "Unduh setahun"</span>', '<div class="hint" style="font-size:13.5px">Tidak perlu template: pakai Excel hasil tab <b>Unduh setahun</b> (<b>Mode A1 - ' + st.year + '.xlsx</b>). Di sheet <b>BPMP per NIK</b>, NIK yang salah berwarna kuning dan kolom hijau <b>NIK Baru</b> / <b>Nama Baru</b> sudah terisi usulan bila ada - cocokkan dengan KTP, lengkapi yang kosong, simpan, lalu pilih filenya di sini. Baris yang kolom hijaunya kosong tidak disentuh.</div>'
+            return P.card(1, 'Excel rekap', '<span>Hasil tab "Unduh setahun"</span>', '<div class="hint" style="font-size:13.5px">Tidak perlu template: pakai Excel hasil tab <b>Unduh setahun</b> (<b>… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx</b>). Di sheet <b>BPMP per NIK</b>, NIK yang salah berwarna kuning dan kolom hijau <b>NIK Baru</b> / <b>Nama Baru</b> sudah terisi usulan bila ada - cocokkan dengan KTP, lengkapi yang kosong, simpan, lalu pilih filenya di sini. Baris yang kolom hijaunya kosong tidak disentuh.</div>'
                     + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Pakai rekap terakhir (' + st.year + ')</button></div>'
                     + (st.latestError ? '<div class="hint warn">' + esc(st.latestError) + '</div>' : '')
                     + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…atau pilih Excel rekap lain</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>')
@@ -468,7 +468,9 @@
                 + P.card(3, 'Yang terjadi di Coretax', '', '<div class="stack">'
                     + step('1', 'NIK Baru dicek dulu, per bukti potong', 'Coretax memvalidasi NIK Baru dan memberi nama resminya. Hanya yang nama resminya sama dengan Nama Baru yang dikirim; NIK tidak terdaftar atau nama berbeda dilewati dan dicatat di log.')
                     + step('2', 'Bukti potong dibetulkan, bukan dibatalkan', 'Nomor bukti potong tetap; statusnya menjadi Pembetulan dan versi lama pindah ke Tidak Valid. Tanggal pemotongan menjadi tanggal pembetulan (perilaku standar Coretax). Data dicadangkan dulu dan diperiksa ulang per kolom sesudahnya.')
-                    + step('3', 'SPT Masa ikut dibetulkan', 'Masa yang bukti potongnya dibetulkan perlu pembetulan SPT Masa PPh 21; daftarnya muncul di log. Setelah itu jalankan tab Unduh setahun dengan "Lanjutkan" - hanya masa yang berubah yang diunduh.') + '</div>');
+                    + step('3', 'Disisir ulang setahun', 'Sesudah kirim, seluruh BPMP Telah Terbit Januari-Desember diperiksa langsung dari Coretax. Log menyebut "tidak ada NIK bermasalah lagi", atau daftar NIK yang masih tersisa (termasuk yang tidak ada di Excel).')
+                    + step('4', 'SPT Masa ikut dibetulkan', 'Masa yang bukti potongnya dibetulkan perlu pembetulan SPT Masa PPh 21; daftarnya muncul di log. Setelah itu jalankan tab Unduh setahun dengan "Lanjutkan" - hanya masa yang berubah yang diunduh.') + '</div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="btn btn-sm" data-act="nik-sweep">' + P.icon('shield', 15) + 'Periksa NIK bermasalah ' + st.year + ' (tanpa mengubah)</button></div>');
         },
         async act(act, d, st, api) {
             if (act === 'pick-file') { const f = await P.pickFile('Pilih Excel Rekap PPh 21 (format terbaru)'); if (f) { st.file = f; st.latestError = ''; const m = /(20\d{2})/.exec(f.fileName); if (m && st.years.includes(Number(m[1]))) st.year = Number(m[1]); api.redraw(); } return false; }
@@ -483,6 +485,14 @@
                 api.redraw(); return false;
             }
             if (act === 'year') { st.year = Number(d.val); return true; }
+            if (act === 'nik-sweep') {
+                if (restricted()) { alert('Tidak tersedia untuk pengguna Restricted.'); return false; }
+                const ent = api.entity();
+                if (!ent) { alert('Pilih entitas dulu.'); return false; }
+                try { await P.post('/api/actions/bpmp-amend', { entity: ent, year: String(st.year), sweepOnly: true, saveRoot: P.saveRoot() || undefined }); }
+                catch (e) { alert(e.message); }
+                return false;
+            }
             return false;
         },
         rail(st, api) {

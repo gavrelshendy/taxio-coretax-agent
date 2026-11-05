@@ -157,12 +157,17 @@
         reader.readAsArrayBuffer(file);
     });
     // Pilih file lewat dialog Windows (server), dengan cadangan <input type=file> bila tidak tersedia.
+    // Satu dialog saja: klik lagi selama dialog masih terbuka/sedang dibuka diabaikan (dulu memunculkan dua dialog).
+    let picking = false;
     P.pickFile = async (title, filter) => {
+        if (picking) return null;
+        picking = true;
         try {
             const data = await P.post('/api/actions/pick-file', { title, filter: filter || 'File Excel (*.xlsx)|*.xlsx|Semua File (*.*)|*.*' });
             if (data && !data.canceled && data.fileBase64) return { fileName: data.fileName, fileBase64: data.fileBase64, filePath: data.filePath };
             if (data && data.canceled) return null;
         } catch (e) { /* jatuh ke input file */ }
+        finally { picking = false; }
         return new Promise((resolve) => {
             const input = document.createElement('input');
             input.type = 'file'; input.accept = '.xlsx';
