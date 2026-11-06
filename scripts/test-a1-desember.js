@@ -16,6 +16,8 @@ module.exports = async function () {
         const x = satu.find((r) => r[0] === m);
         if (x) rows.push(['1', '3401010101900001', 'PEGAWAI SATU', 'BP-' + m, '28-' + m + '-2025', '21-100-01', x[1], '1,5', x[2], 'Tanpa Fasilitas', tku]);
         if (m <= 6) rows.push(['2', '1111111111110001', 'BUDI', 'BPB-' + m, '28-' + m + '-2025', '21-100-01', '5.000.000', '0', '0', 'Tanpa Fasilitas', tku]);
+        // BPMP bruto 0 / PPh 0 sesudah BUDI keluar: tidak memperpanjang masa kerjanya (tetap "BPMP terakhir Juni").
+        if (m === 7) rows.push(['2', '1111111111110001', 'BUDI', 'BPB-7', '28-7-2025', '21-100-01', '0', '0', '0', 'Tanpa Fasilitas', tku]);
         if (m <= 11) rows.push(['3', '2222222222220001', 'CICI', 'BPC-' + m, '28-' + m + '-2025', '21-100-01', '4.000.000', '0', '0', 'PPh Ditanggung Pemerintah (DTP)', tku]);
         if (m <= 11) { book.register(masa, [normal]); book.record(masa, normal, L(rows), true); } else book.register(masa, []);
     }

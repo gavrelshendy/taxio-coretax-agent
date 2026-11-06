@@ -37,7 +37,7 @@ module.exports = async function () {
     assert.equal(by('21-1').kind, 'Berubah'); assert.match(by('21-1').detail, /kode objek pajak 21-100-20 → 21-100-21, bruto 2.000.000 → 2.500.000, PPh 50.000 → 62.500/);
     assert.equal(by('21-2').kind, 'Dihapus'); assert.equal(by('21-3').kind, 'Baru'); assert.equal(by('21-3').gross, 700000);
     assert(!by('MP-1') && !by('A1-1')); assert(result.same.has('MP-1') && result.same.has('A1-1'));
-    assert.deepEqual(result.counts.BP21, { compared: 1, changed: 1, removed: 1, added: 1, replaced: 0, cancel: 0, cancelled: 0 });
+    assert.deepEqual(result.counts.BP21, { compared: 1, changed: 1, removed: 1, added: 1, replaced: 0, cancelled: 0 });
 
     // Diterbitkan ulang (bukti lama dibatalkan, nomor baru untuk NIK & masa yang sama): bukan "dihapus" + "baru".
     // Nilai sama = cocok; nilai beda = satu baris di nomor baru. Bruto & PPh 0: masih terbit = Batalkan, sudah hilang = beres.
@@ -50,8 +50,8 @@ module.exports = async function () {
     assert.equal(rb('NEW-2').kind, 'Diganti'); assert.match(rb('NEW-2').detail, /OLD-2 → NEW-2\): bruto 0 → 6.360.138, PPh 0 → 63.601/);
     assert.equal(rb('NEW-3').kind, 'Diganti'); assert(!rb('OLD-2') && !rb('OLD-3'), 'nomor lama tidak jadi "dihapus"');
     assert(!rb('OLD-4'), 'bernilai 0 dan sudah tidak terbit = sudah dibatalkan');
-    assert.equal(rb('KEEP-5').kind, 'Batalkan'); assert.equal(rb('NEW-6').kind, 'Batalkan');
-    assert.deepEqual(re.counts.BPMP, { compared: 1, changed: 2, removed: 0, added: 0, replaced: 3, cancel: 2, cancelled: 1 });
+    assert(re.same.has('KEEP-5') && !rb('KEEP-5'), '0 di SPT dan e-Bupot = sama (pembatalan otomatis terpisah, autoCancelZero)'); assert.equal(rb('NEW-6').kind, 'Baru');
+    assert.deepEqual(re.counts.BPMP, { compared: 1, changed: 2, removed: 0, added: 1, replaced: 3, cancelled: 1 });
     assert.equal(re.replaced.get('OLD-2'), 'NEW-2');
 
     // Ke rekap: sheet Pembetulan (Jenis, Selisih, Dilaporkan = Belum), catatan di L-III, Ringkasan.
@@ -85,6 +85,35 @@ module.exports = async function () {
     const odd = cmp.compare({ bpmp: new Map(), bpa1: new Map(), bp21: new Map([['21-1', spt.bp21.get('21-1')]]) },
         { bpmp: new Map(), bpa1: new Map(), bp21: new Map([['21-1', { WithholdingSlipsNumber: '21-1', TaxIdentificationNumber: '4444444444440001', TaxObjectCode: '21-100-20', Amount: 9 }]]) });
     assert.deepEqual(odd.diffs, []); assert.match(odd.notes.join(' '), /BP21: bruto tidak dibandingkan/);
-    console.log('PASS: e-Bupot vs SPT - BP21 berubah (bruto, PPh, kode objek pajak), dihapus, baru; BPMP NIK; BPA1 filter IncomePeriodCodeEnd; sheet Pembetulan + catatan L-III + Ringkasan; sudah sama setelah SPT dibetulkan; field belum dikenal tidak memberi selisih palsu.');
+
+    // BPMP 0 otomatis dibatalkan hanya SESUDAH bulan terakhir berpenghasilan; 0 di tengah tahun dibiarkan.
+    const mp = (no, nik, masa, gross, tax, extra = {}) => ({ WithholdingSlipsNumber: no, RecordId: 'rec-' + no, WithholdingslipsAggregateIdentifier: 'agg-' + no, TaxIdentificationNumber: nik, Name: 'P-' + nik.slice(-1), GrossIncome: gross, IncomeTaxWithheld: tax, _masa: masa, WithholdingSlipsStatus: 'NORMAL', IsReportedToTaxReturn: true, ...extra });
+    const A = '1111111111110001', B = '1111111111110002', Z = '1111111111110003', T = '9990000000999000', U = '1111111111110004';
+    const year = [mp('A1', A, 1, 5e6, 1e5), mp('A6', A, 6, 5e6, 1e5), mp('A7', A, 7, 0, 0), mp('A8', A, 8, 5e6, 1e5), mp('A9', A, 9, 0, 0), mp('A10', A, 10, 0, 0), // Jul 0 di tengah: tetap; Sep, Okt 0 di ujung: batal
+        mp('B4', B, 4, 4e6, 0), mp('B5', B, 5, 0, 0), // keluar sesudah April
+        mp('Z3', Z, 3, 0, 0), // tidak pernah berpenghasilan
+        mp('T9', T, 9, 0, 0), // NIK sementara: tidak disentuh
+        mp('U2', U, 2, 3e6, 0), mp('U3', U, 3, 0, 0, { IsUnderAudit: true })]; // sedang diperiksa: tidak disentuh
+    const plan = cmp.zeroToCancel(year);
+    assert.deepEqual(plan.cancel.map((r) => r.WithholdingSlipsNumber).sort(), ['A10', 'A9', 'B5', 'Z3']);
+    assert.deepEqual(plan.skipped.map((x) => x.row.WithholdingSlipsNumber).sort(), ['T9', 'U3']);
+    // autoCancelZero: POST /cancelebupotmp {EBUPOTIdentifiers:[{RecordIdentifier,...}]} satu per satu, lalu dicek sudah hilang.
+    const live = new Map(year.map((r) => [r.WithholdingSlipsNumber, r])), posts = [];
+    const fake = { list: async (ep, code) => [...live.values()].filter((r) => String(r._masa).padStart(2, '0') + String(r._masa).padStart(2, '0') + '2026' === code),
+        post: async (url, body) => { posts.push([url, body]); const id = body.EBUPOTIdentifiers[0].RecordIdentifier.replace('rec-', ''); if (id === 'B5') return { status: 400, json: { IsSuccessful: false, Message: 'ditolak' } }; live.delete(id); return { status: 200, json: { IsSuccessful: true } }; } };
+    const logs = [], done = await cmp.autoCancelZero(fake, '2026', (m) => logs.push(m));
+    assert.match(posts[0][0], /\/withholdingslipsportal\/api\/cancelebupotmp$/); assert.deepEqual(Object.keys(posts[0][1]), ['EBUPOTIdentifiers']);
+    assert.equal(posts[0][1].EBUPOTIdentifiers[0].WithholdingslipsAggregateIdentifier, 'agg-' + posts[0][1].EBUPOTIdentifiers[0].RecordIdentifier.replace('rec-', ''));
+    assert.deepEqual(done.map((x) => x.row.WithholdingSlipsNumber + ':' + x.ok).sort(), ['A10:true', 'A9:true', 'B5:false', 'Z3:true']);
+    assert(live.has('A7') && live.has('T9') && live.has('U3') && live.has('B5'), 'yang tidak boleh / gagal dibatalkan tetap ada');
+    assert(logs.some((l) => /^DIBATALKAN  BPMP A9 masa September .*SPT Masa September perlu dibetulkan/.test(l)) && logs.some((l) => /^GAGAL BATAL BPMP B5.*ditolak/.test(l)));
+    // Catatan di sheet Pembetulan: mana yang dibatalkan, kapan; yang gagal = batalkan manual.
+    await report.writeReport({ file, year: '2026', results: [], compare: { diffs: [], same: new Set(), replaced: new Map(), autoCancelled: done, checkedAt: new Date() } });
+    wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(file);
+    const pb3 = wb.getWorksheet('Pembetulan'), h3 = report.headerMap(pb3), r3 = (no) => { let x = null; pb3.eachRow((r, n) => { if (n > 4 && r.getCell(h3.get('Nomor Bukti Potong')).value === no) x = r; }); return x; };
+    assert.equal(r3('A9').getCell(h3.get('Jenis')).value, 'BPMP 0 dibatalkan'); assert.match(r3('A9').getCell(h3.get('Selisih e-Bupot vs SPT')).value, /^Dibatalkan otomatis oleh Pilot .*SPT Masa September perlu dibetulkan/);
+    assert.equal(r3('A9').getCell(h3.get('Dilaporkan di SPT')).value, 'Belum'); assert.match(r3('B5').getCell(h3.get('Selisih e-Bupot vs SPT')).value, /^Gagal dibatalkan otomatis .*batalkan manual/);
+    assert.equal(r3('A7'), null, 'BPMP 0 di tengah tahun tidak dicatat sebagai dibatalkan');
+    console.log('PASS: e-Bupot vs SPT - BP21 berubah (bruto, PPh, kode objek pajak), dihapus, baru; BPMP NIK; BPA1 filter IncomePeriodCodeEnd; sheet Pembetulan + catatan L-III + Ringkasan; sudah sama setelah SPT dibetulkan; field belum dikenal tidak memberi selisih palsu; BPMP 0 di ujung dibatalkan otomatis (tengah tahun, NIK sementara, sedang diperiksa tidak), catatannya di Pembetulan.');
 };
 if (require.main === module) module.exports().catch((e) => { console.error(e); process.exitCode = 1; });
