@@ -509,7 +509,7 @@
             const step = (n, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + n + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
             // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (<kode> <tahun> - Rekap SPT PPh 21 Setahun (A1).xlsx).
             return P.card(1, 'Rekap Excel', '<span>Output of the "Full-year download" tab</span>', '<div class="hint" style="font-size:13.5px">No template needed: use the Excel from the <b>Full-year download</b> tab (<b>… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx</b>). In the <b>NIK</b> sheet, wrong NIKs are highlighted yellow (filter the <b>Kategori</b> column) and the green <b>NIK Baru</b> / <b>Nama Baru</b> columns are pre-filled with suggestions where available - check them against the KTP, fill in the blanks, save, then select the file here. Rows with empty green columns are left untouched.</div>'
-                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Use latest rekap (' + st.year + ')</button></div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Use latest rekap (' + st.year + ')</button><button type="button" class="btn btn-sm" data-act="nik-refresh"' + (st.file && st.file.filePath ? '' : ' disabled') + ' title="Rebuild this rekap from the file itself (no Coretax): sheet NIK and Draft SPT Desember follow the latest Pembetulan inputs, e.g. a NIK salah gets its own row. Close the file in Excel first.">' + P.icon('retry', 15) + 'Perbarui rekap</button></div>'
                     + (st.latestError ? '<div class="hint warn">' + esc(st.latestError) + '</div>' : '')
                     + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…or select another rekap Excel</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>')
                 + P.card(2, 'Tax Year', '<span>Looks up this year\'s Telah Terbit BPMP Bukti Potong</span>', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
@@ -533,6 +533,11 @@
                 } catch (e) { st.latestError = e.message; }
                 api.redraw(); return false;
             }
+            if (act === 'nik-refresh') {
+                if (!st.file || !st.file.filePath) { alert('Use the latest rekap or pick the file from its folder first.'); return false; }
+                try { await P.post('/api/actions/a1-refresh', { filePath: st.file.filePath }); P.run.poll(); } catch (e) { alert(e.message); }
+                return false;
+            }
             if (act === 'year') { st.year = Number(d.val); return true; }
             if (act === 'nik-similar') { st.allowSimilar = !st.allowSimilar; return true; }
             if (act === 'nik-sweep') {
@@ -554,9 +559,20 @@
         },
         async start(st, api) {
             if (restricted()) throw new Error('BPMP NIK Pembetulan is not available for Restricted users.');
-            if (!window.confirm('Correct NIKs in Coretax for ' + (api.entity().entity_name || 'this entity') + '?\n\nEach NIK Baru is checked first; only Bukti Potong whose official name matches Nama Baru' + (st.allowSimilar ? ' or is similar (using the official Coretax name)' : '') + ' are corrected. Results are written to the Pembetulan and Ringkasan sheets in this Excel.')) return;
+            let pv = null;
+            try { pv = await P.post('/api/bpmp-amend/preview', { fileBase64: st.file.fileBase64 || undefined, filePath: st.file.filePath || undefined }); } catch (e) { throw new Error(e.message); }
+            const name = api.entity().entity_name || 'this entity', fixes = pv.byNik + pv.perSlip;
+            if (fixes && !window.confirm('Correct NIKs in Coretax for ' + name + '?\n\n' + pv.byNik + ' NIK from sheet NIK, ' + pv.perSlip + ' Bukti Potong from sheet Pembetulan (per slip). Each NIK Baru is checked first; only Bukti Potong whose official name matches Nama Baru' + (st.allowSimilar ? ' or is similar (using the official Coretax name)' : '') + ' are corrected. Results are written to the Pembetulan and Ringkasan sheets in this Excel.')) return;
+            // Tindakan = Batalkan: daftar bukti potong ditampilkan dan harus dikonfirmasi terpisah (pembatalan tidak bisa dikembalikan).
+            let confirmCancel = [];
+            if (pv.cancels.length) {
+                const list = pv.cancels.slice(0, 25).map((c) => '• ' + c.number + ' · ' + c.masa + ' · ' + c.nik + ' ' + c.name + (c.gross !== null && c.gross !== undefined && c.gross !== '' ? ' · bruto ' + Number(c.gross).toLocaleString('id-ID') : '')).join('\n') + (pv.cancels.length > 25 ? '\n… and ' + (pv.cancels.length - 25) + ' more' : '');
+                if (window.confirm('CANCEL ' + pv.cancels.length + ' BPMP in Coretax for ' + name + '? (Tindakan = Batalkan)\n\n' + list + '\n\nCancelling cannot be undone. If a slip was already reported, its SPT Masa needs a Pembetulan.')) confirmCancel = pv.cancels.map((c) => c.number);
+                else if (!fixes) return;
+            }
+            if (!fixes && !confirmCancel.length) return;
             // filePath ikut dikirim bila ada, supaya laporan ditulis kembali ke Excel yang sama.
-            await P.post('/api/actions/bpmp-amend', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.filePath || undefined, fileName: st.file.fileName, year: String(st.year), submit: true, allowSimilar: !!st.allowSimilar, saveRoot: P.saveRoot() || undefined });
+            await P.post('/api/actions/bpmp-amend', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.filePath || undefined, fileName: st.file.fileName, year: String(st.year), submit: true, allowSimilar: !!st.allowSimilar, confirmCancel, saveRoot: P.saveRoot() || undefined });
         }
     };
 

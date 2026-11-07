@@ -876,7 +876,7 @@ async function handleBpmpAmend(req, res) {
     if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { entity, fileBase64, filePath, year, submit, saveRoot, sweepOnly, allowSimilar } = body || {};
+    const { entity, fileBase64, filePath, year, submit, saveRoot, sweepOnly, allowSimilar, confirmCancel } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.' });
     const amend = require('../automation/bpmp-amend');
@@ -888,14 +888,16 @@ async function handleBpmpAmend(req, res) {
     catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.message }); }
     const taxYear = String(year || parsed.year || '');
     if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Tahun pajak tidak terbaca dari Excel - pilih tahunnya.' });
-    if (!parsed.targets.length) return sendJson(res, 400, { error: 'Belum ada NIK Baru yang terisi di sheet "NIK".' + (parsed.skipped.length ? ' ' + parsed.skipped[0] : '') });
+    if (!parsed.targets.length && !parsed.cancels.length) return sendJson(res, 400, { error: 'Belum ada NIK Baru yang terisi di sheet NIK atau per bukti potong di sheet Pembetulan, dan tidak ada Tindakan = Batalkan.' + (parsed.skipped.length ? ' ' + parsed.skipped[0] : '') });
+    // Pembatalan hanya untuk nomor yang dikonfirmasi pengguna (dialog daftar bukti potong di GUI, dari /api/bpmp-amend/preview).
+    const confirmed = Array.isArray(confirmCancel) ? confirmCancel.map(String) : [];
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     try { runcontrol.start('BPMP NIK correction' + (submit ? '' : ' (test)') + ' · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
-    let page = null, outDir = null, npwp = null, results = [], checks = null, sweepRes = null;
+    let page = null, outDir = null, npwp = null, results = [], checks = null, sweepRes = null, cancelled = [];
     try {
         parsed.skipped.forEach((s) => log('LEWATI ' + s));
         const done = [...parsed.previous.keys()].filter((old) => parsed.previous.get(old).some((p) => /^DIBETULKAN/.test(p.status)));
@@ -904,7 +906,14 @@ async function handleBpmpAmend(req, res) {
         page = await target.open();
         outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
         npwp = entity.project === 'manual' ? null : entity.npwp;
-        results = await amend.run({ context: page.context(), npwp, targets: parsed.targets, year: taxYear, submit: !!submit, outDir, allowSimilar: !!allowSimilar, previous: parsed.previous, emit: (m) => log(m) });
+        if (parsed.targets.length) results = await amend.run({ context: page.context(), npwp, targets: parsed.targets, year: taxYear, submit: !!submit, outDir, allowSimilar: !!allowSimilar, previous: parsed.previous, exclude: parsed.exclude, emit: (m) => log(m) });
+        if (parsed.cancels.length) {
+            if (!submit) for (const c of parsed.cancels) log('AKAN DIBATALKAN ' + c.number + ' masa ' + c.masa + ' · ' + c.nik + ' ' + c.name + ' (Tindakan = Batalkan; dibatalkan saat Kirim, sesudah dikonfirmasi).');
+            else {
+                cancelled = await amend.cancelSlips({ context: page.context(), npwp, year: taxYear, cancels: parsed.cancels, confirmed, emit: (m) => log(m) });
+                log('Pembatalan: ' + cancelled.filter((x) => x.ok).length + ' dibatalkan' + (cancelled.some((x) => !x.ok) ? ', ' + cancelled.filter((x) => !x.ok).length + ' gagal (batalkan manual)' : '') + '.');
+            }
+        }
         const count = (re) => results.filter((r) => re.test(r.status)).length;
         log('Selesai: ' + results.length + ' bukti potong · ' + (submit ? count(/^DIBETULKAN/) + ' dibetulkan' : count(/^SIAP/) + ' siap dikirim') + ', ' + count(/^NAMA MIRIP/) + ' nama mirip, ' + count(/^BEDA/) + ' beda nama (tidak dikirim). Cadangan + hasil di ' + outDir);
         if (submit && count(/^DIBETULKAN/)) {
@@ -924,15 +933,46 @@ async function handleBpmpAmend(req, res) {
     catch (e) { log('Penyisiran NIK gagal: ' + e.message); }
     // Laporan + riwayat ke Excel rekap yang sama (fileBase64 tanpa path: ke file baru di folder hasil).
     try {
-        if (submit && (results.length || sweepRes)) {
+        if (submit && (results.length || sweepRes || cancelled.length)) {
             const out = await require('../lib/bpmp-report').writeReport({ file: filePath && /\.xlsx$/i.test(filePath) ? filePath : null,
-                newFile: path.join(outDir || os.tmpdir(), 'Hasil Pembetulan NIK BPMP ' + taxYear + '.xlsx'), year: taxYear, results, checks, sweep: sweepRes });
+                newFile: path.join(outDir || os.tmpdir(), 'Hasil Pembetulan NIK BPMP ' + taxYear + '.xlsx'), year: taxYear, results, checks, sweep: sweepRes, cancelled });
             log('Laporan ditulis ke ' + out.file + ' (sheet Pembetulan dan Ringkasan).' + (out.locked ? ' Excel rekap sedang terbuka, jadi disimpan sebagai file terpisah - tutup Excel lalu salin sheet-nya, atau pilih file ini di proses berikutnya.' : ''));
         }
     } catch (e) { log('Laporan ke Excel gagal: ' + e.message); }
     finally { runcontrol.finish(); }
 }
 
+/** Pratinjau isian Pembetulan tanpa membuka Coretax: banyaknya NIK Baru (sheet NIK / per bukti potong) dan daftar bukti potong
+ *  bertindakan Batalkan - GUI menampilkannya untuk dikonfirmasi sebelum Kirim. */
+async function handleBpmpAmendPreview(req, res) {
+    let body;
+    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
+    const { fileBase64, filePath } = body || {};
+    try {
+        const p = await require('../automation/bpmp-amend').readTargets(fileBase64 ? Buffer.from(fileBase64, 'base64') : fs.readFileSync(filePath));
+        return sendJson(res, 200, { byNik: p.targets.filter((t) => !t.number).length, perSlip: p.targets.filter((t) => t.number).length, cancels: p.cancels, skipped: p.skipped, year: p.year });
+    } catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.message }); }
+}
+/** Perbarui rekap: susun ulang Excel rekap di tempat (lib/a1-import.js convertA1Workbook) tanpa membuka Coretax - sheet NIK dan
+ *  Draft SPT Desember mengikuti isian terbaru (mis. NIK salah per bukti potong mendapat barisnya sendiri), isian ikut. */
+async function handleA1Refresh(req, res) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
+    const file = String((body && body.filePath) || '');
+    if (!/\.xlsx$/i.test(file) || !fs.existsSync(file)) return sendJson(res, 400, { error: 'Pilih Excel rekap (.xlsx) yang ada di disk - "Use latest rekap" atau pilih file dari folder.' });
+    try { fs.closeSync(fs.openSync(file, 'r+')); } catch (e) { return sendJson(res, 409, { error: 'Excel rekap sedang terbuka - tutup dulu di Excel, lalu klik Perbarui rekap lagi.' }); }
+    const m = /^(.*?)\s*(20\d{2}) - Rekap SPT PPh 21 Setahun \(A1\)/.exec(path.basename(file));
+    try { runcontrol.start('Refresh rekap · ' + path.basename(file)); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true, session: runSessionKey() });
+    try {
+        log('Perbarui rekap (tanpa Coretax): ' + file);
+        const { result } = await require('../lib/a1-import').convertA1Workbook(file, path.dirname(file), m ? m[1] : '');
+        log('Selesai: ' + result.file + ' · isian dibawa: ' + (result.carriedInputs || 0) + ' · bukti potong perlu pembetulan: ' + result.draftRows + '.');
+    } catch (e) { log('Perbarui rekap gagal: ' + e.message); }
+    finally { runcontrol.finish(); }
+}
 /** Upload Format Impor Coretax (lib/coretax-import.js): baca file (Excel template impor DJP atau XML) dari base64 / path. */
 async function readImportFile(body) {
     const { fileBase64, filePath, fileName } = body || {};
@@ -1419,6 +1459,8 @@ function createGuiServer(port) {
             if (pathname === '/api/ebupot/issue-preview' && req.method === 'POST') return handleIssuePreview(req, res);
             if (pathname === '/api/actions/issue-ebupot' && req.method === 'POST') return handleIssueEbupot(req, res);
             if (pathname === '/api/a1/inspect' && req.method === 'POST') return handleA1Inspect(req, res);
+            if (pathname === '/api/bpmp-amend/preview' && req.method === 'POST') return handleBpmpAmendPreview(req, res);
+            if (pathname === '/api/actions/a1-refresh' && req.method === 'POST') return handleA1Refresh(req, res);
             if (pathname === '/api/a1/bpa1-xml' && req.method === 'POST') return handleBpa1Xml(req, res);
             if (pathname === '/api/actions/check-dividen' && req.method === 'POST') return handleCheckDividen(req, res);
             if (pathname === '/api/actions/create-dividen-case' && req.method === 'POST') return handleCreateDividenCase(req, res);

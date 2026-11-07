@@ -34,7 +34,7 @@ module.exports = async function () {
     assert.equal(iz['Masa Awal'], 4); assert.equal(iz['Masa Akhir'], 12); assert.equal(iz['ID TKU Pemotong'], tku); assert.equal(ci.Fasilitas, 'DTP'); assert.equal(iz.Fasilitas, 'N/A');
     assert.equal(iz['PPh Jan-Nov (L-IA)'], 834539); assert.equal(iz['Bruto Jan-Nov (L-IA)'], 57909039);
     const ws = wb.getWorksheet('Draft SPT Desember'), col = (h) => desember.COLS.findIndex((c) => c[0] === h) + 1;
-    assert.match(ws.getCell(iz._row, col('PPh Jan-Nov (L-IA)')).value.formula, /^SUMIFS\('L-IA'!\$J\$8:\$J\$\d+,'L-IA'!\$C\$8:\$C\$\d+,A\d+&"\*",'L-IA'!\$A\$8:\$A\$\d+,"<>Desember"\)$/);
+    assert.match(ws.getCell(iz._row, col('PPh Jan-Nov (L-IA)')).value.formula, /^SUMIFS\('L-IA'!\$J\$8:\$J\$\d+,'L-IA'!\$M\$8:\$M\$\d+,A\d+&"\*",'L-IA'!\$A\$8:\$A\$\d+,"<>Desember"\)$/);
     assert.equal(ws.getCell(iz._row, col('Biaya Jabatan')).value.formula, 'MIN(5%*U' + iz._row + ',500000*J' + iz._row + ')');
     assert.equal(wb.worksheets.reduce((a, s) => a + Object.keys(s._merges || {}).length, 0), 0);
     // Dikunci tanpa kata sandi (filter tetap jalan); hanya sel hijau terbuka; 25 baris cadangan untuk pegawai baru.

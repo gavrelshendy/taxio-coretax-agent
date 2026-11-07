@@ -54,21 +54,26 @@ module.exports = async function () {
     assert.deepEqual(re.counts.BPMP, { compared: 1, changed: 2, removed: 0, added: 1, replaced: 3, cancelled: 1 });
     assert.equal(re.replaced.get('OLD-2'), 'NEW-2');
 
-    // Ke rekap: sheet Pembetulan (Jenis, Selisih, Dilaporkan = Belum), catatan di L-III, Ringkasan.
+    // Ke rekap: selisih di sheet e-Bupot vs SPT (Jenis, Keterangan, Dilaporkan = Belum), catatan di L-III, Ringkasan.
+    // Sheet Pembetulan hanya pembetulan identitas dan pembatalan (permintaan 2026-11-07).
     await report.writeReport({ file, year: '2026', results: [], compare: result });
     wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(file);
-    const pb = wb.getWorksheet('Pembetulan'), h = report.headerMap(pb), row = (no) => { let f = null; pb.eachRow((r, n) => { if (n > 1 && r.getCell(h.get('Nomor Bukti Potong')).value === no) f = r; }); return f; };
-    const v = (no, k) => { const c = row(no).getCell(h.get(k)).value; return c && typeof c === 'object' && 'result' in c ? c.result : c; };
-    assert.equal(v('21-1', 'Jenis'), 'e-Bupot ≠ SPT'); assert.equal(v('21-1', 'Dilaporkan di SPT'), 'Belum'); assert.match(v('21-1', 'Selisih e-Bupot vs SPT'), /^Berubah sesudah SPT dilaporkan: kode objek pajak/);
-    // Penghasilan Bruto / PPh = nilai di SPT; Bruto / PPh e-Bupot = nilai e-Bupot sekarang (21-3 belum ada di SPT).
-    assert.equal(v('21-3', 'Penghasilan Bruto (Rp)') ?? '', ''); assert.equal(v('21-3', 'Bruto e-Bupot (Rp)'), 700000); assert.equal(v('21-3', 'PPh e-Bupot (Rp)'), 0); assert.equal(v('21-3', 'Masa'), 'Maret');
-    assert.deepEqual(['Penghasilan Bruto (Rp)', 'PPh (Rp)', 'Bruto e-Bupot (Rp)', 'PPh e-Bupot (Rp)'].map((k) => v('21-1', k)), [2000000, 50000, 2500000, 62500]);
-    assert.equal(row('21-1').getCell(h.get('Bruto e-Bupot (Rp)')).numFmt, '#,##0');
-    assert.equal(v('MP-2', 'Jenis'), 'NIK bermasalah', 'jenis asal (NIK sementara) tetap'); assert.match(v('MP-2', 'Selisih e-Bupot vs SPT'), /NIK 9990000000999000 → 2222222222220001/);
+    const sheetRows = (ws) => { const h = report.headerMap(ws, 4), row = (no) => { let f = null; ws.eachRow((r, n) => { if (n > 4 && r.getCell(h.get('Nomor Bukti Potong')).value === no) f = r; }); return f; };
+        return { h, row, v: (no, k) => { const c = row(no).getCell(h.get(k)).value; return c && typeof c === 'object' && 'result' in c ? c.result : c; } }; };
+    const sl = sheetRows(wb.getWorksheet(report.SL_NAME)), pbx = sheetRows(wb.getWorksheet('Pembetulan')), v = sl.v;
+    assert.equal(v('21-1', 'Jenis'), 'e-Bupot ≠ SPT'); assert.equal(v('21-1', 'Dilaporkan di SPT'), 'Belum'); assert.match(v('21-1', 'Keterangan'), /^Berubah sesudah SPT dilaporkan: kode objek pajak/);
+    assert.equal(pbx.row('21-1'), null, 'selisih tidak masuk sheet Pembetulan'); assert.equal(pbx.v('MP-2', 'Jenis'), 'NIK bermasalah', 'jenis asal (NIK sementara) tetap di Pembetulan');
+    assert(!pbx.h.has('Selisih e-Bupot vs SPT') && !pbx.h.has('Bruto e-Bupot (Rp)'), 'kolom selisih tidak ada lagi di Pembetulan');
+    // Bruto / PPh SPT = nilai di SPT; Bruto / PPh e-Bupot = nilai e-Bupot sekarang (21-3 belum ada di SPT).
+    assert.equal(v('21-3', 'Bruto SPT (Rp)') ?? '', ''); assert.equal(v('21-3', 'Bruto e-Bupot (Rp)'), 700000); assert.equal(v('21-3', 'PPh e-Bupot (Rp)'), 0); assert.equal(v('21-3', 'Masa'), 'Maret');
+    assert.deepEqual(['Bruto SPT (Rp)', 'PPh SPT (Rp)', 'Bruto e-Bupot (Rp)', 'PPh e-Bupot (Rp)'].map((k) => v('21-1', k)), [2000000, 50000, 2500000, 62500]);
+    assert.equal(sl.row('21-1').getCell(sl.h.get('Bruto e-Bupot (Rp)')).numFmt, '#,##0');
+    assert.match(v('MP-2', 'Keterangan'), /NIK 9990000000999000 → 2222222222220001/);
     const l3 = wb.getWorksheet('L-III'); let head = 0; l3.eachRow((r, n) => { if (!head && r.getCell(1).value === 'Masa') head = n; });
     const lh = report.headerMap(l3, head), note = (no) => { let x = null; l3.eachRow((r, n) => { if (n > head && r.getCell(lh.get('Nomor Bukti Potong')).value === no) x = r.getCell(lh.get('Catatan Pembetulan')).value; }); return x; };
     assert.match(note('21-1').result, /^Berubah sesudah SPT dilaporkan/); assert.match(note('21-2').result, /^Tidak ada lagi di e-Bupot BP21/);
-    const rk = wb.getWorksheet('Ringkasan'); assert.equal(rk.getCell(11, 5).value.result, 4, 'Maret (baris 11, di bawah kop): MP-2, 21-1, 21-2, 21-3');
+    assert.match(note('21-1').formula, /'e-Bupot vs SPT'!\$/);
+    const rk = wb.getWorksheet('Ringkasan'); assert.equal(rk.getCell(11, 5).value.result, 1, 'Maret (baris 11, di bawah kop): hanya MP-2 di Pembetulan');
 
     // SPT Maret dibetulkan -> rekap baru sama dengan e-Bupot -> "Sudah sama", Dilaporkan = Ya, tetap tercatat.
     const fixed = cmp.compare({ bpmp: new Map([['MP-1', spt.bpmp.get('MP-1')], ['MP-2', { ...spt.bpmp.get('MP-2'), nik: '2222222222220001' }]]), bpa1: spt.bpa1,
@@ -77,10 +82,8 @@ module.exports = async function () {
     assert.deepEqual(fixed.diffs, []);
     await report.writeReport({ file, year: '2026', results: [], compare: fixed });
     wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(file);
-    const pb2 = wb.getWorksheet('Pembetulan'), h2 = report.headerMap(pb2);
-    let s211 = null; pb2.eachRow((r, n) => { if (n > 1 && r.getCell(h2.get('Nomor Bukti Potong')).value === '21-1') s211 = r; });
-    assert.match(s211.getCell(h2.get('Selisih e-Bupot vs SPT')).value, /^Sudah sama dengan SPT/); assert.equal(s211.getCell(h2.get('Dilaporkan di SPT')).value, 'Ya');
-
+    const sl2 = sheetRows(wb.getWorksheet(report.SL_NAME));
+    assert.match(sl2.v('21-1', 'Keterangan'), /^Sudah sama dengan SPT/); assert.equal(sl2.v('21-1', 'Dilaporkan di SPT'), 'Ya');
     // Field bruto / PPh yang belum dikenali: tidak dibandingkan, dicatat - bukan selisih palsu.
     const odd = cmp.compare({ bpmp: new Map(), bpa1: new Map(), bp21: new Map([['21-1', spt.bp21.get('21-1')]]) },
         { bpmp: new Map(), bpa1: new Map(), bp21: new Map([['21-1', { WithholdingSlipsNumber: '21-1', TaxIdentificationNumber: '4444444444440001', TaxObjectCode: '21-100-20', Amount: 9 }]]) });
@@ -111,8 +114,10 @@ module.exports = async function () {
     await report.writeReport({ file, year: '2026', results: [], compare: { diffs: [], same: new Set(), replaced: new Map(), autoCancelled: done, checkedAt: new Date() } });
     wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(file);
     const pb3 = wb.getWorksheet('Pembetulan'), h3 = report.headerMap(pb3), r3 = (no) => { let x = null; pb3.eachRow((r, n) => { if (n > 4 && r.getCell(h3.get('Nomor Bukti Potong')).value === no) x = r; }); return x; };
-    assert.equal(r3('A9').getCell(h3.get('Jenis')).value, 'BPMP 0 dibatalkan'); assert.match(r3('A9').getCell(h3.get('Selisih e-Bupot vs SPT')).value, /^Dibatalkan otomatis oleh Pilot .*SPT Masa September perlu dibetulkan/);
-    assert.equal(r3('A9').getCell(h3.get('Dilaporkan di SPT')).value, 'Belum'); assert.match(r3('B5').getCell(h3.get('Selisih e-Bupot vs SPT')).value, /^Gagal dibatalkan otomatis .*batalkan manual/);
+    assert.equal(r3('A9').getCell(h3.get('Jenis')).value, 'Pembatalan'); assert.match(r3('A9').getCell(h3.get('Status')).value, /^Dibatalkan oleh Pilot · \d\d\/\d\d\/2\d{3}/);
+    assert.match(r3('A9').getCell(h3.get('Catatan')).value, /masa kerja .*SPT Masa September perlu dibetulkan/);
+    assert.equal(r3('A9').getCell(h3.get('Dilaporkan di SPT')).value, 'Belum'); assert.equal(r3('B5').getCell(h3.get('Status')).value, 'Gagal dibatalkan - batalkan manual di e-Bupot');
+    assert.match(r3('B5').getCell(h3.get('Catatan')).value, /^Gagal dibatalkan otomatis: .*ditolak - batalkan manual/);
     assert.equal(r3('A7'), null, 'BPMP 0 di tengah tahun tidak dicatat sebagai dibatalkan');
     console.log('PASS: e-Bupot vs SPT - BP21 berubah (bruto, PPh, kode objek pajak), dihapus, baru; BPMP NIK; BPA1 filter IncomePeriodCodeEnd; sheet Pembetulan + catatan L-III + Ringkasan; sudah sama setelah SPT dibetulkan; field belum dikenal tidak memberi selisih palsu; BPMP 0 di ujung dibatalkan otomatis (tengah tahun, NIK sementara, sedang diperiksa tidak), catatannya di Pembetulan.');
 };

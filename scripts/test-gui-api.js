@@ -309,9 +309,9 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
             const all = (await GET('/api/run/status')).json;
             assert.strictEqual(all.runs.filter((r) => r.active).length, 2);
             const sa = (await GET('/api/run/status?session=' + encodeURIComponent(a.json.session))).json;
-            assert.strictEqual(sa.active, true); assert.strictEqual(sa.key, a.json.session); assert.ok(/^Login Coretax/.test(sa.label));
+            assert.strictEqual(sa.active, true); assert.strictEqual(sa.key, a.json.session); assert.ok(/^Coretax login/.test(sa.label));
             const c = await POST('/api/actions/login-entity', { entity: e1 });
-            assert.strictEqual(c.status, 409); assert.ok(/Sesi ini masih menjalankan "Login Coretax/.test(c.json.error), c.json.error);
+            assert.strictEqual(c.status, 409); assert.ok(/Sesi ini masih menjalankan "Coretax login/.test(c.json.error), c.json.error);
             const idle = (await GET('/api/run/status?session=' + encodeURIComponent('p-tidak-ada'))).json;
             assert.strictEqual(idle.active, false, 'sesi tanpa proses tampil idle walau sesi lain sibuk');
         } finally { loginDelay = 0; }
