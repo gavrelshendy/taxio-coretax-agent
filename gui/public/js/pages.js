@@ -18,7 +18,7 @@
         ] },
         { title: 'AUTOMATION', items: [
             { id: 'a1', label: 'Annual PPh 21 Recap', icon: 'cal', crumb: 'Automation · download, recap & NIK Pembetulan', hideForRestricted: true },
-            { id: 'dividen', label: 'Dividend Import', icon: 'coins', crumb: 'Automation' },
+            { id: 'dividen', label: 'Laporan Realisasi Investasi Dividen', icon: 'coins', crumb: 'Automation · e-Reporting AS.39-01' },
             { id: 'kredit', label: 'Faktur Masukan Crediting', icon: 'badge', crumb: 'Automation' },
             { id: 'billing', label: 'PPh 25 Kode Billing', icon: 'bank', crumb: 'Automation' },
             { id: 'impor', label: 'Bukti Potong Upload, Issue & Sign', icon: 'upload', crumb: 'Automation · upload to Belum Terbit, issue & sign, Konsep SPT', hideForRestricted: true }
@@ -564,25 +564,16 @@
     // Impor Dividen (AS.39-01) - entitas berkredensial login otomatis seperti fitur lain; tanpa
     // entitas (atau sesi manual) lewat jendela Coretax yang Anda login sendiri.
     // =========================================================
-    const dividenAuto = (api) => { const ent = api.entity(); return ent && !L.isManualLike(ent) ? ent : null; };
     const dividen = createPage({
-        id: 'dividen', needsEntity: false,
+        id: 'dividen',
         init() { return { file: null, busy: '' }; },
         main(st, api) {
-            const m = P.state.manual, auto = dividenAuto(api);
-            const banner = auto
-                ? '<div class="banner ok"><span class="ico">' + P.icon('shield', 20) + '</span><div class="body"><b>Automatic login as ' + esc(auto.entity_name) + '</b><span>' + esc(loginText(auto)) + '. The case is created and filled in this entity\'s Coretax window, using the saved credentials.</span></div></div>'
-                : m.loggedIn
-                ? '<div class="banner ok"><span class="ico">' + P.icon('check', 20, '', 2.4) + '</span><div class="body"><b>Coretax session detected</b><span>' + esc(m.identity || 'Signed in to Coretax.') + '</span></div></div>'
-                : '<div class="banner ' + (m.open ? 'warn' : 'info') + '"><span class="ico">' + P.icon('globe', 22) + '</span><div class="body"><b>' + (m.open ? 'Waiting for manual login' : 'This feature runs in a Coretax session you log in to yourself') + '</b><span>Open Coretax, log in as the taxpayer to be filled in, then open the e-Reporting Realisasi Investasi menu.</span>'
-                    + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-coretax" style="box-shadow:none">' + P.icon('globe', 15) + 'Open Coretax</button><button type="button" class="btn btn-sm" data-act="check-session">' + P.icon('shield', 15) + 'Check session</button></div></div></div>';
-            return banner
-                + P.card(1, 'Create New Case', '', '<div class="hint" style="font-size:13.5px">Opens a new e-Reporting case (AS.39-01) in Coretax' + (auto ? ', after automatic login' : '') + '. Skip this if you already opened the case yourself' + (auto ? ' in this entity\'s Coretax window' : '') + '.</div><button type="button" class="btn" data-act="create-case"' + (auto || m.loggedIn ? '' : ' disabled') + '>' + P.icon('plus', 16) + 'Create New Case (AS.39-01)</button>')
+            return P.card(1, 'Create New Case', '', '<div class="hint" style="font-size:13.5px">Logs in to Coretax as this entity and opens a new e-Reporting case (AS.39-01). Skip this if the case is already open in this entity\'s Coretax window.</div><button type="button" class="btn btn-sm btn-primary" data-act="create-case" style="box-shadow:none;margin-top:8px">' + P.icon('plus', 15) + 'Create New Case</button>')
                 + P.card(2, 'Excel Template File', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Select the filled-in .xlsx template file</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>');
         },
         async act(act, d, st, api) {
             if (act === 'pick-file') { const f = await P.pickFile('Select the Dividend template file (.xlsx)'); if (f) { st.file = f; api.redraw(); } return false; }
-            const entity = dividenAuto(api) || undefined;
+            const entity = api.entity();
             if (act === 'create-case') { try { await P.post('/api/actions/create-dividen-case', { entity }); P.run.poll(); } catch (e) { alert('Failed to create case: ' + e.message); } return false; }
             if (act === 'import' || act === 'check') {
                 if (!st.file) { alert('Select a .xlsx template file first.'); return false; }
@@ -593,10 +584,9 @@
             return false;
         },
         rail(st, api) {
-            const m = P.state.manual, auto = dividenAuto(api);
-            const why = !auto && !m.loggedIn ? 'Waiting for manual login' : (!st.file ? 'Select a template file first' : '');
-            const login = auto ? [['Entity', esc(auto.entity_name)], ['Login', esc(loginText(auto))]] : [['Login', m.loggedIn ? esc(m.identity || 'Manual active') : '<span class="warn">Not logged in</span>', m.loggedIn ? '' : 'warn']];
-            return '<div class="card"><div class="eyebrow">Summary</div>' + P.kv([...login, ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>']])
+            const ent = api.entity(), ready = readiness(ent);
+            const why = !ready.ok ? ready.reason : (!st.file ? 'Select a template file first' : '');
+            return '<div class="card"><div class="eyebrow">Summary</div>' + P.kv([['Entity', esc(L.isManualLike(ent) ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>']])
                 + '<button type="button" class="btn btn-primary btn-lg btn-block" data-act="import"' + (why ? ' disabled' : '') + '>' + P.icon('upload', 18, '', 2) + 'Import to Coretax</button>'
                 + '<button type="button" class="btn btn-block" data-act="check"' + (why ? ' disabled' : '') + ' title="Read the table currently shown in Coretax and compare it with this file">' + P.icon('search', 16) + 'Check results (compare table)</button>'
                 + (why ? '<div class="hint" style="text-align:center">' + esc(why) + '</div>' : '') + P.note('shield', 'var(--green)', 'Data goes into a draft and is not submitted to DJP until you sign it yourself.') + '</div>';
