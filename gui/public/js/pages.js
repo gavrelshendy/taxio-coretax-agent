@@ -20,7 +20,8 @@
             { id: 'a1', label: 'Rekap PPh 21 Setahun', icon: 'cal', crumb: 'Otomasi · unduh, rekap & pembetulan NIK', hideForRestricted: true },
             { id: 'dividen', label: 'Impor Dividen', icon: 'coins', crumb: 'Otomasi' },
             { id: 'kredit', label: 'Pengkreditan Faktur Masukan', icon: 'badge', crumb: 'Otomasi' },
-            { id: 'billing', label: 'Kode Billing PPh 25', icon: 'bank', crumb: 'Otomasi' }
+            { id: 'billing', label: 'Kode Billing PPh 25', icon: 'bank', crumb: 'Otomasi' },
+            { id: 'impor', label: 'Upload Impor Coretax', icon: 'upload', crumb: 'Otomasi · e-Bupot ke Belum Terbit & Konsep SPT', hideForRestricted: true }
         ] }
     ];
 
@@ -656,7 +657,60 @@
         }
     });
 
-    const REGISTRY = { spt, ebupot, bpsaya, faktur, a1, dividen, kredit, billing };
+    // =========================================================
+    // Upload Impor Coretax (BPMP, BP21, BPA1, BPPU ke Belum Terbit) + Buat Konsep SPT - lib/coretax-import.js
+    // =========================================================
+    let imporView = 'upload';
+    const impor = createPage({
+        id: 'impor',
+        init(api) { return { view: imporView, file: null, info: null, infoError: '', konsepType: 'ICT_WIT', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }) }; },
+        afterDraw(st) { if (st.view === 'konsep') st.pp.bind(); },
+        main(st) {
+            const tabs = '<div style="margin-bottom:4px">' + P.seg('iview', [{ value: 'upload', label: 'Upload e-Bupot' }, { value: 'konsep', label: 'Konsep SPT' }], st.view) + '</div>';
+            if (st.view === 'konsep') return tabs
+                + P.card(1, 'Jenis SPT', '', '<div class="chips c2">' + [['ICT_WIT', 'PPh Pasal 21/26'], ['ICT_WT', 'PPh Unifikasi']].map(([v, l]) => '<button type="button" class="chip" data-act="ktype" data-val="' + v + '" aria-pressed="' + (st.konsepType === v) + '">' + l + '</button>').join('') + '</div>')
+                + P.card(2, 'Masa pajak', '<span>Normal atau Pembetulan dipilih otomatis sesuai Coretax</span>', st.pp.html());
+            const i = st.info;
+            const summary = st.infoError ? '<div class="hint warn" style="margin-top:8px">' + esc(st.infoError) + '</div>'
+                : i ? '<div class="hint" style="margin-top:8px"><b>' + esc(i.label) + '</b> · ' + i.count + ' bukti potong · masa ' + esc((i.periods || []).join(', ') || '-') + ' · NPWP pemotong ' + esc(i.tin || '-') + (i.source === 'excel' ? ' · sheet ' + esc(i.sheet || '') : ' · file XML') + '</div>'
+                    + ((i.problems || []).length ? '<div class="hint warn">' + i.problems.slice(0, 5).map(esc).join('<br>') + '</div>' : '') : '';
+            return tabs
+                + P.card(1, 'File impor', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Excel template impor DJP (.xlsx) atau XML</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>' + summary)
+                + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Hanya ke Belum Terbit</b><div class="hint">Jenis dikenali otomatis (BPMP, BP21, BPA1, BPPU). Coretax memvalidasi file lalu membuat bukti potong di Belum Terbit; bila ada baris salah, tidak ada yang dibuat dan kesalahannya tampil di log. Terbitkan / tanda tangan tetap Anda lakukan sendiri.</div></div></div></section>';
+        },
+        async act(act, d, st, api) {
+            if (act === 'iview') { st.view = imporView = d.val; return true; }
+            if (act === 'ktype') { st.konsepType = d.val; return true; }
+            if (act === 'pick-file') {
+                const f = await P.pickFile('Pilih file impor e-Bupot (.xlsx / .xml)', 'File impor (*.xlsx;*.xml)|*.xlsx;*.xml|Semua File (*.*)|*.*'); if (!f) return false;
+                st.file = f; st.info = null; st.infoError = ''; api.redraw();
+                try { st.info = await P.post('/api/import/inspect', { entity: api.entity(), fileBase64: f.fileBase64, filePath: f.filePath, fileName: f.fileName }); }
+                catch (e) { st.infoError = e.message; }
+                api.redraw(); return false;
+            }
+            return false;
+        },
+        rail(st, api) {
+            const ent = api.entity(), name = ent.project === 'manual' ? 'Sesi manual' : ent.entity_name;
+            if (st.view === 'konsep') {
+                const masa = st.pp.single();
+                return railCard({ title: 'Ringkasan', rows: [['Entitas', esc(name)], ['Login', esc(loginText(ent))], ['SPT', st.konsepType === 'ICT_WIT' ? 'PPh 21/26' : 'Unifikasi'], ['Masa', masa ? esc(L.masaLabel(masa)) : '<span class="muted">Belum dipilih</span>']],
+                    folder: false, ready: readiness(ent), blocked: masa ? '' : 'Pilih masa pajak', cta: 'Buat Konsep SPT', icon: 'file',
+                    notes: [['shield', 'var(--green)', 'Hanya membuat konsep. Posting, periksa, tanda tangan dan lapor tetap di Coretax.']] });
+            }
+            const i = st.info;
+            const blocked = !st.file ? 'Pilih file impor dulu' : st.infoError ? 'File tidak bisa dipakai' : !i ? 'Memeriksa file…' : (i.problems || []).length ? 'Perbaiki masalah data di file' : '';
+            return railCard({ title: 'Ringkasan', rows: [['Entitas', esc(name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Belum dipilih</span>'], ['Jenis', i ? esc(i.label) : '-'], ['Bukti potong', i ? String(i.count) : '-']],
+                folder: false, ready: readiness(ent), blocked, cta: 'Upload ke Belum Terbit', icon: 'upload',
+                notes: [['shield', 'var(--green)', 'Tidak menerbitkan dan tidak menandatangani. Hasilnya dari Monitoring XML Coretax, tampil di log.']] });
+        },
+        async start(st, api) {
+            if (st.view === 'konsep') return P.post('/api/actions/create-konsep', { entity: api.entity(), taxType: st.konsepType, period: st.pp.single() });
+            await P.post('/api/actions/import-coretax', { entity: api.entity(), fileBase64: st.file.fileBase64, filePath: st.file.filePath, fileName: st.file.fileName });
+        }
+    });
+
+    const REGISTRY = { spt, ebupot, bpsaya, faktur, a1, dividen, kredit, billing, impor };
     P.pages = { NAV, get: (id) => REGISTRY[id], all: REGISTRY };
     P.pages.meta = (id) => { for (const g of NAV) for (const it of g.items) if (it.id === id) return it; return null; };
 })();
