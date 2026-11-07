@@ -49,6 +49,24 @@ halaman Coretax dibaca dari bundle publik (`withholding-slips-portal/id-ID/main.
 - BPA1 `A1Bulk > TIN, ListOfA1 > A1`: 27 elemen (lihat `lib/a1-desember.js` buildXml). NIK harus terdaftar:
   NIK sementara ditolak ("Gender tidak boleh null").
 
+## Bulk Process (menu Bulk Process / Monitoring di halaman e-Bupot)
+
+Pekerjaan per masa yang diantrikan; hasilnya di Monitoring.
+- `POST {e-Bupot}/withholdingslipsbulkprocess/issuedall` `{TaxpayerAggregateIdentifier, RepresentativeAggregateIdentifier
+  (RepresentativeId bila impersonate), EbupotType, Period: "MMMMYYYY"}` = **Diterbitkan Masa Pajak** (`BP001`): menerbitkan
+  SEMUA Belum Terbit masa itu. BPMP tanpa tanda tangan; BP21/BPA1/BPU dkk. lewat form e-sign. **Tidak diuji** (menerbitkan = manual).
+- `POST {e-Bupot}/EbupotExport/export` `{TaxpayerAggregateIdentifier, TaxpayerAggregateIdentifierRepresentative: null,
+  TaxpayerAggregateIdentifierCorporate: null, PeriodCode, BulkProcessType: "BP002", EbupotType}` = Download CSV by Period;
+  `Message` = RecordId pekerjaan. Diuji live: Pending -> Done ~70 detik, hasil ZIP `<NPWP>_EBUPOTMP_<masa>.zip`.
+- `BP003` Download PDF by Period: `POST /downloadwithholdingslips/download-all-by-period-pdf` `{TaxpayerAggregateIdentifier, EbupotType, PeriodCode}`.
+- Monitoring: `POST {e-Bupot}/withholdingslipsbulkprocess/bulk-process-monitoring` (grid: First, Rows, Filters,
+  TaxpayerAggregateIdentifier, BulkProcessType, EbupotType) -> `Status` Pending/Done, `ErrorMessage`;
+  detail: `.../bulk-process-monitoring-detail` `{RecordId, ...}` -> `FileName`, `Url` file hasil.
+
+Perbandingan waktu (live): upload XML membuat bukti potong dalam ~1-2 detik sesudah diunggah (file 6 bukti potong:
+selesai dalam detik yang sama); Bulk Process adalah antrian (ekspor CSV ~70 detik). Upload XML = membuat Belum Terbit;
+Bulk Process = menerbitkan / mengekspor yang sudah ada - keduanya bukan pengganti satu sama lain.
+
 ## Buat Konsep SPT
 
 `POST {SPT}/createreturnsheet` `{TaxpayerAggregateIdentifier, TaxPeriodCode: "MMMMYYYY", TaxTypeCode, ReturnSheetTypeCode,
