@@ -1247,7 +1247,9 @@ const fileDialog = require('../lib/file-dialog');
 async function handlePickFile(req, res) {
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { }
-    const filePath = await fileDialog.pick({ kind: 'file', title: body.title || 'Pilih File', filter: body.filter || 'Semua File (*.*)|*.*' });
+    // dir: folder awal dialog (mis. folder file impor terakhir; "downloads" = folder Downloads pengguna).
+    const dir = body.dir === 'downloads' ? path.join(os.homedir(), 'Downloads') : (typeof body.dir === 'string' ? body.dir : '');
+    const filePath = await fileDialog.pick({ kind: 'file', title: body.title || 'Pilih File', filter: body.filter || 'Semua File (*.*)|*.*', dir });
     if (filePath && filePath.busy) return sendJson(res, 200, { canceled: true, busy: true });
     if (!filePath) return sendJson(res, 200, { canceled: true });
     let fileBase64 = null;

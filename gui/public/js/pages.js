@@ -682,7 +682,10 @@
             if (act === 'iview') { st.view = imporView = d.val; return true; }
             if (act === 'ktype') { st.konsepType = d.val; return true; }
             if (act === 'pick-file') {
-                const f = await P.pickFile('Pilih file impor e-Bupot (.xlsx / .xml)', 'File impor (*.xlsx;*.xml)|*.xlsx;*.xml|Semua File (*.*)|*.*'); if (!f) return false;
+                // Dialog dibuka di folder file impor terakhir (lokal), pertama kali di Downloads.
+                let dir = 'downloads'; try { dir = localStorage.getItem('taxio.imporDir') || 'downloads'; } catch (e) {}
+                const f = await P.pickFile('Pilih file impor e-Bupot (.xlsx / .xml)', 'File impor (*.xlsx;*.xml)|*.xlsx;*.xml|Semua File (*.*)|*.*', dir); if (!f) return false;
+                if (f.filePath) try { localStorage.setItem('taxio.imporDir', f.filePath.replace(/[\\/][^\\/]*$/, '')); } catch (e) {}
                 st.file = f; st.info = null; st.infoError = ''; api.redraw();
                 try { st.info = await P.post('/api/import/inspect', { entity: api.entity(), fileBase64: f.fileBase64, filePath: f.filePath, fileName: f.fileName }); }
                 catch (e) { st.infoError = e.message; }

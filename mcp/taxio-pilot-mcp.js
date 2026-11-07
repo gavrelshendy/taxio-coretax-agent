@@ -31,11 +31,17 @@ function call(method, p, body) {
 }
 
 /** Entity from Pilot's list (Taxio Hub), with its primary Coretax PIC filled in (what the Pilot GUI sends). */
-async function entityOf(code, mode = 'group') {
-    const list = (await call('GET', '/api/entities?mode=' + encodeURIComponent(mode))).entities || [];
-    const want = String(code || '').trim().toUpperCase();
-    const e = list.find((x) => String(x.entity_id).toUpperCase() === want) || list.find((x) => String(x.entity_name || '').toUpperCase().includes(want));
-    if (!e) throw new Error('Entitas "' + code + '" tidak ditemukan di Taxio Pilot (mode ' + mode + '). Pakai list_entities untuk melihat kodenya.');
+/** Entitas dicari di mode group lalu personal (entitas pribadi / mode Me), cocok kode, NPWP, atau nama. */
+async function entityOf(code) {
+    const want = String(code || '').trim().toUpperCase(), digits = want.replace(/\D/g, '');
+    let e = null;
+    for (const mode of ['group', 'personal']) {
+        const list = (await call('GET', '/api/entities?mode=' + mode)).entities || [];
+        e = list.find((x) => String(x.entity_id).toUpperCase() === want) || (digits.length >= 15 && list.find((x) => String(x.npwp || '').replace(/\D/g, '').endsWith(digits.slice(-15))))
+            || list.find((x) => String(x.entity_name || '').toUpperCase().includes(want));
+        if (e) break;
+    }
+    if (!e) throw new Error('Entitas "' + code + '" tidak ditemukan di Taxio Pilot (mode group maupun personal). Pakai list_entities untuk melihat kodenya.');
     const pic = (e.pics || []).find((p) => p.is_primary) || (e.pics || [])[0];
     if (!pic) throw new Error('Entitas ' + e.entity_id + ' belum punya PIC Coretax tertaut.');
     return { ...e, pic_id: pic.pic_id, pic_name: pic.pic_name };
@@ -47,12 +53,14 @@ const TOOLS = [
         inputSchema: { type: 'object', properties: {} },
         run: async () => ({ version: await call('GET', '/api/version'), session: await call('GET', '/api/session') }) },
     { name: 'list_entities', description: 'Daftar entitas (klien) yang bisa diotomasi Taxio Pilot beserta kode entitas, NPWP, PIC Coretax, dan Folder Tax Server. Kode entitas (mis. GMF) dipakai tool lain.',
-        inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Saring nama / kode / NPWP (opsional).' }, mode: { type: 'string', enum: ['group', 'personal'], description: 'group (default) = entitas grup; personal = entitas pribadi (mode Me).' } } },
+        inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Saring nama / kode / NPWP (opsional).' }, mode: { type: 'string', enum: ['all', 'group', 'personal'], description: 'all (default) = grup dan pribadi; group = entitas grup; personal = entitas pribadi (mode Me).' } } },
         run: async ({ query, mode }) => {
-            const list = (await call('GET', '/api/entities?mode=' + (mode === 'personal' ? 'personal' : 'group'))).entities || [];
+            const modes = mode === 'personal' || mode === 'group' ? [mode] : ['group', 'personal'];
+            const list = [];
+            for (const m of modes) for (const e of (await call('GET', '/api/entities?mode=' + m)).entities || []) if (!list.some((x) => x.entity_id === e.entity_id)) list.push({ ...e, _mode: m });
             const q = String(query || '').toLowerCase();
             return list.filter((e) => !q || [e.entity_id, e.entity_name, e.npwp].join(' ').toLowerCase().includes(q))
-                .map((e) => ({ code: e.entity_id, name: e.entity_name, npwp: e.npwp, taxserver_folder: e.taxserver_folder || '', pics: (e.pics || []).map((p) => p.pic_name + (p.is_primary ? ' (utama)' : '')) }));
+                .map((e) => ({ code: e.entity_id, name: e.entity_name, mode: e._mode, npwp: e.npwp, taxserver_folder: e.taxserver_folder || '', pics: (e.pics || []).map((p) => p.pic_name + (p.is_primary ? ' (utama)' : '')) }));
         } },
     { name: 'a1_status', description: 'Status Rekap PPh 21 Setahun (Mode A1) satu entitas: folder tujuan (A1 preparation), Excel rekap yang ada, dan per masa apakah data & PDF SPT sudah ada (dipakai ulang) atau akan diunduh. Hanya membaca; tidak membuka Coretax.',
         inputSchema: { type: 'object', required: ['entity'], properties: { entity: { type: 'string', description: 'Kode entitas, mis. GMF.' }, year: { type: 'integer', description: 'Tahun pajak, default tahun ini.' } } },
