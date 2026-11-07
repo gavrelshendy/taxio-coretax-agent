@@ -33,9 +33,9 @@ test('parseMasa: satu bulan, rentang, dan setahun penuh', () => {
 });
 test('parseMasa: rentang terbalik dibetulkan; galat memakai kalimat server', () => {
     assert.deepStrictEqual(Array.from(L.parseMasa('0326-0126').set), ['0126', '0226', '0326']);
-    assert.strictEqual(L.parseMasa('1326').error, 'Masa tidak valid: "1326"');
-    assert.strictEqual(L.parseMasa('0126;xx').error, 'Masa tidak valid: "xx"');
-    assert.strictEqual(L.parseMasa('1999').error, 'Masa tidak valid: "1999"');
+    assert.strictEqual(L.parseMasa('1326').error, 'Invalid period: "1326"');
+    assert.strictEqual(L.parseMasa('0126;xx').error, 'Invalid period: "xx"');
+    assert.strictEqual(L.parseMasa('1999').error, 'Invalid period: "1999"');
 });
 test('parseMasa dan masaToCode konsisten dengan lib/masa.js di server (bolak-balik)', () => {
     for (const text of ['0126', '0126;0226', '0125-1225', '2025', '1125-0126;0526']) {
@@ -49,12 +49,12 @@ test('yearsToCode dan parseYears cocok dengan lib/masa.js (tahunan)', () => {
     assert.strictEqual(L.yearsToCode([2025, 2024]), '2024-2025');
     assert.strictEqual(L.yearsToCode([2021, 2024]), '2021;2024');
     assert.deepStrictEqual(Array.from(L.parseYears('2024-2025').set), [2024, 2025]);
-    assert.strictEqual(L.parseYears('20x5').error, 'Tahun tidak valid: "20x5"');
+    assert.strictEqual(L.parseYears('20x5').error, 'Invalid year: "20x5"');
     for (const ys of [[2025], [2024, 2025], [2021, 2024, 2025]]) {
         assert.deepStrictEqual(masaLib.parseAnnualYearListInput(L.yearsToCode(ys)), ys.map(String));
     }
 });
-test('masaLabel', () => { assert.strictEqual(L.masaLabel('0826'), 'Agustus 2026'); });
+test('masaLabel', () => { assert.strictEqual(L.masaLabel('0826'), 'August 2026'); });
 
 test('initials: tanpa bentuk badan hukum, biasanya tiga huruf (satu kata pakai tiga huruf pertama)', () => {
     assert.strictEqual(L.initials('PT Contoh Sejahtera Abadi'), 'CSA');
@@ -145,19 +145,19 @@ test('loginPill: entitas Hub aktif hanya bila login terakhir memang entitas itu'
     const last = { at: 1, name: 'mitra karya abadi, pt' };
     assert.strictEqual(L.loginPill({ entity: LIST[0], manual: {}, last }).kind, 'ok');
     assert.strictEqual(L.loginPill({ entity: LIST[1], manual: {}, last }).kind, 'off');
-    assert.strictEqual(L.loginPill({ entity: LIST[0], manual: {}, last: null }).text, 'Belum masuk Coretax');
+    assert.strictEqual(L.loginPill({ entity: LIST[0], manual: {}, last: null }).text, 'Not signed in to Coretax');
 });
 test('loginPill: sesi manual polos mengikuti jendela Coretax manual', () => {
     const manual = { project: 'manual', entity_name: 'Sesi Manual' };
-    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: false, loggedIn: false } }), { kind: 'off', text: 'Belum membuka Coretax' });
-    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: true, loggedIn: false } }), { kind: 'wait', text: 'Menunggu login manual' });
-    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: true, loggedIn: true } }), { kind: 'manual', text: 'Login manual aktif' });
+    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: false, loggedIn: false } }), { kind: 'off', text: 'Coretax not opened yet' });
+    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: true, loggedIn: false } }), { kind: 'wait', text: 'Waiting for manual login' });
+    assert.deepStrictEqual(L.loginPill({ entity: manual, manual: { open: true, loggedIn: true } }), { kind: 'manual', text: 'Manual login active' });
 });
 test('loginPill: entitas lokal (kredensial asli) memakai jalur otomatis, bukan lagi status manual', () => {
     assert.strictEqual(L.loginPill({ entity: LOCAL_BADAN, manual: { open: true, loggedIn: true } }).kind, 'off', 'sesi manual terbuka tidak dianggap sebagai login entitas lokal ini');
 });
 test('loginPill: tanpa entitas', () => {
-    assert.strictEqual(L.loginPill({ entity: null, manual: {} }).text, 'Pilih entitas');
+    assert.strictEqual(L.loginPill({ entity: null, manual: {} }).text, 'Select entity');
     assert.strictEqual(L.loginPill({ entity: null, manual: { loggedIn: true } }).kind, 'manual');
 });
 

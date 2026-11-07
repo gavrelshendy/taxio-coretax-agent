@@ -49,6 +49,20 @@ halaman Coretax dibaca dari bundle publik (`withholding-slips-portal/id-ID/main.
 - BPA1 `A1Bulk > TIN, ListOfA1 > A1`: 27 elemen (lihat `lib/a1-desember.js` buildXml). NIK harus terdaftar:
   NIK sementara ditolak ("Gender tidak boleh null").
 
+## Terbitkan (issue) dan tanda tangan
+
+Dari bundle e-Bupot (belum diuji live):
+- `POST {e-Bupot}/issueebupot{fcode}` `{EBUPOTIdentifiers: [{RecordIdentifier, WithholdingslipsAggregateIdentifier,
+  WithholdingSlipsStatus, UnderAuditValue, ...}], SignParameter?, SignedTaxpayerAggregateIdentifier?}`.
+- BPMP (`mp`) tanpa tanda tangan. BP21, BP26, BPA1, BPA2, BPU, BPNR (`_isNeedESign`): `SignParameter =
+  {Type: "02", Provider: <kode sertifikat>, SignerID: <NIK penandatangan>, SignerPassword: <passphrase>}` dan
+  `SignedTaxpayerAggregateIdentifier` = claim `RepresentativeId` bila impersonate, selain itu `taxpayer_id`.
+- Sertifikat: `POST https://coretaxdjp.pajak.go.id/registrationportal/api/DigitalCertificate/digitalCertificateList {SignerId}`
+  -> `Payload[]` (diurut `Code`; `00`/`08` = sertifikat DJP/portal, dipakai pertama).
+- Validasi passphrase sebelum menandatangani (provider 00/08): `POST https://coretaxdjp.pajak.go.id/documentmanagementportal/api/documentOutbound/validate-sign {Nik, Passphrase}`
+  -> `Payload.KodeResponse === 1` benar; selain itu `Payload.ErrMessage`.
+- Bukti potong yang sedang diperiksa / keberatan / penyidikan / restitusi tidak lewat form tanda tangan.
+
 ## Bulk Process (menu Bulk Process / Monitoring di halaman e-Bupot)
 
 Pekerjaan per masa yang diantrikan; hasilnya di Monitoring.

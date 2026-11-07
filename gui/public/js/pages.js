@@ -10,43 +10,43 @@
 
     // ---------- Navigasi ----------
     const NAV = [
-        { title: 'UNDUH', items: [
-            { id: 'spt', label: 'SPT', icon: 'file', crumb: 'Unduh' },
-            { id: 'ebupot', label: 'e-Bupot', icon: 'fileCheck', crumb: 'Unduh' },
-            { id: 'bpsaya', label: 'Bukti Potong Saya', icon: 'inbox', crumb: 'Unduh' },
-            { id: 'faktur', label: 'Unduh e-Faktur', icon: 'receipt', crumb: 'Unduh' }
+        { title: 'DOWNLOAD', items: [
+            { id: 'spt', label: 'SPT', icon: 'file', crumb: 'Download' },
+            { id: 'ebupot', label: 'e-Bupot', icon: 'fileCheck', crumb: 'Download' },
+            { id: 'bpsaya', label: 'My Bukti Potong', icon: 'inbox', crumb: 'Download' },
+            { id: 'faktur', label: 'e-Faktur', icon: 'receipt', crumb: 'Download' }
         ] },
-        { title: 'OTOMASI', items: [
-            { id: 'a1', label: 'Rekap PPh 21 Setahun', icon: 'cal', crumb: 'Otomasi · unduh, rekap & pembetulan NIK', hideForRestricted: true },
-            { id: 'dividen', label: 'Impor Dividen', icon: 'coins', crumb: 'Otomasi' },
-            { id: 'kredit', label: 'Pengkreditan Faktur Masukan', icon: 'badge', crumb: 'Otomasi' },
-            { id: 'billing', label: 'Kode Billing PPh 25', icon: 'bank', crumb: 'Otomasi' },
-            { id: 'impor', label: 'Upload Impor Coretax', icon: 'upload', crumb: 'Otomasi · e-Bupot ke Belum Terbit & Konsep SPT', hideForRestricted: true }
+        { title: 'AUTOMATION', items: [
+            { id: 'a1', label: 'Annual PPh 21 Recap', icon: 'cal', crumb: 'Automation · download, recap & NIK Pembetulan', hideForRestricted: true },
+            { id: 'dividen', label: 'Dividend Import', icon: 'coins', crumb: 'Automation' },
+            { id: 'kredit', label: 'Faktur Masukan Crediting', icon: 'badge', crumb: 'Automation' },
+            { id: 'billing', label: 'PPh 25 Kode Billing', icon: 'bank', crumb: 'Automation' },
+            { id: 'impor', label: 'Bukti Potong Upload, Issue & Sign', icon: 'upload', crumb: 'Automation · upload to Belum Terbit, issue & sign, Konsep SPT', hideForRestricted: true }
         ] }
     ];
 
     // ---------- Potongan bersama ----------
     function loginText(ent) {
         if (!ent) return '-';
-        if (ent.project === 'manual') return 'Manual · sesi yang terbuka';
+        if (ent.project === 'manual') return 'Manual · open session';
         // Lokal (kredensial tersimpan) login otomatis persis seperti Taxio Hub - ent sudah
         // diratakan (flattenSelection) jadi pic_name-nya sudah PIC yang benar-benar terpilih.
-        return 'Otomatis' + (ent.pic_name ? ' · PIC ' + ent.pic_name : '');
+        return 'Automatic' + (ent.pic_name ? ' · PIC ' + ent.pic_name : '');
     }
     function readiness(ent) {
-        if (!ent) return { ok: false, reason: 'Pilih entitas dulu' };
-        if (L.isManualLike(ent) && !P.state.manual.loggedIn) return { ok: false, reason: 'Menunggu login manual' };
+        if (!ent) return { ok: false, reason: 'Select an entity first' };
+        if (L.isManualLike(ent) && !P.state.manual.loggedIn) return { ok: false, reason: 'Waiting for manual login' };
         return { ok: true };
     }
     function railCard(o) {
         const ready = o.ready || { ok: true };
         const why = !ready.ok ? ready.reason : o.blocked;
-        return '<div class="card"><div class="eyebrow">' + (o.title || 'Ringkasan') + '</div>'
+        return '<div class="card"><div class="eyebrow">' + (o.title || 'Summary') + '</div>'
             + (o.big !== undefined ? '<div class="big-num"><b>' + o.big + '</b><span>' + (o.unit || '') + '</span></div>' : '')
             + (o.sub ? '<div style="font-size:13px;color:var(--text)">' + o.sub + '</div>' : '')
             + '<div class="divider"></div>' + P.kv(o.rows || [])
             + (o.folder === false ? '' : P.folderField())
-            + '<button type="button" class="btn btn-primary btn-lg btn-block" data-act="start"' + (why ? ' disabled' : '') + '>' + P.icon(o.icon || 'play', 18, '', 2) + (o.cta || 'Mulai Otomasi') + '</button>'
+            + '<button type="button" class="btn btn-primary btn-lg btn-block" data-act="start"' + (why ? ' disabled' : '') + '>' + P.icon(o.icon || 'play', 18, '', 2) + (o.cta || 'Start Automation') + '</button>'
             + (why ? '<div class="hint" style="text-align:center;margin-top:-8px">' + esc(why) + '</div>' : '')
             + (o.notes || []).map((n) => P.note(n[0], n[1], n[2])).join('') + '</div>';
     }
@@ -56,21 +56,21 @@
     function manualBanner(ent) {
         if (!ent || !L.isManualLike(ent)) return '';
         const m = P.state.manual;
-        const who = 'Sesi Coretax yang sedang terbuka dipakai apa adanya.';
+        const who = 'The currently open Coretax session is used as is.';
         if (m.loggedIn) {
-            return '<div class="banner ok"><span class="ico">' + P.icon('check', 20, '', 2.4) + '</span><div class="body"><b>Sesi Coretax terdeteksi</b><span>' + esc(m.identity || 'Sudah masuk ke Coretax.') + ' Pastikan ini akun yang benar sebelum memulai.</span></div></div>';
+            return '<div class="banner ok"><span class="ico">' + P.icon('check', 20, '', 2.4) + '</span><div class="body"><b>Coretax session detected</b><span>' + esc(m.identity || 'Signed in to Coretax.') + ' Make sure this is the right account before starting.</span></div></div>';
         }
-        const steps = [['1', 'Buka Coretax'], ['2', 'Login'], ['3', 'Periksa sesi']];
-        return '<div class="banner ' + (m.open ? 'warn' : 'info') + '"><span class="ico">' + P.icon('globe', 22) + '</span><div class="body"><b>' + (m.open ? 'Menunggu login manual di jendela Coretax' : 'Coretax dibuka di jendela terpisah') + '</b><span>' + who + ' Agen menunggu, dan lanjut begitu sesi terdeteksi.</span>'
-            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-coretax" style="box-shadow:none">' + P.icon('globe', 15) + (m.open ? 'Tampilkan jendela' : 'Buka Coretax') + '</button><button type="button" class="btn btn-sm" data-act="check-session">' + P.icon('shield', 15) + 'Periksa sesi</button></div></div>'
+        const steps = [['1', 'Open Coretax'], ['2', 'Log in'], ['3', 'Check session']];
+        return '<div class="banner ' + (m.open ? 'warn' : 'info') + '"><span class="ico">' + P.icon('globe', 22) + '</span><div class="body"><b>' + (m.open ? 'Waiting for manual login in the Coretax window' : 'Coretax opens in a separate window') + '</b><span>' + who + ' The agent waits, and continues as soon as the session is detected.</span>'
+            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-coretax" style="box-shadow:none">' + P.icon('globe', 15) + (m.open ? 'Show window' : 'Open Coretax') + '</button><button type="button" class="btn btn-sm" data-act="check-session">' + P.icon('shield', 15) + 'Check session</button></div></div>'
             + '<div class="banner-steps">' + steps.map(([n, t]) => '<span><i>' + n + '</i>' + t + '</span>').join('') + '</div></div>';
     }
     /** Belum ada entitas: formulir tetap tampil (bisa disiapkan dulu), hanya diberi banner untuk memilih
      *  entitas; tombol Mulai di ringkasan tetap terkunci sampai entitas dipilih. */
     function entityGuard() {
-        return '<div class="banner info"><span class="ico">' + P.icon('search', 20) + '</span><div class="body"><b>Entitas belum dipilih</b>'
-            + '<span>Formulir bisa disiapkan dulu. Pilih entitas dari Taxio Hub, atau tambahkan klien baru di tab Saya, sebelum memulai.</span>'
-            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-palette" style="box-shadow:none">' + P.icon('search', 15) + 'Cari entitas</button></div></div></div>';
+        return '<div class="banner info"><span class="ico">' + P.icon('search', 20) + '</span><div class="body"><b>No entity selected</b>'
+            + '<span>You can prepare the form first. Select an entity from Taxio Hub, or add a new client, before starting.</span>'
+            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-palette" style="box-shadow:none">' + P.icon('search', 15) + 'Search entity</button></div></div></div>';
     }
     const kodeHint = (n, unit) => n + ' ' + unit;
 
@@ -84,7 +84,7 @@
 
         function railHtml() {
             const ent = api.entity();
-            if (def.needsEntity !== false && !ent) return railCard({ rows: [['Entitas', '<span class="muted">Belum dipilih</span>']], ready: { ok: false, reason: 'Pilih entitas dulu' } });
+            if (def.needsEntity !== false && !ent) return railCard({ rows: [['Entity', '<span class="muted">Not selected</span>']], ready: { ok: false, reason: 'Select an entity first' } });
             return def.rail(st, api);
         }
         function html() {
@@ -132,7 +132,7 @@
                         // Antrean banyak entitas: tiap entitas dijalankan berurutan lewat start() yang sama.
                         await P.batch.run(async () => { await def.start(st, api); });
                     } else { await def.start(st, api); P.run.poll(); }
-                } catch (err) { alert('Gagal memulai: ' + err.message); }
+                } catch (err) { alert('Failed to start: ' + err.message); }
                 busy = false;
                 updateRail();
                 return;
@@ -177,8 +177,8 @@
     // =========================================================
     // SPT
     // =========================================================
-    const SPT_MONTHLY = [['pph21', '21/26', 'PPh Pasal 21/26'], ['unifikasi', 'UNI', 'PPh Unifikasi'], ['ppn', 'PPN', 'PPN']];
-    const SPT_ANNUAL = [['badan', '1771', 'PPh Badan'], ['spt_op', '1770', 'PPh Orang Pribadi']];
+    const SPT_MONTHLY = [['pph21', '21/26', 'PPh 21/26'], ['unifikasi', 'UNI', 'PPh Unifikasi'], ['ppn', 'PPN', 'PPN']];
+    const SPT_ANNUAL = [['badan', '1771', 'Corporate PPh'], ['spt_op', '1770', 'Individual PPh']];
     const ANNUAL_KEYS = ['badan', 'spt_op'];
     const spt = createPage({
         id: 'spt', batch: true,
@@ -202,22 +202,22 @@
             const onlyPph21 = st.jenis.size === 1 && st.jenis.has('pph21');
             const tiles = (list, cols) => '<div class="tiles ' + cols + '">' + list.map(([k, code, title]) => {
                 const dis = (k === 'pph21' && restricted()) || (k === 'spt_op' && !opAllowed);
-                const sub = k === 'spt_op' && !opAllowed ? 'Khusus entitas orang pribadi' : (ANNUAL_KEYS.includes(k) ? 'SPT Tahunan' : 'SPT Masa');
-                return P.tile('jenis', k, st.jenis.has(k), code, title, sub, { disabled: dis, title: dis && k === 'pph21' ? 'SPT PPh 21 tidak tersedia untuk pengguna Restricted.' : '' });
+                const sub = k === 'spt_op' && !opAllowed ? 'Individual entities only' : (ANNUAL_KEYS.includes(k) ? 'SPT Tahunan' : 'SPT Masa');
+                return P.tile('jenis', k, st.jenis.has(k), code, title, sub, { disabled: dis, title: dis && k === 'pph21' ? 'SPT PPh 21 is not available for Restricted users.' : '' });
             }).join('') + '</div>';
             const pp = annual ? st.ppY : st.ppM;
             const lamp = st.lampiran
-                ? '<div class="subpanel"><div class="field"><span class="label">Format</span>' + P.seg('fmt', [{ value: 'pdf', label: 'PDF' }, { value: 'excel', label: 'Excel' }, { value: 'both', label: 'Keduanya' }], st.fmt) + '</div>'
-                    + (st.fmt !== 'excel' ? '<div class="field"><span class="label">Isi PDF</span>' + P.seg('isi', [{ value: 'print', label: 'Ringkas' }, { value: 'full', label: 'Lengkap' }, { value: 'confidential', label: 'Rahasia', disabled: !onlyPph21, title: 'Hanya untuk PPh 21/26 saja' }], st.isi) + '</div>'
-                        + '<div class="field"><span class="label">Susunan PDF</span>' + P.seg('sus', [{ value: 'combined', label: 'Gabung' }, { value: 'separate', label: 'Pisah' }], st.sus) + '</div>' : '')
-                    + '<div class="full hint">' + (st.fmt === 'excel' ? 'Excel berisi seluruh data. Satu sheet per lampiran, dapat berisi beberapa tabel.' : ({ print: 'Ringkas: PDF memuat 50 baris pertama tiap tabel dan menyebut berapa baris yang tidak tampil. Jumlah selalu mencakup seluruh data.', full: 'Lengkap: PDF memuat seluruh baris tiap tabel, maks. 1.000 baris (±26 halaman). Tabel yang lebih besar (mis. L3 kredit pajak) memuat baris 1–1.000; seluruh barisnya ada di sheet "… lengkap" pada Excel lampiran, yang otomatis ikut diunduh. Jumlah selalu mencakup seluruh data.', confidential: 'Mode rahasia menghapus rincian penerima. Hanya tersedia bila yang dipilih PPh 21/26 saja.' }[st.isi])) + '</div></div>' : '';
-            return P.card(1, 'Jenis pajak', '<span>Masa boleh lebih dari satu · tahunan pilih satu</span>',
+                ? '<div class="subpanel"><div class="field"><span class="label">Format</span>' + P.seg('fmt', [{ value: 'pdf', label: 'PDF' }, { value: 'excel', label: 'Excel' }, { value: 'both', label: 'Both' }], st.fmt) + '</div>'
+                    + (st.fmt !== 'excel' ? '<div class="field"><span class="label">PDF content</span>' + P.seg('isi', [{ value: 'print', label: 'Compact' }, { value: 'full', label: 'Full' }, { value: 'confidential', label: 'Confidential', disabled: !onlyPph21, title: 'PPh 21/26 only' }], st.isi) + '</div>'
+                        + '<div class="field"><span class="label">PDF layout</span>' + P.seg('sus', [{ value: 'combined', label: 'Combined' }, { value: 'separate', label: 'Separate' }], st.sus) + '</div>' : '')
+                    + '<div class="full hint">' + (st.fmt === 'excel' ? 'The Excel contains all data. One sheet per Lampiran, which may hold several tables.' : ({ print: 'Compact: the PDF shows the first 50 rows of each table and states how many rows are not shown. Totals always cover all data.', full: 'Full: the PDF shows every row of each table, max. 1,000 rows (±26 pages). Larger tables (e.g. L3 tax credits) show rows 1–1,000; all rows are in the "… lengkap" sheet of the Lampiran Excel, which is downloaded automatically. Totals always cover all data.', confidential: 'Confidential mode removes recipient details. Only available when PPh 21/26 alone is selected.' }[st.isi])) + '</div></div>' : '';
+            return P.card(1, 'Tax Type', '<span>Multiple periods allowed · annual: pick one</span>',
                 '<div class="stack"><div class="eyebrow">SPT Masa</div>' + tiles(SPT_MONTHLY, 'c3') + '</div><div class="stack"><div class="eyebrow">SPT Tahunan</div>' + tiles(SPT_ANNUAL, 'c2') + '</div>')
-                + P.card(2, annual ? 'Tahun pajak' : 'Masa pajak', annual ? 'Satu tahun = satu unduhan penuh (Jan–Des)' : '', pp.html())
-                + P.card(3, 'Dokumen yang diunduh', '<span>BPE dan Induk = PDF asli Coretax</span>',
-                    '<div class="stack">' + P.docRow('bpe', st.bpe, 'fileCheck', 'BPE', 'Bukti Penerimaan Elektronik')
-                    + P.docRow('induk', st.induk, 'file', 'Induk', 'Formulir induk SPT')
-                    + P.docRow('lampiran', st.lampiran, 'sheet', 'Lampiran', 'Dicetak dari tampilan Coretax, termasuk yang tidak punya PDF resmi') + lamp + '</div>');
+                + P.card(2, annual ? 'Tax Year' : 'Tax Period', annual ? 'One year = one full download (Jan–Dec)' : '', pp.html())
+                + P.card(3, 'Documents to Download', '<span>BPE and Induk = original Coretax PDF</span>',
+                    '<div class="stack">' + P.docRow('bpe', st.bpe, 'fileCheck', 'BPE', 'Electronic filing receipt (Bukti Penerimaan Elektronik)')
+                    + P.docRow('induk', st.induk, 'file', 'Induk', 'Main SPT form')
+                    + P.docRow('lampiran', st.lampiran, 'sheet', 'Lampiran', 'Printed from the Coretax view, including those without an official PDF') + lamp + '</div>');
         },
         act(act, d, st, api) {
             if (act === 'jenis') {
@@ -234,16 +234,16 @@
             const combos = st.jenis.size * pp.count();
             const docs = [st.bpe && 'BPE', st.induk && 'Induk', st.lampiran && 'Lampiran (' + ({ pdf: 'PDF', excel: 'Excel', both: 'PDF + Excel' }[st.fmt]) + ')'].filter(Boolean);
             let blocked = '';
-            if (!st.jenis.size) blocked = 'Pilih jenis pajak'; else if (!pp.count()) blocked = annual ? 'Pilih tahun pajak' : 'Pilih masa pajak'; else if (!docs.length) blocked = 'Pilih minimal satu dokumen';
-            return railCard({ big: combos, unit: 'kombinasi unduhan', sub: st.jenis.size + ' jenis pajak × ' + pp.count() + ' ' + pp.unit(),
-                rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Dokumen', docs.length ? esc(docs.join(' · ')) : '<span class="muted">Belum dipilih</span>', docs.length ? '' : 'dim']],
-                ready: readiness(ent), blocked, notes: [['shield', 'var(--green)', 'Hanya mengunduh dari Coretax. Tidak ada SPT yang dikirim ke DJP.']] });
+            if (!st.jenis.size) blocked = 'Select a tax type'; else if (!pp.count()) blocked = annual ? 'Select a tax year' : 'Select a tax period'; else if (!docs.length) blocked = 'Select at least one document';
+            return railCard({ big: combos, unit: 'download combinations', sub: st.jenis.size + ' tax type(s) × ' + pp.count() + ' ' + pp.unit(),
+                rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Documents', docs.length ? esc(docs.join(' · ')) : '<span class="muted">Not selected</span>', docs.length ? '' : 'dim']],
+                ready: readiness(ent), blocked, notes: [['shield', 'var(--green)', 'Only downloads from Coretax. No SPT is submitted to DJP.']] });
         },
         async start(st, api) {
             const annual = isAnnual(st); const pp = annual ? st.ppY : st.ppM;
             const jenisPajakKeys = Array.from(st.jenis);
-            if (restricted() && jenisPajakKeys.includes('pph21')) throw new Error('SPT PPh 21 tidak tersedia untuk pengguna Restricted.');
-            if (!st.bpe && !st.induk && !st.lampiran) throw new Error('Pilih minimal satu dokumen untuk diunduh.');
+            if (restricted() && jenisPajakKeys.includes('pph21')) throw new Error('SPT PPh 21 is not available for Restricted users.');
+            if (!st.bpe && !st.induk && !st.lampiran) throw new Error('Select at least one document to download.');
             const lampiranMode = st.fmt === 'excel' ? 'full' : st.isi;
             await P.post('/api/actions/download-spt', { entity: api.entity(), jenisPajakKeys, masaInput: pp.code(), saveRoot: P.saveRoot() || undefined, checkPph25: false,
                 includeLampiran: st.lampiran, includeBpe: st.bpe, includeInduk: st.induk, lampiranMode, lampiranFormat: st.fmt, outputLayout: st.sus, layoutStyle: 'coretax' });
@@ -254,7 +254,7 @@
     // =========================================================
     // e-Bupot
     // =========================================================
-    const EBUPOT_TYPES = [['bp21', 'BP21', 'Bukti pemotongan PPh 21'], ['bppu', 'BPPU', 'Pemotongan unifikasi'], ['bpa1', 'BPA1', 'Bukti pemotongan A1'], ['bpmp', 'BPMP', 'Masa pegawai tetap']];
+    const EBUPOT_TYPES = [['bp21', 'BP21', 'PPh 21 Bukti Potong'], ['bppu', 'BPPU', 'Unifikasi withholding'], ['bpa1', 'BPA1', 'A1 Bukti Potong'], ['bpmp', 'BPMP', 'Monthly, permanent employees']];
     const KODE_TYPES = ['bp21', 'bppu'];
     const ebupot = createPage({
         id: 'ebupot', batch: true,
@@ -267,14 +267,14 @@
         main(st) {
             const forceExcel = st.status === 'not_issued' || (st.jenis.size === 1 && st.jenis.has('bpmp'));
             const showKode = Array.from(st.jenis).some((k) => KODE_TYPES.includes(k));
-            return P.card(1, 'Jenis bupot', '<span>Pilih minimal satu</span>', '<div class="tiles c2">' + EBUPOT_TYPES.map(([k, t, sub]) => {
+            return P.card(1, 'Bupot Type', '<span>Select at least one</span>', '<div class="tiles c2">' + EBUPOT_TYPES.map(([k, t, sub]) => {
                 const dis = restricted() && (k === 'bpmp' || k === 'bpa1');
-                return P.tile('jenis', k, st.jenis.has(k), t, t, sub, { disabled: dis, title: dis ? 'Tidak diizinkan untuk Restricted Editor.' : '' });
+                return P.tile('jenis', k, st.jenis.has(k), t, t, sub, { disabled: dis, title: dis ? 'Not allowed for Restricted Editor.' : '' });
             }).join('') + '</div>')
-                + P.card(2, 'Status dan format', '', '<div class="stack-lg"><div class="field"><span class="label">Status dokumen</span>' + P.seg('status', [{ value: 'issued', label: 'Telah terbit' }, { value: 'not_issued', label: 'Belum terbit' }], st.status)
-                    + '<span class="hint">Dokumen Belum Terbit belum punya PDF resmi dan disimpan sebagai ringkasan Excel saja.</span></div>'
-                    + '<div class="stack">' + P.docRow('excel', true, 'sheet', 'Excel', 'Ringkasan seluruh data (selalu dibuat)', true) + P.docRow('pdf', forceExcel ? false : st.pdf, 'file', 'PDF', forceExcel ? 'Tidak tersedia untuk pilihan ini' : 'PDF resmi tiap dokumen', forceExcel) + '</div></div>')
-                + P.card(3, 'Masa pajak', '', st.pp.html() + (showKode ? '<div class="field"><label for="eb-kode">Kode objek pajak (opsional)</label><input class="input mono" id="eb-kode" data-bind="kode" value="' + esc(st.kode) + '" placeholder="kosongkan = semua kode · mis. 21-100-35;21-100-20"></div>' : ''));
+                + P.card(2, 'Status and Format', '', '<div class="stack-lg"><div class="field"><span class="label">Document status</span>' + P.seg('status', [{ value: 'issued', label: 'Telah Terbit' }, { value: 'not_issued', label: 'Belum Terbit' }], st.status)
+                    + '<span class="hint">Belum Terbit documents have no official PDF yet and are saved as an Excel summary only.</span></div>'
+                    + '<div class="stack">' + P.docRow('excel', true, 'sheet', 'Excel', 'Summary of all data (always created)', true) + P.docRow('pdf', forceExcel ? false : st.pdf, 'file', 'PDF', forceExcel ? 'Not available for this selection' : 'Official PDF for each document', forceExcel) + '</div></div>')
+                + P.card(3, 'Tax Period', '', st.pp.html() + (showKode ? '<div class="field"><label for="eb-kode">Tax object code (optional)</label><input class="input mono" id="eb-kode" data-bind="kode" value="' + esc(st.kode) + '" placeholder="blank = all codes · e.g. 21-100-35;21-100-20"></div>' : ''));
         },
         act(act, d, st, api) {
             if (act === 'jenis') { if (st.jenis.has(d.val)) st.jenis.delete(d.val); else st.jenis.add(d.val); }
@@ -286,9 +286,9 @@
         rail(st, api) {
             const ent = api.entity(); const n = st.jenis.size * st.pp.count();
             const forceExcel = st.status === 'not_issued' || (st.jenis.size === 1 && st.jenis.has('bpmp'));
-            let blocked = ''; if (!st.jenis.size) blocked = 'Pilih jenis bupot'; else if (!st.pp.count()) blocked = 'Pilih masa pajak';
-            return railCard({ big: n, unit: 'unduhan', sub: st.jenis.size + ' jenis × ' + st.pp.count() + ' masa', rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Format', forceExcel || !st.pdf ? 'Excel' : 'Excel + PDF']], ready: readiness(ent), blocked,
-                notes: [['info', 'var(--accent)', 'Beberapa jenis dijalankan berurutan, satu per satu.']] });
+            let blocked = ''; if (!st.jenis.size) blocked = 'Select a bupot type'; else if (!st.pp.count()) blocked = 'Select a tax period';
+            return railCard({ big: n, unit: 'downloads', sub: st.jenis.size + ' type(s) × ' + st.pp.count() + ' period(s)', rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Format', forceExcel || !st.pdf ? 'Excel' : 'Excel + PDF']], ready: readiness(ent), blocked,
+                notes: [['info', 'var(--accent)', 'Multiple types run in sequence, one at a time.']] });
         },
         async start(st, api) {
             const types = Array.from(st.jenis);
@@ -303,7 +303,7 @@
     // =========================================================
     // Bukti Potong Saya (yang diterima)
     // =========================================================
-    const MYBUPOT = [['bppu', 'BPPU', 'BPPU', false], ['bpnr', 'BPNR', 'BPNR', false], ['bp26', 'BP26', 'BP 26', false], ['bpatc', 'DOK', 'Dokumen yang Dipersamakan', false],
+    const MYBUPOT = [['bppu', 'BPPU', 'BPPU', false], ['bpnr', 'BPNR', 'BPNR', false], ['bp26', 'BP26', 'BP 26', false], ['bpatc', 'DOK', 'Equivalent Documents', false],
         ['bpmp', 'BPMP', 'BPMP', true], ['bp21', 'BP21', 'BP 21', true], ['bpa1', 'A1', 'BP A1', true], ['bpa2', 'A2', 'BP A2', true]];
     const bpsaya = createPage({
         id: 'bpsaya', batch: true,
@@ -318,13 +318,13 @@
             const ent = api.entity(); const personalOk = ent && (ent.project === 'manual' || ent.individual);
             const group = (title, personal) => '<div class="stack"><div class="eyebrow">' + title + '</div><div class="tiles c2">' + MYBUPOT.filter((m) => m[3] === personal).map(([k, code, title]) => {
                 const dis = (personal && !personalOk) || (restricted() && (k === 'bpmp' || k === 'bpa1'));
-                const why = restricted() && (k === 'bpmp' || k === 'bpa1') ? 'Tidak diizinkan untuk Restricted Editor.' : (personal && !personalOk ? 'Hanya untuk akun orang pribadi (PIC).' : '');
-                return P.tile('jenis', k, st.jenis.has(k), code, title, personal ? 'Atas nama pribadi PIC' : 'Milik entitas', { disabled: dis, title: why });
+                const why = restricted() && (k === 'bpmp' || k === 'bpa1') ? 'Not allowed for Restricted Editor.' : (personal && !personalOk ? 'Individual (PIC) accounts only.' : '');
+                return P.tile('jenis', k, st.jenis.has(k), code, title, personal ? 'In the PIC\'s own name' : 'Owned by the entity', { disabled: dis, title: why });
             }).join('') + '</div></div>';
-            return P.card(1, 'Jenis bukti potong', '<span>Bukti potong yang diterima</span>', group('Milik entitas', false) + group('Milik PIC pribadi', true)
-                + (!personalOk ? '<div class="hint">Jenis milik PIC pribadi hanya tersedia saat memakai akun orang pribadi.</div>' : ''))
-                + P.card(2, 'Format', '', '<div class="stack">' + P.docRow('excel', true, 'sheet', 'Excel', 'Ringkasan seluruh data (selalu dibuat)', true) + P.docRow('pdf', st.pdf, 'file', 'PDF', 'PDF resmi tiap bukti potong') + '</div>')
-                + P.card(3, 'Masa pajak', '', st.pp.html());
+            return P.card(1, 'Bukti Potong Type', '<span>Bukti Potong received</span>', group('Owned by the entity', false) + group('Owned by the PIC personally', true)
+                + (!personalOk ? '<div class="hint">PIC-owned types are only available when using an individual account.</div>' : ''))
+                + P.card(2, 'Format', '', '<div class="stack">' + P.docRow('excel', true, 'sheet', 'Excel', 'Summary of all data (always created)', true) + P.docRow('pdf', st.pdf, 'file', 'PDF', 'Official PDF for each Bukti Potong') + '</div>')
+                + P.card(3, 'Tax Period', '', st.pp.html());
         },
         act(act, d, st, api) {
             if (act === 'jenis') { if (st.jenis.has(d.val)) st.jenis.delete(d.val); else st.jenis.add(d.val); }
@@ -333,8 +333,8 @@
             api.updateRail();
         },
         rail(st, api) {
-            const ent = api.entity(); let blocked = ''; if (!st.jenis.size) blocked = 'Pilih jenis bukti potong'; else if (!st.pp.count()) blocked = 'Pilih masa pajak';
-            return railCard({ big: st.jenis.size * st.pp.count(), unit: 'unduhan', sub: st.jenis.size + ' jenis × ' + st.pp.count() + ' masa', rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Format', st.pdf ? 'Excel + PDF' : 'Excel']], ready: readiness(ent), blocked });
+            const ent = api.entity(); let blocked = ''; if (!st.jenis.size) blocked = 'Select a Bukti Potong type'; else if (!st.pp.count()) blocked = 'Select a tax period';
+            return railCard({ big: st.jenis.size * st.pp.count(), unit: 'downloads', sub: st.jenis.size + ' type(s) × ' + st.pp.count() + ' period(s)', rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Format', st.pdf ? 'Excel + PDF' : 'Excel']], ready: readiness(ent), blocked });
         },
         async start(st, api) {
             await P.post('/api/actions/download-mybupot', { entity: api.entity(), buktiTypeKeys: Array.from(st.jenis), masaInput: st.pp.code(), saveRoot: P.saveRoot() || undefined, pageSize: st.pageSize, outputMode: st.pdf ? 'pdf_excel' : 'excel_only' });
@@ -356,11 +356,11 @@
         afterDraw(st) { st.pp.bind(); },
         main(st) {
             const chips = EFAKTUR_TYPES.map(([key, label]) => '<button type="button" class="chip" data-act="etype" data-val="' + key + '" aria-pressed="' + st.types.includes(key) + '">' + esc(label) + '</button>').join('');
-            return '<div class="banner info"><span class="ico">' + P.icon('receipt', 22) + '</span><div class="body"><b>Unduh dokumen e-Faktur</b><span>Faktur Pajak Masukan dan Keluaran, Retur, Dokumen Lain, dan Retur Dokumen Lain. Diambil langsung dari Coretax, tidak dibatasi paginasi tampilan.</span></div></div>'
-                + P.card(1, 'Jenis dokumen', '<span><button type="button" class="link" data-act="eall">Pilih semua</button> · <button type="button" class="link" data-act="enone">Kosongkan</button></span>', '<div class="chips c2 wide" id="efaktur-types">' + chips + '</div>')
-                + P.card(2, 'Masa pajak', '', st.pp.html())
-                + P.card(3, 'Format', '<span>Boleh dua-duanya</span>', '<div class="chips c2 wide"><button type="button" class="chip" data-act="efmt" data-val="excel" aria-pressed="' + st.excel + '">Excel<span class="hint">Satu file, satu sheet per jenis · cepat</span></button>'
-                    + '<button type="button" class="chip" data-act="efmt" data-val="csv" aria-pressed="' + st.csv + '">CSV resmi Coretax<span class="hint">Zip dibuat server Coretax · bisa beberapa menit</span></button></div>');
+            return '<div class="banner info"><span class="ico">' + P.icon('receipt', 22) + '</span><div class="body"><b>Download e-Faktur documents</b><span>Faktur Pajak Masukan and Keluaran, Retur, Dokumen Lain, and Retur Dokumen Lain. Fetched directly from Coretax, not limited by on-screen pagination.</span></div></div>'
+                + P.card(1, 'Document Type', '<span><button type="button" class="link" data-act="eall">Select all</button> · <button type="button" class="link" data-act="enone">Clear</button></span>', '<div class="chips c2 wide" id="efaktur-types">' + chips + '</div>')
+                + P.card(2, 'Tax Period', '', st.pp.html())
+                + P.card(3, 'Format', '<span>Both allowed</span>', '<div class="chips c2 wide"><button type="button" class="chip" data-act="efmt" data-val="excel" aria-pressed="' + st.excel + '">Excel<span class="hint">One file, one sheet per type · fast</span></button>'
+                    + '<button type="button" class="chip" data-act="efmt" data-val="csv" aria-pressed="' + st.csv + '">Official Coretax CSV<span class="hint">Zip built by the Coretax server · may take a few minutes</span></button></div>');
         },
         act(act, d, st) {
             if (act === 'etype') { st.types = st.types.includes(d.val) ? st.types.filter((k) => k !== d.val) : st.types.concat(d.val); return true; }
@@ -371,10 +371,10 @@
         },
         rail(st, api) {
             const ent = api.entity();
-            const fmt = [st.excel ? 'Excel' : '', st.csv ? 'CSV resmi' : ''].filter(Boolean).join(' + ') || '-';
+            const fmt = [st.excel ? 'Excel' : '', st.csv ? 'Official CSV' : ''].filter(Boolean).join(' + ') || '-';
             let blocked = '';
-            if (!st.types.length) blocked = 'Pilih jenis dokumen'; else if (!st.pp.count()) blocked = 'Pilih masa pajak'; else if (!st.excel && !st.csv) blocked = 'Pilih format';
-            return railCard({ big: st.types.length, unit: 'jenis dokumen', rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Masa', st.pp.count() + ' masa'], ['Format', esc(fmt)]], ready: readiness(ent), blocked });
+            if (!st.types.length) blocked = 'Select a document type'; else if (!st.pp.count()) blocked = 'Select a tax period'; else if (!st.excel && !st.csv) blocked = 'Select a format';
+            return railCard({ big: st.types.length, unit: 'document type(s)', rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Period', st.pp.count() + ' period(s)'], ['Format', esc(fmt)]], ready: readiness(ent), blocked });
         },
         async start(st, api) { await P.post('/api/actions/download-efaktur', { entity: api.entity(), masaInput: st.pp.code(), types: st.types, excel: st.excel, csv: st.csv, saveRoot: P.saveRoot() || undefined }); }
     });
@@ -385,7 +385,7 @@
     /** Status per masa dari hasil sebelumnya (folder "Simpan ke", atau folder / Excel Mode A1 lama yang dipilih). */
     async function a1Inspect(st, api) {
         const ent = api.entity();
-        if (!ent) { st.inspect = { error: 'Pilih entitas dulu.' }; api.redraw(); return; }
+        if (!ent) { st.inspect = { error: 'Select an entity first.' }; api.redraw(); return; }
         st.inspect = { loading: true }; api.redraw();
         try { st.inspect = await P.post('/api/a1/inspect', { entity: ent, year: String(st.year), source: st.source || undefined, saveRoot: P.saveRoot() || undefined }); }
         catch (e) { st.inspect = { error: e.message }; }
@@ -395,18 +395,18 @@
         const btn = (act, icon, label) => '<button type="button" class="btn btn-sm" data-act="' + act + '">' + P.icon(icon, 15) + label + '</button>';
         // Satu pilihan saja: Excel rekap lama (foldernya ikut diperiksa untuk cache & PDF). Tanpa memilih,
         // folder "Simpan ke" yang diperiksa.
-        const buttons = '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' + btn('a1src-excel', 'sheet', 'Pilih Excel rekap lama…')
-            + btn('a1src-check', 'search', 'Periksa') + (st.source ? btn('a1src-clear', 'x', 'Kembali ke folder "Simpan ke"') : '') + '</div>';
+        const buttons = '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">' + btn('a1src-excel', 'sheet', 'Select old rekap Excel…')
+            + btn('a1src-check', 'search', 'Check') + (st.source ? btn('a1src-clear', 'x', 'Back to the "Save to" folder') : '') + '</div>';
         const i = st.inspect;
-        if (!i) return buttons + '<div class="hint" style="margin-top:8px">Tanpa memilih file, hasil sebelumnya dicari di folder "Simpan ke". Klik Periksa untuk melihat masa mana yang sudah ada.</div>';
-        if (i.loading) return buttons + '<div class="hint" style="margin-top:8px">Memeriksa…</div>';
+        if (!i) return buttons + '<div class="hint" style="margin-top:8px">Without selecting a file, previous results are looked up in the "Save to" folder. Click Check to see which periods already exist.</div>';
+        if (i.loading) return buttons + '<div class="hint" style="margin-top:8px">Checking…</div>';
         if (i.error) return buttons + '<div class="hint warn" style="margin-top:8px">' + esc(i.error) + '</div>';
-        const data = (r) => r.cache ? 'Cache · pembetulan ' + r.cache.revision : r.excel && /^Lengkap/.test(r.excel.data) ? 'Excel lama · pembetulan ' + r.excel.revision : r.excel ? esc(r.excel.data) : '—';
-        const plan = (r) => (r.cache || (r.excel && /^Lengkap/.test(r.excel.data))) && r.pdf ? '<b>Pakai ulang</b>*' : r.excel && /Belum ada SPT/.test(r.excel.data) ? 'Dicek ulang' : 'Diunduh';
+        const data = (r) => r.cache ? 'Cache · Pembetulan ' + r.cache.revision : r.excel && /^Lengkap/.test(r.excel.data) ? 'Old Excel · Pembetulan ' + r.excel.revision : r.excel ? esc(r.excel.data) : '—';
+        const plan = (r) => (r.cache || (r.excel && /^Lengkap/.test(r.excel.data))) && r.pdf ? '<b>Reuse</b>*' : r.excel && /Belum ada SPT/.test(r.excel.data) ? 'Re-check' : 'Download';
         const rows = i.rows.map((r) => '<tr><td>' + r.masa + '</td><td>' + data(r) + '</td><td style="text-align:center">' + (r.pdf ? '✓' : '—') + '</td><td>' + plan(r) + '</td></tr>').join('');
-        return buttons + (i.a1Dir ? '<div class="hint" style="margin-top:10px">Rekap disimpan ke: <b>' + esc(i.a1Dir) + '</b>' + (i.taxServer ? ' (folder Tax Server)' : '') + '</div>' : '') + '<div class="hint" style="margin-top:10px">' + (i.excel ? 'Excel: ' + esc(i.excel) : 'Tidak ada Excel rekap lama (… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx) di sumber ini.') + (i.excelError ? ' <span class="warn">(' + esc(i.excelError) + ')</span>' : '') + '</div>'
-            + '<table class="mini-table" style="width:100%;margin-top:6px;font-size:12.5px;border-collapse:collapse"><thead><tr><th style="text-align:left">Masa</th><th style="text-align:left">Data sebelumnya</th><th>PDF</th><th style="text-align:left">Rencana</th></tr></thead><tbody>' + rows + '</tbody></table>'
-            + '<div class="hint" style="margin-top:6px">* Dipakai ulang bila versi SPT (pembetulan) di Coretax masih sama; bila ada pembetulan baru, masa itu diunduh. Rinciannya muncul di log saat proses berjalan.</div>';
+        return buttons + (i.a1Dir ? '<div class="hint" style="margin-top:10px">Rekap saved to: <b>' + esc(i.a1Dir) + '</b>' + (i.taxServer ? ' (Tax Server folder)' : '') + '</div>' : '') + '<div class="hint" style="margin-top:10px">' + (i.excel ? 'Excel: ' + esc(i.excel) : 'No old rekap Excel (… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx) in this source.') + (i.excelError ? ' <span class="warn">(' + esc(i.excelError) + ')</span>' : '') + '</div>'
+            + '<table class="mini-table" style="width:100%;margin-top:6px;font-size:12.5px;border-collapse:collapse"><thead><tr><th style="text-align:left">Period</th><th style="text-align:left">Previous data</th><th>PDF</th><th style="text-align:left">Plan</th></tr></thead><tbody>' + rows + '</tbody></table>'
+            + '<div class="hint" style="margin-top:6px">* Reused if the SPT version (Pembetulan) in Coretax is unchanged; if there is a new Pembetulan, that period is downloaded. Details appear in the log while the process runs.</div>';
     }
 
     // Halaman Mode A1 = Unduh setahun + Pembetulan NIK BPMP (nikForm) + XML BPA1 dari Draft SPT Desember (bpa1Form), dipilih di atas.
@@ -419,25 +419,25 @@
             return { view: a1View, year: y, years, fresh: false, nik: { file: null, submit: false, year: y, years }, bpa1: { file: null, year: y, years, result: null, error: '', outDir: '' } };
         },
         main(st, api) {
-            const tabs = '<div style="margin-bottom:4px">' + P.seg('a1view', [{ value: 'unduh', label: 'Unduh setahun' }, { value: 'nik', label: 'Pembetulan NIK BPMP' }, { value: 'bpa1', label: 'XML BPA1 Desember' }], st.view) + '</div>';
+            const tabs = '<div style="margin-bottom:4px">' + P.seg('a1view', [{ value: 'unduh', label: 'Full-year download' }, { value: 'nik', label: 'BPMP NIK Pembetulan' }, { value: 'bpa1', label: 'December BPA1 XML' }], st.view) + '</div>';
             if (st.view === 'nik') return tabs + nikForm.main(st.nik, api);
             if (st.view === 'bpa1') return tabs + bpa1Form.main(st.bpa1, api);
             const out = (icon, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + P.icon(icon, 18) + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
-            return tabs + P.card(1, 'Tahun pajak', '<span>Mulai 2025 · seluruh masa Jan–Des sekaligus</span>', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
-                + P.card(2, 'Yang dihasilkan', '<span>Pengaturan dikunci untuk hasil terlengkap</span>', '<div class="stack">'
-                    + out('file', 'PDF lengkap', 'Induk, BPE, dan Lampiran seluruh baris, untuk semua versi SPT.') + out('lock', 'PDF rahasia', 'Lampiran tanpa rincian penerima, untuk semua versi SPT.')
-                    + out('sheet', 'Excel tahunan', 'Versi terakhir tiap masa: Ringkasan, NIK, Pembetulan, Draft SPT Desember, lalu satu sheet per lampiran (kolom Masa, total di atas yang ikut filter).')
-                    + out('warn', 'Ringkasan', 'Masa tanpa SPT atau yang gagal dibaca dicatat di sini, bersama jumlah bukti potong yang masih bermasalah. Data yang gagal tidak diganti dengan versi lama.') + '</div>')
-                + P.card(3, 'Hasil sebelumnya', '<span>' + (st.source ? 'Sumber: ' + esc(st.source) : 'Folder "Simpan ke"') + '</span>', '<div class="chips c2 wide">'
-                    + '<button type="button" class="chip" data-act="a1fresh" data-val="0" aria-pressed="' + !st.fresh + '">Lanjutkan<span class="hint">Masa yang sudah lengkap dipakai ulang. Hanya masa baru dan pembetulan baru yang diunduh.</span></button>'
-                    + '<button type="button" class="chip" data-act="a1fresh" data-val="1" aria-pressed="' + st.fresh + '">Ulang dari awal<span class="hint">Seluruh masa diunduh ulang dari Coretax.</span></button></div>'
+            return tabs + P.card(1, 'Tax Year', '<span>From 2025 · all periods Jan–Dec at once</span>', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
+                + P.card(2, 'Output', '<span>Settings locked for the most complete output</span>', '<div class="stack">'
+                    + out('file', 'Full PDF', 'Induk, BPE, and Lampiran with all rows, for every SPT version.') + out('lock', 'Confidential PDF', 'Lampiran without recipient details, for every SPT version.')
+                    + out('sheet', 'Annual Excel', 'Latest version of each period: sheets Ringkasan, NIK, Pembetulan, Draft SPT Desember, then one sheet per Lampiran (Masa column, totals on top that follow the filter).')
+                    + out('warn', 'Ringkasan sheet', 'Periods without an SPT or that could not be read are listed here, with the number of Bukti Potong that still have problems. Failed data is not replaced with an older version.') + '</div>')
+                + P.card(3, 'Previous Results', '<span>' + (st.source ? 'Source: ' + esc(st.source) : '"Save to" folder') + '</span>', '<div class="chips c2 wide">'
+                    + '<button type="button" class="chip" data-act="a1fresh" data-val="0" aria-pressed="' + !st.fresh + '">Continue<span class="hint">Complete periods are reused. Only new periods and new Pembetulan are downloaded.</span></button>'
+                    + '<button type="button" class="chip" data-act="a1fresh" data-val="1" aria-pressed="' + st.fresh + '">Start over<span class="hint">All periods are re-downloaded from Coretax.</span></button></div>'
                     + (st.fresh ? '' : a1SourceHtml(st)));
         },
         act(act, d, st, api) {
             if (act === 'a1view') { st.view = a1View = d.val; if (st.view === 'nik' && P.batch.count() >= 2) P.batch.clear(); return true; }
             if (st.view === 'nik') return nikForm.act(act, d, st.nik, api);
             if (st.view === 'bpa1') return bpa1Form.act(act, d, st.bpa1, api);
-            if (act === 'a1src-excel') { P.pickFile('Pilih Excel rekap sebelumnya').then((f) => { if (f && f.filePath) { st.source = f.filePath; a1Inspect(st, api); } else if (f) alert('Path file tidak terbaca - pilih lewat dialog Windows.'); }); return false; }
+            if (act === 'a1src-excel') { P.pickFile('Select the previous rekap Excel').then((f) => { if (f && f.filePath) { st.source = f.filePath; a1Inspect(st, api); } else if (f) alert('Could not read the file path - select it through the Windows dialog.'); }); return false; }
             if (act === 'a1src-clear') { st.source = null; a1Inspect(st, api); return false; }
             if (act === 'a1src-check') { a1Inspect(st, api); return false; }
             if (act === 'year') { st.year = Number(d.val); st.inspect = null; } else if (act === 'a1fresh') st.fresh = d.val === '1'; else return false;
@@ -446,12 +446,12 @@
             if (st.view === 'nik') return nikForm.rail(st.nik, api);
             if (st.view === 'bpa1') return bpa1Form.rail(st.bpa1, api);
             const ent = api.entity();
-            return railCard({ big: 12, unit: 'masa · PPh 21/26 · ' + st.year, rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))]], ready: readiness(ent), blocked: restricted() ? 'Tidak tersedia untuk pengguna Restricted' : '', notes: [['lock', 'var(--muted)', 'Tidak tersedia untuk pengguna Restricted.']] });
+            return railCard({ big: 12, unit: 'periods · PPh 21/26 · ' + st.year, rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))]], ready: readiness(ent), blocked: restricted() ? 'Not available for Restricted users' : '', notes: [['lock', 'var(--muted)', 'Not available for Restricted users.']] });
         },
         async start(st, api) {
             if (st.view === 'nik') return nikForm.start(st.nik, api);
             if (st.view === 'bpa1') return bpa1Form.start(st.bpa1, api);
-            if (restricted()) throw new Error('Rekap PPh 21 Setahun tidak tersedia untuk pengguna Restricted.');
+            if (restricted()) throw new Error('Annual PPh 21 Recap is not available for Restricted users.');
             await P.post('/api/actions/download-spt', { entity: api.entity(), a1Year: String(st.year), a1Fresh: st.fresh, a1Source: !st.fresh && st.source ? st.source : undefined, saveRoot: P.saveRoot() || undefined });
         }
     });
@@ -463,23 +463,23 @@
     const bpa1Form = {
         main(st) {
             const r = st.result;
-            return P.card(1, 'Excel rekap', '<span>Sheet Draft SPT Desember yang sudah diisi</span>', '<div class="hint" style="font-size:13.5px">Isi kolom hijau sheet <b>Draft SPT Desember</b> (Status PTKP, penghasilan dari KK), simpan, lalu pilih rekapnya di sini. Pegawai tanpa penghasilan dilewati.</div>'
-                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="bpa1-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Pakai rekap terakhir (' + st.year + ')</button></div>'
-                    + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…atau pilih Excel rekap lain</span>') + '<button type="button" class="link" data-act="bpa1-pick">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>')
-                + P.card(2, 'Simpan XML ke', '<span>' + (st.outDir ? esc(st.outDir) : 'Folder yang sama dengan Excel rekap') + '</span>', '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-act="bpa1-outdir">' + P.icon('folder', 15) + 'Pilih folder…</button>' + (st.outDir ? '<button type="button" class="btn btn-sm" data-act="bpa1-outdir-clear">Sama dengan rekap</button>' : '') + '</div>')
-                + P.card(3, 'Tahun pajak', '', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="bpa1-year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
-                + (st.error ? P.card(4, 'Belum bisa dibuat', '', '<div class="hint warn" style="white-space:pre-line">' + esc(st.error) + '</div>') : '')
-                + (r ? P.card(4, 'XML siap diimpor', '', '<div class="stack"><div class="doc-row"><span class="ico">' + P.icon('check', 18) + '</span><div class="t"><b>' + r.count + ' BPA1</b><span>' + esc(r.file) + '</span></div></div>'
-                    + '<div class="hint">PPh 21 setahun (hitungan draft): Rp ' + esc(r.totalTax) + ' · PPh Desember: Rp ' + esc(r.totalDes) + (r.skipped ? ' · ' + r.skipped + ' baris tanpa penghasilan dilewati' : '') + '. Impor di Coretax: e-Bupot › BPA1 › Impor Data; hasilnya masuk Belum Terbit.</div></div>') : '');
+            return P.card(1, 'Rekap Excel', '<span>Filled-in Draft SPT Desember sheet</span>', '<div class="hint" style="font-size:13.5px">Fill in the green columns of the <b>Draft SPT Desember</b> sheet (PTKP status, income from KK), save, then select the rekap here. Employees without income are skipped.</div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="bpa1-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Use latest rekap (' + st.year + ')</button></div>'
+                    + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…or select another rekap Excel</span>') + '<button type="button" class="link" data-act="bpa1-pick">' + (st.file ? 'change file…' : 'select file…') + '</button></div>')
+                + P.card(2, 'Save XML to', '<span>' + (st.outDir ? esc(st.outDir) : 'Same folder as the rekap Excel') + '</span>', '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-act="bpa1-outdir">' + P.icon('folder', 15) + 'Select folder…</button>' + (st.outDir ? '<button type="button" class="btn btn-sm" data-act="bpa1-outdir-clear">Same as rekap</button>' : '') + '</div>')
+                + P.card(3, 'Tax Year', '', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="bpa1-year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
+                + (st.error ? P.card(4, 'Cannot Create Yet', '', '<div class="hint warn" style="white-space:pre-line">' + esc(st.error) + '</div>') : '')
+                + (r ? P.card(4, 'XML Ready to Import', '', '<div class="stack"><div class="doc-row"><span class="ico">' + P.icon('check', 18) + '</span><div class="t"><b>' + r.count + ' BPA1</b><span>' + esc(r.file) + '</span></div></div>'
+                    + '<div class="hint">Annual PPh 21 (draft calculation): Rp ' + esc(r.totalTax) + ' · December PPh: Rp ' + esc(r.totalDes) + (r.skipped ? ' · ' + r.skipped + ' row(s) without income skipped' : '') + '. Import in Coretax: e-Bupot › BPA1 › Impor Data; the result goes to Belum Terbit.</div></div>') : '');
         },
         async act(act, d, st, api) {
             if (act === 'bpa1-year') { st.year = Number(d.val); return true; }
-            if (act === 'bpa1-outdir') { try { const r = await P.post('/api/actions/pick-folder', { title: 'Pilih folder untuk menyimpan XML BPA1' }); if (r && r.folderPath) { st.outDir = r.folderPath; api.redraw(); } } catch (e) { alert(e.message); } return false; }
+            if (act === 'bpa1-outdir') { try { const r = await P.post('/api/actions/pick-folder', { title: 'Select a folder to save the BPA1 XML' }); if (r && r.folderPath) { st.outDir = r.folderPath; api.redraw(); } } catch (e) { alert(e.message); } return false; }
             if (act === 'bpa1-outdir-clear') { st.outDir = ''; return true; }
-            if (act === 'bpa1-pick') { const f = await P.pickFile('Pilih Excel Rekap PPh 21 Setahun (A1)'); if (f) { st.file = f; st.result = null; st.error = ''; const m = /(20\d{2})/.exec(f.fileName); if (m && st.years.includes(Number(m[1]))) st.year = Number(m[1]); api.redraw(); } return false; }
+            if (act === 'bpa1-pick') { const f = await P.pickFile('Select the Rekap PPh 21 Setahun (A1) Excel'); if (f) { st.file = f; st.result = null; st.error = ''; const m = /(20\d{2})/.exec(f.fileName); if (m && st.years.includes(Number(m[1]))) st.year = Number(m[1]); api.redraw(); } return false; }
             if (act === 'bpa1-latest') {
-                const ent = api.entity(); if (!ent) { st.error = 'Pilih entitas dulu.'; api.redraw(); return false; }
-                try { const r = await P.post('/api/a1/inspect', { entity: ent, year: String(st.year), saveRoot: P.saveRoot() || undefined }); if (r && r.excel) { st.file = { fileName: r.excel.split(/[\\/]/).pop(), filePath: r.excel }; st.error = ''; } else st.error = 'Belum ada Excel rekap ' + st.year + ' untuk entitas ini - jalankan Unduh setahun dulu, atau pilih filenya.'; }
+                const ent = api.entity(); if (!ent) { st.error = 'Select an entity first.'; api.redraw(); return false; }
+                try { const r = await P.post('/api/a1/inspect', { entity: ent, year: String(st.year), saveRoot: P.saveRoot() || undefined }); if (r && r.excel) { st.file = { fileName: r.excel.split(/[\\/]/).pop(), filePath: r.excel }; st.error = ''; } else st.error = 'No ' + st.year + ' rekap Excel for this entity yet - run Full-year download first, or select the file.'; }
                 catch (e) { st.error = e.message; }
                 st.result = null; api.redraw(); return false;
             }
@@ -487,9 +487,9 @@
         },
         rail(st, api) {
             const ent = api.entity();
-            return railCard({ rows: [['Entitas', esc(ent && ent.project !== 'manual' ? ent.entity_name : '-')], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Belum dipilih</span>'], ['Tahun', String(st.year)]],
-                ready: true, blocked: !st.file ? 'Pilih Excel rekap dulu' : !st.file.filePath ? 'Pilih lewat dialog Windows (path dibutuhkan)' : '', cta: 'Buat XML BPA1', icon: 'file',
-                notes: [['shield', 'var(--green)', 'Hanya membuat file XML; tidak ada yang dikirim ke Coretax.']] });
+            return railCard({ rows: [['Entity', esc(ent && ent.project !== 'manual' ? ent.entity_name : '-')], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>'], ['Year', String(st.year)]],
+                ready: true, blocked: !st.file ? 'Select a rekap Excel first' : !st.file.filePath ? 'Select via the Windows dialog (path required)' : '', cta: 'Create BPA1 XML', icon: 'file',
+                notes: [['shield', 'var(--green)', 'Only creates an XML file; nothing is sent to Coretax.']] });
         },
         async start(st, api) {
             st.error = ''; st.result = null;
@@ -508,37 +508,37 @@
         main(st) {
             const step = (n, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + n + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
             // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (<kode> <tahun> - Rekap SPT PPh 21 Setahun (A1).xlsx).
-            return P.card(1, 'Excel rekap', '<span>Hasil tab "Unduh setahun"</span>', '<div class="hint" style="font-size:13.5px">Tidak perlu template: pakai Excel hasil tab <b>Unduh setahun</b> (<b>… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx</b>). Di sheet <b>NIK</b>, NIK yang salah berwarna kuning (filter kolom <b>Kategori</b>) dan kolom hijau <b>NIK Baru</b> / <b>Nama Baru</b> sudah terisi usulan bila ada - cocokkan dengan KTP, lengkapi yang kosong, simpan, lalu pilih filenya di sini. Baris yang kolom hijaunya kosong tidak disentuh.</div>'
-                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Pakai rekap terakhir (' + st.year + ')</button></div>'
+            return P.card(1, 'Rekap Excel', '<span>Output of the "Full-year download" tab</span>', '<div class="hint" style="font-size:13.5px">No template needed: use the Excel from the <b>Full-year download</b> tab (<b>… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx</b>). In the <b>NIK</b> sheet, wrong NIKs are highlighted yellow (filter the <b>Kategori</b> column) and the green <b>NIK Baru</b> / <b>Nama Baru</b> columns are pre-filled with suggestions where available - check them against the KTP, fill in the blanks, save, then select the file here. Rows with empty green columns are left untouched.</div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Use latest rekap (' + st.year + ')</button></div>'
                     + (st.latestError ? '<div class="hint warn">' + esc(st.latestError) + '</div>' : '')
-                    + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…atau pilih Excel rekap lain</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>')
-                + P.card(2, 'Tahun pajak', '<span>Bukti potong BPMP Telah Terbit tahun ini yang dicari</span>', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
-                + P.card(3, 'Yang terjadi di Coretax', '', '<div class="stack">'
-                    + step('1', 'NIK Baru dicek dulu, per bukti potong', 'Coretax memvalidasi NIK Baru dan memberi nama resminya. Hanya yang nama resminya sama dengan Nama Baru yang dikirim; NIK tidak terdaftar atau nama berbeda dilewati dan dicatat di log.')
-                    + step('2', 'Bukti potong dibetulkan, bukan dibatalkan', 'Nomor bukti potong tetap; statusnya menjadi Pembetulan dan versi lama pindah ke Tidak Valid. Tanggal pemotongan menjadi tanggal pembetulan (perilaku standar Coretax). Data dicadangkan dulu dan diperiksa ulang per kolom sesudahnya.')
-                    + step('3', 'Disisir ulang setahun', 'Sesudah kirim, seluruh BPMP Telah Terbit Januari-Desember diperiksa langsung dari Coretax. Log menyebut "tidak ada NIK bermasalah lagi", atau daftar NIK yang masih tersisa (termasuk yang tidak ada di Excel).')
-                    + step('4', 'SPT Masa ikut dibetulkan', 'Masa yang bukti potongnya dibetulkan perlu pembetulan SPT Masa PPh 21; daftarnya muncul di log. Setelah itu jalankan tab Unduh setahun dengan "Lanjutkan" - hanya masa yang berubah yang diunduh.') + '</div>'
-                    + '<div style="margin-top:12px">' + P.checkRow('nik-similar', st.allowSimilar, 'Kirim juga yang namanya mirip (beda ejaan, mis. BUDI SANTOSO / SANTOSA) - dipakai nama resmi Coretax. Cocokkan KTP dulu.') + '</div>'
-                    + '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="btn btn-sm" data-act="nik-sweep">' + P.icon('shield', 15) + 'Periksa NIK bermasalah ' + st.year + ' (tanpa mengubah)</button></div>');
+                    + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…or select another rekap Excel</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>')
+                + P.card(2, 'Tax Year', '<span>Looks up this year\'s Telah Terbit BPMP Bukti Potong</span>', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
+                + P.card(3, 'What Happens in Coretax', '', '<div class="stack">'
+                    + step('1', 'NIK Baru is checked first, per Bukti Potong', 'Coretax validates the NIK Baru and returns its official name. Only those whose official name matches Nama Baru are submitted; unregistered NIKs or different names are skipped and logged.')
+                    + step('2', 'Bukti Potong is corrected, not cancelled', 'The Bukti Potong number stays the same; its status becomes Pembetulan and the old version moves to Tidak Valid. The withholding date becomes the correction date (standard Coretax behavior). Data is backed up first and re-checked column by column afterwards.')
+                    + step('3', 'Full-year re-sweep', 'After submitting, all Telah Terbit BPMP for January-December are checked directly in Coretax. The log reports either that no problem NIKs remain, or the list of NIKs still left (including those not in the Excel).')
+                    + step('4', 'SPT Masa needs Pembetulan too', 'Periods whose Bukti Potong were corrected need an SPT Masa PPh 21 Pembetulan; the list appears in the log. Then run the Full-year download tab with "Continue" - only changed periods are downloaded.') + '</div>'
+                    + '<div style="margin-top:12px">' + P.checkRow('nik-similar', st.allowSimilar, 'Also submit similar names (different spelling, e.g. BUDI SANTOSO / SANTOSA) - the official Coretax name is used. Check the KTP first.') + '</div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="btn btn-sm" data-act="nik-sweep">' + P.icon('shield', 15) + 'Check problem NIKs for ' + st.year + ' (no changes)</button></div>');
         },
         async act(act, d, st, api) {
-            if (act === 'pick-file') { const f = await P.pickFile('Pilih Excel Rekap PPh 21 (format terbaru)'); if (f) { st.file = f; st.latestError = ''; const m = /(20\d{2})/.exec(f.fileName); if (m && st.years.includes(Number(m[1]))) st.year = Number(m[1]); api.redraw(); } return false; }
+            if (act === 'pick-file') { const f = await P.pickFile('Select the Rekap PPh 21 Excel (latest format)'); if (f) { st.file = f; st.latestError = ''; const m = /(20\d{2})/.exec(f.fileName); if (m && st.years.includes(Number(m[1]))) st.year = Number(m[1]); api.redraw(); } return false; }
             if (act === 'nik-latest') {
                 const ent = api.entity();
-                if (!ent) { st.latestError = 'Pilih entitas dulu.'; api.redraw(); return false; }
+                if (!ent) { st.latestError = 'Select an entity first.'; api.redraw(); return false; }
                 try {
                     const r = await P.post('/api/a1/inspect', { entity: ent, year: String(st.year), saveRoot: P.saveRoot() || undefined });
                     if (r && r.excel) { st.file = { fileName: r.excel.split(/[\\/]/).pop(), filePath: r.excel }; st.latestError = ''; }
-                    else st.latestError = 'Belum ada Excel rekap ' + st.year + ' untuk entitas ini di folder "Simpan ke" - jalankan tab Unduh setahun dulu, atau pilih filenya.';
+                    else st.latestError = 'No ' + st.year + ' rekap Excel for this entity in the "Save to" folder yet - run the Full-year download tab first, or select the file.';
                 } catch (e) { st.latestError = e.message; }
                 api.redraw(); return false;
             }
             if (act === 'year') { st.year = Number(d.val); return true; }
             if (act === 'nik-similar') { st.allowSimilar = !st.allowSimilar; return true; }
             if (act === 'nik-sweep') {
-                if (restricted()) { alert('Tidak tersedia untuk pengguna Restricted.'); return false; }
+                if (restricted()) { alert('Not available for Restricted users.'); return false; }
                 const ent = api.entity();
-                if (!ent) { alert('Pilih entitas dulu.'); return false; }
+                if (!ent) { alert('Select an entity first.'); return false; }
                 try { await P.post('/api/actions/bpmp-amend', { entity: ent, year: String(st.year), sweepOnly: true, saveRoot: P.saveRoot() || undefined }); }
                 catch (e) { alert(e.message); }
                 return false;
@@ -547,14 +547,14 @@
         },
         rail(st, api) {
             const ent = api.entity();
-            const blocked = restricted() ? 'Tidak tersedia untuk pengguna Restricted' : !st.file ? 'Pilih Excel rekap dulu' : '';
-            return railCard({ rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Belum dipilih</span>'], ['Tahun', String(st.year)]],
-                ready: readiness(ent), blocked, cta: 'Betulkan di Coretax', icon: 'upload',
-                notes: [['shield', 'var(--green)', 'Hanya dikirim bila nama resmi Coretax untuk NIK Baru sama dengan Nama Baru di Excel.']] });
+            const blocked = restricted() ? 'Not available for Restricted users' : !st.file ? 'Select a rekap Excel first' : '';
+            return railCard({ rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>'], ['Year', String(st.year)]],
+                ready: readiness(ent), blocked, cta: 'Correct in Coretax', icon: 'upload',
+                notes: [['shield', 'var(--green)', 'Only submitted when the official Coretax name for NIK Baru matches Nama Baru in the Excel.']] });
         },
         async start(st, api) {
-            if (restricted()) throw new Error('Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.');
-            if (!window.confirm('Betulkan NIK di Coretax untuk ' + (api.entity().entity_name || 'entitas ini') + '?\n\nTiap NIK Baru dicek dulu; hanya bukti potong yang nama resminya sama dengan Nama Baru' + (st.allowSimilar ? ' atau mirip (pakai nama resmi Coretax)' : '') + ' yang dibetulkan. Hasilnya ditulis ke sheet Pembetulan dan Ringkasan di Excel ini.')) return;
+            if (restricted()) throw new Error('BPMP NIK Pembetulan is not available for Restricted users.');
+            if (!window.confirm('Correct NIKs in Coretax for ' + (api.entity().entity_name || 'this entity') + '?\n\nEach NIK Baru is checked first; only Bukti Potong whose official name matches Nama Baru' + (st.allowSimilar ? ' or is similar (using the official Coretax name)' : '') + ' are corrected. Results are written to the Pembetulan and Ringkasan sheets in this Excel.')) return;
             // filePath ikut dikirim bila ada, supaya laporan ditulis kembali ke Excel yang sama.
             await P.post('/api/actions/bpmp-amend', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.filePath || undefined, fileName: st.file.fileName, year: String(st.year), submit: true, allowSimilar: !!st.allowSimilar, saveRoot: P.saveRoot() || undefined });
         }
@@ -571,35 +571,35 @@
         main(st, api) {
             const m = P.state.manual, auto = dividenAuto(api);
             const banner = auto
-                ? '<div class="banner ok"><span class="ico">' + P.icon('shield', 20) + '</span><div class="body"><b>Login otomatis sebagai ' + esc(auto.entity_name) + '</b><span>' + esc(loginText(auto)) + '. Kasus dibuat dan diisi di jendela Coretax entitas ini, memakai kredensial yang tersimpan.</span></div></div>'
+                ? '<div class="banner ok"><span class="ico">' + P.icon('shield', 20) + '</span><div class="body"><b>Automatic login as ' + esc(auto.entity_name) + '</b><span>' + esc(loginText(auto)) + '. The case is created and filled in this entity\'s Coretax window, using the saved credentials.</span></div></div>'
                 : m.loggedIn
-                ? '<div class="banner ok"><span class="ico">' + P.icon('check', 20, '', 2.4) + '</span><div class="body"><b>Sesi Coretax terdeteksi</b><span>' + esc(m.identity || 'Sudah masuk ke Coretax.') + '</span></div></div>'
-                : '<div class="banner ' + (m.open ? 'warn' : 'info') + '"><span class="ico">' + P.icon('globe', 22) + '</span><div class="body"><b>' + (m.open ? 'Menunggu login manual' : 'Fitur ini berjalan di sesi Coretax yang Anda login sendiri') + '</b><span>Buka Coretax, login sebagai wajib pajak yang akan diisi, lalu buka menu e-Reporting Realisasi Investasi.</span>'
-                    + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-coretax" style="box-shadow:none">' + P.icon('globe', 15) + 'Buka Coretax</button><button type="button" class="btn btn-sm" data-act="check-session">' + P.icon('shield', 15) + 'Periksa sesi</button></div></div></div>';
+                ? '<div class="banner ok"><span class="ico">' + P.icon('check', 20, '', 2.4) + '</span><div class="body"><b>Coretax session detected</b><span>' + esc(m.identity || 'Signed in to Coretax.') + '</span></div></div>'
+                : '<div class="banner ' + (m.open ? 'warn' : 'info') + '"><span class="ico">' + P.icon('globe', 22) + '</span><div class="body"><b>' + (m.open ? 'Waiting for manual login' : 'This feature runs in a Coretax session you log in to yourself') + '</b><span>Open Coretax, log in as the taxpayer to be filled in, then open the e-Reporting Realisasi Investasi menu.</span>'
+                    + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-coretax" style="box-shadow:none">' + P.icon('globe', 15) + 'Open Coretax</button><button type="button" class="btn btn-sm" data-act="check-session">' + P.icon('shield', 15) + 'Check session</button></div></div></div>';
             return banner
-                + P.card(1, 'Buat kasus baru', '', '<div class="hint" style="font-size:13.5px">Membuka kasus e-Reporting baru (AS.39-01) di Coretax' + (auto ? ', setelah login otomatis' : '') + '. Lewati bila kasusnya sudah Anda buka sendiri' + (auto ? ' di jendela Coretax entitas ini' : '') + '.</div><button type="button" class="btn" data-act="create-case"' + (auto || m.loggedIn ? '' : ' disabled') + '>' + P.icon('plus', 16) + 'Buat Kasus Baru (AS.39-01)</button>')
-                + P.card(2, 'File template Excel', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Pilih file template .xlsx yang sudah terisi</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>');
+                + P.card(1, 'Create New Case', '', '<div class="hint" style="font-size:13.5px">Opens a new e-Reporting case (AS.39-01) in Coretax' + (auto ? ', after automatic login' : '') + '. Skip this if you already opened the case yourself' + (auto ? ' in this entity\'s Coretax window' : '') + '.</div><button type="button" class="btn" data-act="create-case"' + (auto || m.loggedIn ? '' : ' disabled') + '>' + P.icon('plus', 16) + 'Create New Case (AS.39-01)</button>')
+                + P.card(2, 'Excel Template File', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Select the filled-in .xlsx template file</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>');
         },
         async act(act, d, st, api) {
-            if (act === 'pick-file') { const f = await P.pickFile('Pilih file template Dividen (.xlsx)'); if (f) { st.file = f; api.redraw(); } return false; }
+            if (act === 'pick-file') { const f = await P.pickFile('Select the Dividend template file (.xlsx)'); if (f) { st.file = f; api.redraw(); } return false; }
             const entity = dividenAuto(api) || undefined;
-            if (act === 'create-case') { try { await P.post('/api/actions/create-dividen-case', { entity }); P.run.poll(); } catch (e) { alert('Gagal membuat kasus: ' + e.message); } return false; }
+            if (act === 'create-case') { try { await P.post('/api/actions/create-dividen-case', { entity }); P.run.poll(); } catch (e) { alert('Failed to create case: ' + e.message); } return false; }
             if (act === 'import' || act === 'check') {
-                if (!st.file) { alert('Pilih file template .xlsx dulu.'); return false; }
+                if (!st.file) { alert('Select a .xlsx template file first.'); return false; }
                 try { await P.post(act === 'import' ? '/api/actions/import-dividen' : '/api/actions/check-dividen', { entity, fileBase64: st.file.fileBase64, fileName: st.file.fileName }); P.run.poll(); }
-                catch (e) { alert('Gagal memulai: ' + e.message); }
+                catch (e) { alert('Failed to start: ' + e.message); }
                 return false;
             }
             return false;
         },
         rail(st, api) {
             const m = P.state.manual, auto = dividenAuto(api);
-            const why = !auto && !m.loggedIn ? 'Menunggu login manual' : (!st.file ? 'Pilih file template dulu' : '');
-            const login = auto ? [['Entitas', esc(auto.entity_name)], ['Login', esc(loginText(auto))]] : [['Login', m.loggedIn ? esc(m.identity || 'Manual aktif') : '<span class="warn">Belum login</span>', m.loggedIn ? '' : 'warn']];
-            return '<div class="card"><div class="eyebrow">Ringkasan</div>' + P.kv([...login, ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Belum dipilih</span>']])
-                + '<button type="button" class="btn btn-primary btn-lg btn-block" data-act="import"' + (why ? ' disabled' : '') + '>' + P.icon('upload', 18, '', 2) + 'Impor ke Coretax</button>'
-                + '<button type="button" class="btn btn-block" data-act="check"' + (why ? ' disabled' : '') + ' title="Baca tabel yang sedang tampil di Coretax dan bandingkan dengan file ini">' + P.icon('search', 16) + 'Cek hasil (bandingkan tabel)</button>'
-                + (why ? '<div class="hint" style="text-align:center">' + esc(why) + '</div>' : '') + P.note('shield', 'var(--green)', 'Data masuk ke draft, tidak dikirim ke DJP sampai Anda menandatangani sendiri.') + '</div>';
+            const why = !auto && !m.loggedIn ? 'Waiting for manual login' : (!st.file ? 'Select a template file first' : '');
+            const login = auto ? [['Entity', esc(auto.entity_name)], ['Login', esc(loginText(auto))]] : [['Login', m.loggedIn ? esc(m.identity || 'Manual active') : '<span class="warn">Not logged in</span>', m.loggedIn ? '' : 'warn']];
+            return '<div class="card"><div class="eyebrow">Summary</div>' + P.kv([...login, ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>']])
+                + '<button type="button" class="btn btn-primary btn-lg btn-block" data-act="import"' + (why ? ' disabled' : '') + '>' + P.icon('upload', 18, '', 2) + 'Import to Coretax</button>'
+                + '<button type="button" class="btn btn-block" data-act="check"' + (why ? ' disabled' : '') + ' title="Read the table currently shown in Coretax and compare it with this file">' + P.icon('search', 16) + 'Check results (compare table)</button>'
+                + (why ? '<div class="hint" style="text-align:center">' + esc(why) + '</div>' : '') + P.note('shield', 'var(--green)', 'Data goes into a draft and is not submitted to DJP until you sign it yourself.') + '</div>';
         },
         start() {}
     });
@@ -613,20 +613,20 @@
         init(api) { return { file: null, mode: 'excel', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }) }; },
         afterDraw(st) { if (st.mode === 'fixed') st.pp.bind(); },
         main(st) {
-            return P.card(1, 'Template Excel', '', '<div class="doc-row"><span class="ico">' + P.icon('sheet', 18) + '</span><div class="t"><b>Template pengkreditan faktur masukan</b><span>Isi kolom A–J: tiap baris dicari lewat No Faktur. Kolom PENGKREDITAN PPN kini juga punya pilihan "TIDAK DIKREDITKAN".</span></div><a class="btn btn-sm" href="/assets/template-pajak-masukan.xlsx" download>' + P.icon('download', 15) + 'Unduh</a></div>')
-                + P.card(2, 'File Excel terisi', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Pilih file .xlsx yang sudah terisi</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>')
-                + P.card(3, 'Masa pengkreditan', '', '<div class="stack-lg">' + P.seg('kmode', [{ value: 'excel', label: 'Ikuti kolom di Excel' }, { value: 'fixed', label: 'Tetapkan satu masa' }], st.mode)
-                    + (st.mode === 'fixed' ? st.pp.html() : '') + '<div class="hint">Baris ber-PENGKREDITAN PPN "TIDAK DIKREDITKAN" tetap diubah menjadi Tidak Dikreditkan meski masa ditetapkan di sini. Faktur yang sudah dilaporkan di SPT, dibatalkan, dibetulkan, atau melebihi batas 3 bulan tidak diubah. Otomatis dilewati, alasannya dicatat di kolom KETERANGAN.</div></div>');
+            return P.card(1, 'Excel Template', '', '<div class="doc-row"><span class="ico">' + P.icon('sheet', 18) + '</span><div class="t"><b>Faktur Masukan crediting template</b><span>Fill in columns A–J: each row is looked up by No Faktur. The PENGKREDITAN PPN column now also has a "TIDAK DIKREDITKAN" option.</span></div><a class="btn btn-sm" href="/assets/template-pajak-masukan.xlsx" download>' + P.icon('download', 15) + 'Download</a></div>')
+                + P.card(2, 'Filled-in Excel File', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Select the filled-in .xlsx file</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>')
+                + P.card(3, 'Crediting Period', '', '<div class="stack-lg">' + P.seg('kmode', [{ value: 'excel', label: 'Follow the Excel column' }, { value: 'fixed', label: 'Set one period' }], st.mode)
+                    + (st.mode === 'fixed' ? st.pp.html() : '') + '<div class="hint">Rows with PENGKREDITAN PPN "TIDAK DIKREDITKAN" are still set to Tidak Dikreditkan even if a period is set here. Faktur already reported in an SPT, cancelled, amended, or past the 3-month limit are not changed. They are skipped automatically, with the reason noted in the KETERANGAN column.</div></div>');
         },
         async act(act, d, st, api) {
             if (act === 'kmode') { st.mode = d.val; return true; }
-            if (act === 'pick-file') { const f = await P.pickFile('Pilih file Excel Pajak Masukan (.xlsx)'); if (f) { st.file = f; api.redraw(); } return false; }
+            if (act === 'pick-file') { const f = await P.pickFile('Select the Pajak Masukan Excel file (.xlsx)'); if (f) { st.file = f; api.redraw(); } return false; }
             return false;
         },
         rail(st, api) {
-            const ent = api.entity(); let blocked = ''; if (!st.file) blocked = 'Pilih file Excel dulu'; else if (st.mode === 'fixed' && !st.pp.count()) blocked = 'Pilih masa pengkreditan';
-            return railCard({ title: 'Ringkasan', rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Belum dipilih</span>'], ['Masa', st.mode === 'fixed' && st.pp.count() ? esc(L.masaLabel(st.pp.single())) : 'Mengikuti Excel']],
-                folder: false, ready: readiness(ent), blocked, cta: 'Impor ke Coretax', icon: 'upload', notes: [['shield', 'var(--green)', 'Hasil per baris (SUKSES, GAGAL, DILEWATI) ditulis balik ke file Excel Anda dan disimpan di folder Downloads.']] });
+            const ent = api.entity(); let blocked = ''; if (!st.file) blocked = 'Select an Excel file first'; else if (st.mode === 'fixed' && !st.pp.count()) blocked = 'Select a crediting period';
+            return railCard({ title: 'Summary', rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>'], ['Period', st.mode === 'fixed' && st.pp.count() ? esc(L.masaLabel(st.pp.single())) : 'Follows the Excel']],
+                folder: false, ready: readiness(ent), blocked, cta: 'Import to Coretax', icon: 'upload', notes: [['shield', 'var(--green)', 'Per-row results (SUKSES, GAGAL, DILEWATI) are written back to your Excel file and saved in the Downloads folder.']] });
         },
         async start(st, api) {
             await P.post('/api/actions/import-pajak-masukan', { entity: api.entity(), fileBase64: st.file.fileBase64, targetMasaInput: st.mode === 'fixed' && st.pp.single() ? st.pp.single() : undefined });
@@ -641,16 +641,16 @@
         init(api) { return { nominal: '', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }) }; },
         afterDraw(st) { st.pp.bind(); },
         main(st) {
-            return P.card(1, 'Masa pajak', '<span>PPh Pasal 25 · setoran sendiri</span>', st.pp.html())
-                + P.card(2, 'Nominal setoran', '', '<div class="field"><div class="input-group" style="align-items:center"><span style="font:700 20px var(--font-head);color:var(--muted);padding-left:4px">Rp</span><input class="input mono" style="height:56px;font-size:22px;font-weight:600" id="bl-nominal" data-bind="nominal" data-money inputmode="numeric" placeholder="0" value="' + esc(st.nominal) + '" aria-label="Nominal PPh 25"></div><span class="hint">Isi sesuai angsuran PPh 25 yang harus dibayar.</span></div>')
-                + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Dicek otomatis sebelum membuat kode</b><div class="hint">Agen memastikan masa itu belum dibayar dan belum ada kode billing aktif. Bila sudah ada, kode yang ada diunduh, bukan dibuat ganda.</div></div></div></section>';
+            return P.card(1, 'Tax Period', '<span>PPh 25 · self-payment</span>', st.pp.html())
+                + P.card(2, 'Payment Amount', '', '<div class="field"><div class="input-group" style="align-items:center"><span style="font:700 20px var(--font-head);color:var(--muted);padding-left:4px">Rp</span><input class="input mono" style="height:56px;font-size:22px;font-weight:600" id="bl-nominal" data-bind="nominal" data-money inputmode="numeric" placeholder="0" value="' + esc(st.nominal) + '" aria-label="PPh 25 amount"></div><span class="hint">Enter the PPh 25 installment that must be paid.</span></div>')
+                + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Checked automatically before creating the code</b><div class="hint">The agent makes sure the period is not yet paid and has no active Kode Billing. If one exists, the existing code is downloaded instead of creating a duplicate.</div></div></div></section>';
         },
         rail(st, api) {
             const ent = api.entity(); const masa = st.pp.single(); const digits = String(st.nominal).replace(/\D/g, '');
-            let blocked = ''; if (!masa) blocked = 'Pilih masa pajak'; else if (!digits || Number(digits) <= 0) blocked = 'Isi nominal setoran';
-            return railCard({ big: digits ? '<span style="font-size:36px">Rp ' + L.rupiah(digits) + '</span>' : '—', unit: '', sub: masa ? 'PPh Pasal 25 · masa ' + esc(L.masaLabel(masa)) : 'Pilih masa pajak',
-                rows: [['Entitas', esc(ent.project === 'manual' ? 'Sesi manual' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Jenis', ent.individual ? 'Orang Pribadi' : 'Badan']], ready: readiness(ent), blocked, cta: 'Buat Kode Billing', icon: 'bank',
-                notes: [['info', 'var(--accent)', 'Kode dibuat lewat wizard resmi Coretax dan PDF-nya disimpan ke folder. Pembayaran tetap Anda lakukan sendiri.']] });
+            let blocked = ''; if (!masa) blocked = 'Select a tax period'; else if (!digits || Number(digits) <= 0) blocked = 'Enter the payment amount';
+            return railCard({ big: digits ? '<span style="font-size:36px">Rp ' + L.rupiah(digits) + '</span>' : '—', unit: '', sub: masa ? 'PPh 25 · period ' + esc(L.masaLabel(masa)) : 'Select a tax period',
+                rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Type', ent.individual ? 'Individual' : 'Corporate']], ready: readiness(ent), blocked, cta: 'Create Kode Billing', icon: 'bank',
+                notes: [['info', 'var(--accent)', 'The code is created through the official Coretax wizard and its PDF is saved to the folder. You still make the payment yourself.']] });
         },
         async start(st, api) {
             await P.post('/api/actions/billing-pph25', { entity: api.entity(), masaInput: st.pp.single(), nominal: String(st.nominal).replace(/\D/g, ''), saveRoot: P.saveRoot() || undefined });
@@ -663,28 +663,53 @@
     let imporView = 'upload';
     const impor = createPage({
         id: 'impor',
-        init(api) { return { view: imporView, file: null, info: null, infoError: '', konsepType: 'ICT_WIT', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }) }; },
-        afterDraw(st) { if (st.view === 'konsep') st.pp.bind(); },
+        init(api) {
+            return { view: imporView, file: null, info: null, infoError: '', konsepType: 'ICT_WIT', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }),
+                issueType: 'mp', ipp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }), preview: null, previewError: '', previewing: false };
+        },
+        afterDraw(st) { if (st.view === 'konsep') st.pp.bind(); if (st.view === 'issue') st.ipp.bind(); },
         main(st) {
-            const tabs = '<div style="margin-bottom:4px">' + P.seg('iview', [{ value: 'upload', label: 'Upload e-Bupot' }, { value: 'konsep', label: 'Konsep SPT' }], st.view) + '</div>';
+            const tabs = '<div style="margin-bottom:4px">' + P.seg('iview', [{ value: 'upload', label: 'Upload e-Bupot' }, { value: 'issue', label: 'Issue & Sign' }, { value: 'konsep', label: 'Konsep SPT' }], st.view) + '</div>';
             if (st.view === 'konsep') return tabs
-                + P.card(1, 'Jenis SPT', '', '<div class="chips c2">' + [['ICT_WIT', 'PPh Pasal 21/26'], ['ICT_WT', 'PPh Unifikasi']].map(([v, l]) => '<button type="button" class="chip" data-act="ktype" data-val="' + v + '" aria-pressed="' + (st.konsepType === v) + '">' + l + '</button>').join('') + '</div>')
-                + P.card(2, 'Masa pajak', '<span>Normal atau Pembetulan dipilih otomatis sesuai Coretax</span>', st.pp.html());
+                + P.card(1, 'SPT Type', '', '<div class="chips c2">' + [['ICT_WIT', 'PPh 21/26'], ['ICT_WT', 'PPh Unifikasi']].map(([v, l]) => '<button type="button" class="chip" data-act="ktype" data-val="' + v + '" aria-pressed="' + (st.konsepType === v) + '">' + l + '</button>').join('') + '</div>')
+                + P.card(2, 'Tax Period', '<span>Normal or Pembetulan is chosen automatically to match Coretax</span>', st.pp.html());
+            if (st.view === 'issue') {
+                const pv = st.preview, rp = (n) => Number(n || 0).toLocaleString('id-ID');
+                const result = st.previewing ? '<div class="hint" style="margin-top:8px">Reading Belum Terbit from Coretax…</div>'
+                    : st.previewError ? '<div class="hint warn" style="margin-top:8px">' + esc(st.previewError) + '</div>'
+                    : pv ? '<div class="hint" style="margin-top:8px"><b>' + pv.count + ' ' + esc(pv.label) + '</b> in Belum Terbit · period ' + esc(pv.period) + ' · bruto ' + rp(pv.totalGross) + ' · PPh ' + rp(pv.totalTax) + ' · ' + (pv.needsSign ? 'signed with the PIC passphrase' : 'no signature needed') + (pv.skipped.length ? ' · ' + pv.skipped.length + ' skipped' : '') + '</div>'
+                        + (pv.count ? '<table class="mini-table" style="width:100%;margin-top:6px;font-size:12.5px;border-collapse:collapse"><thead><tr><th style="text-align:left">NIK / NPWP</th><th style="text-align:left">Name</th><th style="text-align:right">Bruto</th><th style="text-align:right">PPh</th></tr></thead><tbody>'
+                            + pv.slips.slice(0, 25).map((x) => '<tr><td class="mono">' + esc(x.nik) + '</td><td>' + esc(x.name || '') + '</td><td style="text-align:right">' + rp(x.gross) + '</td><td style="text-align:right">' + rp(x.tax) + '</td></tr>').join('')
+                            + '</tbody></table>' + (pv.slips.length > 25 ? '<div class="hint">… and ' + (pv.slips.length - 25) + ' more</div>' : '') : '') : '';
+                return tabs
+                    + P.card(1, 'Bukti Potong Type', '', '<div class="chips c4">' + [['mp', 'BPMP'], ['bp21', 'BP21'], ['bpa1', 'BPA1'], ['bpu', 'BPPU']].map(([v, l]) => '<button type="button" class="chip" data-act="itype" data-val="' + v + '" aria-pressed="' + (st.issueType === v) + '">' + l + '</button>').join('') + '</div>')
+                    + P.card(2, 'Tax Period', '<span>BPA1: the last period of the slip</span>', st.ipp.html())
+                    + P.card(3, 'Preview', '', '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="ipreview" style="box-shadow:none"' + (st.previewing ? ' disabled' : '') + '>' + P.icon('search', 15) + 'Preview Belum Terbit</button></div>' + result)
+                    + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Issues exactly what the preview shows</b><div class="hint">BPMP is issued without a signature; BP21 / BPA1 / BPPU are signed with the PIC passphrase stored in Taxio Pilot (checked with Coretax first). If Belum Terbit changes after the preview, nothing is issued. Filing the SPT stays manual.</div></div></div></section>';
+            }
             const i = st.info;
             const summary = st.infoError ? '<div class="hint warn" style="margin-top:8px">' + esc(st.infoError) + '</div>'
-                : i ? '<div class="hint" style="margin-top:8px"><b>' + esc(i.label) + '</b> · ' + i.count + ' bukti potong · masa ' + esc((i.periods || []).join(', ') || '-') + ' · NPWP pemotong ' + esc(i.tin || '-') + (i.source === 'excel' ? ' · sheet ' + esc(i.sheet || '') : ' · file XML') + '</div>'
+                : i ? '<div class="hint" style="margin-top:8px"><b>' + esc(i.label) + '</b> · ' + i.count + ' Bukti Potong · period ' + esc((i.periods || []).join(', ') || '-') + ' · withholder NPWP ' + esc(i.tin || '-') + (i.source === 'excel' ? ' · sheet ' + esc(i.sheet || '') : ' · XML file') + '</div>'
                     + ((i.problems || []).length ? '<div class="hint warn">' + i.problems.slice(0, 5).map(esc).join('<br>') + '</div>' : '') : '';
             return tabs
-                + P.card(1, 'File impor', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Excel template impor DJP (.xlsx) atau XML</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'ganti file…' : 'pilih file…') + '</button></div>' + summary)
-                + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Hanya ke Belum Terbit</b><div class="hint">Jenis dikenali otomatis (BPMP, BP21, BPA1, BPPU). Coretax memvalidasi file lalu membuat bukti potong di Belum Terbit; bila ada baris salah, tidak ada yang dibuat dan kesalahannya tampil di log. Terbitkan / tanda tangan tetap Anda lakukan sendiri.</div></div></div></section>';
+                + P.card(1, 'Import File', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>DJP import template Excel (.xlsx) or XML</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>' + summary)
+                + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Belum Terbit only</b><div class="hint">The type is detected automatically (BPMP, BP21, BPA1, BPPU). Coretax validates the file, then creates the Bukti Potong in Belum Terbit; if any row is wrong, nothing is created and the errors appear in the log. You still issue / sign them yourself.</div></div></div></section>';
         },
         async act(act, d, st, api) {
             if (act === 'iview') { st.view = imporView = d.val; return true; }
             if (act === 'ktype') { st.konsepType = d.val; return true; }
+            if (act === 'itype') { st.issueType = d.val; st.preview = null; st.previewError = ''; return true; }
+            if (act === 'ipreview') {
+                const masa = st.ipp.single(); if (!masa) { alert('Select a tax period first.'); return false; }
+                st.previewing = true; st.preview = null; st.previewError = ''; api.redraw();
+                try { st.preview = { ...(await P.post('/api/ebupot/issue-preview', { entity: api.entity(), type: st.issueType, period: masa })), forType: st.issueType, forPeriod: masa }; }
+                catch (e) { st.previewError = e.message; }
+                st.previewing = false; api.redraw(); return false;
+            }
             if (act === 'pick-file') {
                 // Dialog dibuka di folder file impor terakhir (lokal), pertama kali di Downloads.
                 let dir = 'downloads'; try { dir = localStorage.getItem('taxio.imporDir') || 'downloads'; } catch (e) {}
-                const f = await P.pickFile('Pilih file impor e-Bupot (.xlsx / .xml)', 'File impor (*.xlsx;*.xml)|*.xlsx;*.xml|Semua File (*.*)|*.*', dir); if (!f) return false;
+                const f = await P.pickFile('Select the e-Bupot import file (.xlsx / .xml)', 'Import files (*.xlsx;*.xml)|*.xlsx;*.xml|All Files (*.*)|*.*', dir); if (!f) return false;
                 if (f.filePath) try { localStorage.setItem('taxio.imporDir', f.filePath.replace(/[\\/][^\\/]*$/, '')); } catch (e) {}
                 st.file = f; st.info = null; st.infoError = ''; api.redraw();
                 try { st.info = await P.post('/api/import/inspect', { entity: api.entity(), fileBase64: f.fileBase64, filePath: f.filePath, fileName: f.fileName }); }
@@ -694,20 +719,33 @@
             return false;
         },
         rail(st, api) {
-            const ent = api.entity(), name = ent.project === 'manual' ? 'Sesi manual' : ent.entity_name;
+            const ent = api.entity(), name = ent.project === 'manual' ? 'Manual session' : ent.entity_name;
+            if (st.view === 'issue') {
+                const pv = st.preview, masa = st.ipp.single(), fresh = !!(pv && pv.forType === st.issueType && pv.forPeriod === masa);
+                const blocked = !masa ? 'Select a tax period' : !fresh ? 'Run the preview first' : !pv.count ? 'Nothing to issue in Belum Terbit' : '';
+                return railCard({ title: 'Summary', rows: [['Entity', esc(name)], ['Login', esc(loginText(ent))], ['Type', { mp: 'BPMP', bp21: 'BP21', bpa1: 'BPA1', bpu: 'BPPU' }[st.issueType]], ['Period', masa ? esc(L.masaLabel(masa)) : '<span class="muted">Not selected</span>'], ['Bukti Potong', fresh ? String(pv.count) : '-'], ['Signature', fresh ? (pv.needsSign ? 'PIC passphrase' : 'Not needed') : '-']],
+                    folder: false, ready: readiness(ent), blocked, cta: fresh && pv.count ? (pv.needsSign ? 'Issue & Sign ' : 'Issue ') + pv.count + ' Bukti Potong' : 'Issue & Sign', icon: 'check',
+                    notes: [['shield', 'var(--green)', 'Asks for confirmation, then issues only the previewed list (confirmation code ' + (fresh && pv.token ? pv.token : '-') + ').']] });
+            }
             if (st.view === 'konsep') {
                 const masa = st.pp.single();
-                return railCard({ title: 'Ringkasan', rows: [['Entitas', esc(name)], ['Login', esc(loginText(ent))], ['SPT', st.konsepType === 'ICT_WIT' ? 'PPh 21/26' : 'Unifikasi'], ['Masa', masa ? esc(L.masaLabel(masa)) : '<span class="muted">Belum dipilih</span>']],
-                    folder: false, ready: readiness(ent), blocked: masa ? '' : 'Pilih masa pajak', cta: 'Buat Konsep SPT', icon: 'file',
-                    notes: [['shield', 'var(--green)', 'Hanya membuat konsep. Posting, periksa, tanda tangan dan lapor tetap di Coretax.']] });
+                return railCard({ title: 'Summary', rows: [['Entity', esc(name)], ['Login', esc(loginText(ent))], ['SPT', st.konsepType === 'ICT_WIT' ? 'PPh 21/26' : 'Unifikasi'], ['Period', masa ? esc(L.masaLabel(masa)) : '<span class="muted">Not selected</span>']],
+                    folder: false, ready: readiness(ent), blocked: masa ? '' : 'Select a tax period', cta: 'Create Konsep SPT', icon: 'file',
+                    notes: [['shield', 'var(--green)', 'Only creates the Konsep. Posting, checking, signing and filing still happen in Coretax.']] });
             }
             const i = st.info;
-            const blocked = !st.file ? 'Pilih file impor dulu' : st.infoError ? 'File tidak bisa dipakai' : !i ? 'Memeriksa file…' : (i.problems || []).length ? 'Perbaiki masalah data di file' : '';
-            return railCard({ title: 'Ringkasan', rows: [['Entitas', esc(name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Belum dipilih</span>'], ['Jenis', i ? esc(i.label) : '-'], ['Bukti potong', i ? String(i.count) : '-']],
-                folder: false, ready: readiness(ent), blocked, cta: 'Upload ke Belum Terbit', icon: 'upload',
-                notes: [['shield', 'var(--green)', 'Tidak menerbitkan dan tidak menandatangani. Hasilnya dari Monitoring XML Coretax, tampil di log.']] });
+            const blocked = !st.file ? 'Select an import file first' : st.infoError ? 'File cannot be used' : !i ? 'Checking file…' : (i.problems || []).length ? 'Fix the data problems in the file' : '';
+            return railCard({ title: 'Summary', rows: [['Entity', esc(name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>'], ['Type', i ? esc(i.label) : '-'], ['Bukti Potong', i ? String(i.count) : '-']],
+                folder: false, ready: readiness(ent), blocked, cta: 'Upload to Belum Terbit', icon: 'upload',
+                notes: [['shield', 'var(--green)', 'Does not issue or sign. Results come from Coretax Monitoring XML and appear in the log.']] });
         },
         async start(st, api) {
+            if (st.view === 'issue') {
+                const pv = st.preview, rp = (n) => Number(n || 0).toLocaleString('id-ID');
+                if (!confirm((pv.needsSign ? 'Issue & sign ' : 'Issue ') + pv.count + ' ' + pv.label + ' for period ' + pv.period + ' (bruto ' + rp(pv.totalGross) + ', PPh ' + rp(pv.totalTax) + ')' + (pv.needsSign ? ', signed with the PIC passphrase' : '') + '?\n\nThis cannot be undone easily.')) return;
+                await P.post('/api/actions/issue-ebupot', { entity: api.entity(), type: pv.forType, period: pv.forPeriod, token: pv.token });
+                st.preview = null; return;
+            }
             if (st.view === 'konsep') return P.post('/api/actions/create-konsep', { entity: api.entity(), taxType: st.konsepType, period: st.pp.single() });
             await P.post('/api/actions/import-coretax', { entity: api.entity(), fileBase64: st.file.fileBase64, filePath: st.file.filePath, fileName: st.file.fileName });
         }

@@ -13,7 +13,7 @@
         let body = null;
         try { body = await res.json(); } catch (e) { /* bukan JSON */ }
         if (!res.ok) {
-            const err = new Error((body && body.error) || ('Request gagal (' + res.status + ')'));
+            const err = new Error((body && body.error) || ('Request failed (' + res.status + ')'));
             err.status = res.status; err.body = body;
             throw err;
         }
@@ -97,11 +97,11 @@
         const card = document.createElement('div');
         card.className = 'notice ' + (n.level || 'info');
         const title = document.createElement('b');
-        title.textContent = n.level === 'error' ? 'Galat' : n.level === 'warning' ? 'Perhatian' : 'Info';
+        title.textContent = n.level === 'error' ? 'Error' : n.level === 'warning' ? 'Warning' : 'Info';
         const body = document.createElement('div');
         body.textContent = n.msg;
         const close = document.createElement('button');
-        close.textContent = '×'; close.title = 'Tutup'; close.setAttribute('aria-label', 'Tutup');
+        close.textContent = '×'; close.title = 'Close'; close.setAttribute('aria-label', 'Close');
         const dismiss = () => { card.remove(); if (!n.local) fetch('/api/notices/ack?id=' + encodeURIComponent(n.id), { method: 'POST' }).catch(() => {}); };
         close.onclick = dismiss;
         card.append(close, title, body);
@@ -110,7 +110,7 @@
     };
     // Peringatan dari jendela sendiri memakai kartu yang sama, bukan dialog alert() browser yang memblokir.
     let localSeq = 0;
-    window.alert = (msg) => P.notice({ id: 'local-' + (++localSeq), local: true, level: /^Gagal/i.test(String(msg)) ? 'error' : 'warning', msg: String(msg) });
+    window.alert = (msg) => P.notice({ id: 'local-' + (++localSeq), local: true, level: /^(Gagal|Failed|Could not)/i.test(String(msg)) ? 'error' : 'warning', msg: String(msg) });
     P.info = (msg) => P.notice({ id: 'local-' + (++localSeq), local: true, level: 'info', msg: String(msg) });
 
     // ---------- Potongan HTML bersama ----------
@@ -131,16 +131,16 @@
 
     // Folder simpan dipakai bersama semua halaman (satu pilihan, seperti sebelumnya).
     P.saveRoot = () => P.store.get('saveRoot', '');
-    P.folderField = () => '<div class="stack" style="gap:8px"><div class="eyebrow">Simpan ke</div><div class="input-group">'
-        + '<input type="text" class="input sm mono" id="save-root-input" placeholder="Downloads\\CoretaxAgent" value="' + P.esc(P.saveRoot()) + '" aria-label="Folder simpan">'
-        + '<button type="button" class="btn btn-sm" id="pick-folder-btn" style="height:40px">Cari</button></div></div>';
+    P.folderField = () => '<div class="stack" style="gap:8px"><div class="eyebrow">Save to</div><div class="input-group">'
+        + '<input type="text" class="input sm mono" id="save-root-input" placeholder="Downloads\\CoretaxAgent" value="' + P.esc(P.saveRoot()) + '" aria-label="Save folder">'
+        + '<button type="button" class="btn btn-sm" id="pick-folder-btn" style="height:40px">Browse</button></div></div>';
     P.bindFolderField = (root) => {
         const input = root.querySelector('#save-root-input');
         const btn = root.querySelector('#pick-folder-btn');
         if (input) input.addEventListener('input', () => P.store.set('saveRoot', input.value.trim()));
         if (btn) btn.addEventListener('click', async () => {
             try {
-                const data = await P.post('/api/actions/pick-folder', { title: 'Pilih folder tempat menyimpan hasil unduhan' });
+                const data = await P.post('/api/actions/pick-folder', { title: 'Select the folder to save downloads to' });
                 if (data && !data.canceled && data.folderPath) { input.value = data.folderPath; P.store.set('saveRoot', data.folderPath); }
             } catch (e) { /* dibatalkan */ }
         });
@@ -153,7 +153,7 @@
             for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
             resolve(btoa(binary));
         };
-        reader.onerror = () => reject(reader.error || new Error('Gagal membaca file.'));
+        reader.onerror = () => reject(reader.error || new Error('Failed to read file.'));
         reader.readAsArrayBuffer(file);
     });
     // Pilih file lewat dialog Windows (server), dengan cadangan <input type=file> bila tidak tersedia.
@@ -163,7 +163,7 @@
         if (picking) return null;
         picking = true;
         try {
-            const data = await P.post('/api/actions/pick-file', { title, filter: filter || 'File Excel (*.xlsx)|*.xlsx|Semua File (*.*)|*.*', dir: dir || undefined });
+            const data = await P.post('/api/actions/pick-file', { title, filter: filter || 'Excel Files (*.xlsx)|*.xlsx|All Files (*.*)|*.*', dir: dir || undefined });
             if (data && !data.canceled && data.fileBase64) return { fileName: data.fileName, fileBase64: data.fileBase64, filePath: data.filePath };
             if (data && data.canceled) return null;
         } catch (e) { /* jatuh ke input file */ }
@@ -174,7 +174,7 @@
             input.onchange = async () => {
                 const f = input.files && input.files[0];
                 if (!f) return resolve(null);
-                try { resolve({ fileName: f.name, fileBase64: await P.readFileAsBase64(f) }); } catch (err) { alert('Gagal membaca file: ' + err.message); resolve(null); }
+                try { resolve({ fileName: f.name, fileBase64: await P.readFileAsBase64(f) }); } catch (err) { alert('Failed to read file: ' + err.message); resolve(null); }
             };
             input.click();
         });

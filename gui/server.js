@@ -376,7 +376,7 @@ async function handleBillingPph25(req, res) {
         : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, masaInput: mmYY, nominal: amount, saveRoot,
             restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
 
-    try { runcontrol.start('Kode Billing PPh 25 · ' + mmYY + ' · ' + src.label, sessionOf(src)); }
+    try { runcontrol.start('PPh 25 Kode Billing · ' + mmYY + ' · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -550,7 +550,9 @@ async function prepareEntityPage(res, entity) {
         };
     }
     return {
-        label: src.label, folder: src.entity.entity_id, session: sessionOf(src), picId: src.picId, entityId: src.entity.entity_id,
+        label: src.label, folder: src.entity.entity_id, session: sessionOf(src), picId: src.picId, entityId: src.entity.entity_id, npwp: src.entity.npwp,
+        // Penandatangan e-Bupot (lib/coretax-issue.js): NIK login PIC + passphrase yang tersimpan, sumber yang sama dengan login.
+        signer: async () => { const cred = await entitiesLib.getCredential(src.client, src.orgId, src.picId); return { nik: cred && cred.username, passphrase: src.passphrase || null }; },
         open: () => runLoginOnly({
             client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
             restricted: src.restricted, passphrase: src.passphrase, allowedEbupotSections: src.allowedEbupotSections
@@ -629,7 +631,7 @@ async function handleDownloadMyBupot(req, res) {
         : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode,
             restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
 
-    try { runcontrol.start('Bukti Potong Saya · ' + src.label, sessionOf(src)); }
+    try { runcontrol.start('My Bukti Potong · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -759,7 +761,7 @@ async function handleDownloadEfaktur(req, res) {
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
 
-    try { runcontrol.start('Download e-Faktur · ' + typeKeys.length + ' jenis · ' + target.label, target.session); }
+    try { runcontrol.start('e-Faktur download · ' + typeKeys.length + ' type(s) · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -789,7 +791,7 @@ async function handleImportPajakMasukan(req, res) {
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
 
-    try { runcontrol.start('Impor Pajak Masukan' + (targetMasaInput ? ' · Masa ' + String(targetMasaInput).trim() : '') + ' · ' + target.label, target.session); }
+    try { runcontrol.start('Faktur Masukan crediting' + (targetMasaInput ? ' · period ' + String(targetMasaInput).trim() : '') + ' · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -890,7 +892,7 @@ async function handleBpmpAmend(req, res) {
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('Pembetulan NIK BPMP' + (submit ? '' : ' (uji)') + ' · ' + target.label, target.session); }
+    try { runcontrol.start('BPMP NIK correction' + (submit ? '' : ' (test)') + ' · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     let page = null, outDir = null, npwp = null, results = [], checks = null, sweepRes = null;
@@ -967,14 +969,32 @@ async function handleImportUpload(req, res) {
     if (prepared.problems.length) return sendJson(res, 400, { error: 'Periksa file dulu: ' + prepared.problems.slice(0, 5).join('; ') + (prepared.problems.length > 5 ? ' (dan ' + (prepared.problems.length - 5) + ' lagi)' : '') });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('Upload ' + prepared.label + ' · ' + target.label, target.session); }
+    try { runcontrol.start('Upload ' + prepared.label + ' to Belum Terbit · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey(), type: prepared.type, count: prepared.count });
     try {
         const page = await target.open();
         const base = String(name).replace(/\.(xlsx|xml)$/i, '').replace(/[^\w .()-]/g, '').slice(0, 60) || prepared.label;
         const r = await imp.upload(page, prepared, { fileName: base + ' - Pilot ' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12) + '.xml', emit: (m) => log(m) });
-        if (r.ok) log('SELESAI: ' + r.created + ' ' + prepared.label + ' dibuat di Belum Terbit (' + r.fileName + '). Terbitkan / tanda tangan tetap manual di Coretax.');
+        if (r.ok) {
+            log('SELESAI: ' + r.created + ' ' + prepared.label + ' dibuat di Belum Terbit (' + r.fileName + ').');
+            // Hasil untuk diperiksa: isi Belum Terbit per masa di file + kode konfirmasi untuk Terbitkan (lib/coretax-issue.js).
+            const periods = [...new Set((prepared.rows || []).map((x) => { const m = x.TaxPeriodMonth || x.TaxPeriodMonthEnd, y = x.TaxPeriodYear; return m && y ? String(m).padStart(2, '0') + String(y).slice(-2) : null; }).filter(Boolean))];
+            for (const p of periods) {
+                try {
+                    const pv = await require('../lib/coretax-issue').preview(page, { type: prepared.type, period: p });
+                    if (body.filePath) ebupotReportDirs.set(target.folder, path.dirname(body.filePath));
+                    try {
+                        const file = await require('../lib/coretax-report').writeSlipReport(path.join(ebupotReportDir(target), 'Upload ' + pv.label + ' ' + p + ' - Belum Terbit.xlsx'),
+                            { entity: target.label, label: pv.label, period: pv.period, stage: 'uploaded', rows: pv.rows, note: 'Kode konfirmasi issue: ' + (pv.token || '-') + ' (berlaku selama Belum Terbit tidak berubah).' });
+                        log('Laporan: ' + file);
+                    } catch (e) { log('Laporan Excel gagal ditulis: ' + e.message); }
+                    log('Belum Terbit ' + pv.label + ' masa ' + pv.period + ': ' + pv.count + ' bukti potong, bruto ' + pv.totalGross.toLocaleString('id-ID') + ', PPh ' + pv.totalTax.toLocaleString('id-ID')
+                        + ' · siap diterbitkan' + (pv.needsSign ? ' (tanda tangan passphrase PIC)' : '') + ', kode konfirmasi ' + pv.token + '.');
+                } catch (e) { log('Ringkasan Belum Terbit masa ' + p + ' gagal: ' + e.message); }
+            }
+            log('Terbitkan: tab Terbitkan di menu ini, atau minta Claude "terbitkan ' + prepared.label + ' <masa>" - selalu dengan pratinjau dan konfirmasi.');
+        }
         else {
             log('GAGAL: upload ' + prepared.label + ' - ' + r.status + (r.message && !r.errors.length ? ': ' + r.message : '') + '. Tidak ada bukti potong yang dibuat dari file ini.');
             for (const e of r.errors.slice(0, 30)) log('  baris ' + (e.Line ?? '?') + (e.FieldName ? ' · ' + e.FieldName : '') + ': ' + e.Message);
@@ -995,7 +1015,7 @@ async function handleCreateKonsep(req, res) {
     if (taxType === 'ICT_WIT' && state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.' });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('Konsep SPT ' + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, target.session); }
+    try { runcontrol.start('Create Konsep SPT ' + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -1008,12 +1028,71 @@ async function handleCreateKonsep(req, res) {
     } finally { runcontrol.finish(); }
 }
 
+/** Folder laporan e-Bupot per entitas: folder file impor terakhir, selain itu Downloads\CoretaxAgent\<kode>\e-Bupot. */
+const ebupotReportDirs = new Map();
+const ebupotReportDir = (target) => ebupotReportDirs.get(target.folder) || path.join(os.homedir(), 'Downloads', 'CoretaxAgent', target.folder || 'Manual', 'e-Bupot');
+/** e-Bupot type code -> label (mp -> BPMP). */
+const typeLabel = (t) => ((require('../lib/coretax-import').TYPES[t] || {}).label || String(t || '').toUpperCase());
+
+/** Pratinjau terbitkan (lib/coretax-issue.js): daftar Belum Terbit + total + kode konfirmasi. Tidak mengubah apa pun. */
+async function handleIssuePreview(req, res) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity, type, period } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Terbitkan e-Bupot tidak tersedia untuk pengguna Restricted.' });
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    try { runcontrol.start('Issue preview ' + typeLabel(type) + ' ' + period + ' · ' + target.label, target.session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    try {
+        const page = await target.open();
+        const p = await require('../lib/coretax-issue').preview(page, { type, period });
+        log('Pratinjau terbitkan ' + p.label + ' masa ' + p.period + ': ' + p.count + ' bukti potong Belum Terbit, bruto ' + p.totalGross.toLocaleString('id-ID') + ', PPh ' + p.totalTax.toLocaleString('id-ID')
+            + (p.needsSign ? ' · perlu tanda tangan (passphrase PIC)' : ' · tanpa tanda tangan') + (p.token ? ' · kode konfirmasi ' + p.token : '') + (p.skipped.length ? ' · ' + p.skipped.length + ' dilewati' : '') + '.');
+        const { rows, ...out } = p;
+        return sendJson(res, 200, out);
+    } catch (e) { log('Pratinjau terbitkan gagal: ' + e.message); return sendJson(res, 400, { error: e.message }); }
+    finally { runcontrol.finish(); }
+}
+/** Terbitkan Belum Terbit satu jenis & masa - hanya dengan kode konfirmasi dari pratinjau (daftar harus belum berubah). */
+async function handleIssueEbupot(req, res) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity, type, period, token } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (!token) return sendJson(res, 400, { error: 'Kode konfirmasi pratinjau wajib - jalankan pratinjau terbitkan dulu.' });
+    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Terbitkan e-Bupot tidak tersedia untuk pengguna Restricted.' });
+    const iss = require('../lib/coretax-issue');
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    if (iss.NEEDS_SIGN.has(type) && !target.signer) return sendJson(res, 400, { error: 'Jenis ini perlu tanda tangan; sesi manual tidak menyimpan passphrase PIC - pakai entitas dengan login otomatis.' });
+    try { runcontrol.start((iss.NEEDS_SIGN.has(type) ? 'Issue & sign ' : 'Issue ') + typeLabel(type) + ' ' + period + ' · ' + target.label, target.session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true, session: runSessionKey() });
+    try {
+        const signer = iss.NEEDS_SIGN.has(type) ? await target.signer() : null;
+        const page = await target.open();
+        const r = await iss.issue(page, { type, period, token, signer, emit: (m) => log(m) });
+        try {
+            const file = await require('../lib/coretax-report').writeSlipReport(path.join(ebupotReportDir(target), (r.signed ? 'Issue & Sign ' : 'Issue ') + r.label + ' ' + String(period) + ' - Telah Terbit.xlsx'),
+                { entity: target.label, label: r.label, period: r.period, stage: 'issued', rows: r.rows || [], note: r.issued + ' diterbitkan' + (r.signed ? ' dan ditandatangani' : '') + (r.pending ? '; ' + r.pending + ' masih diproses Coretax' : '') + '. Lapor SPT tetap manual.' });
+            log('Laporan: ' + file);
+        } catch (e) { log('Laporan Excel gagal ditulis: ' + e.message); }
+        log('SELESAI: ' + r.issued + ' ' + r.label + ' masa ' + r.period + ' diterbitkan' + (r.signed ? ' (ditandatangani)' : '') + (r.pending ? ', ' + r.pending + ' masih diproses Coretax - cek Telah Terbit sebentar lagi' : '') + '. Lapor SPT tetap manual.');
+    } catch (e) {
+        if (e && e.isStop) log('Terbitkan dihentikan oleh pengguna.'); else log('GAGAL terbitkan: ' + e.message);
+    } finally { runcontrol.finish(); }
+}
+
 /** Penyisiran saja (tanpa Excel, tanpa mengubah apa pun): masih ada NIK bermasalah di BPMP Telah Terbit tahun ini? */
 async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
     if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Pilih tahun pajak dulu.' });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('Penyisiran NIK BPMP ' + taxYear + ' · ' + target.label, target.session); }
+    try { runcontrol.start('BPMP NIK check ' + taxYear + ' · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -1049,7 +1128,7 @@ async function handleImportDividen(req, res) {
 
     const target = await prepareDividenPage(res, entity, true);
     if (!target) return;
-    try { runcontrol.start('Impor Dividen · ' + target.label, target.session); }
+    try { runcontrol.start('Dividend import · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -1074,7 +1153,7 @@ async function handleCheckDividen(req, res) {
 
     const target = await prepareDividenPage(res, entity, true);
     if (!target) return;
-    try { runcontrol.start('Cek Hasil Dividen · ' + target.label, target.session); }
+    try { runcontrol.start('Dividend check · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -1093,7 +1172,7 @@ async function handleCreateDividenCase(req, res) {
     const target = await prepareDividenPage(res, body && body.entity, false);
     if (!target) return;
 
-    try { runcontrol.start('Buat Kasus Dividen · ' + target.label, target.session); }
+    try { runcontrol.start('Create dividend case · ' + target.label, target.session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -1115,7 +1194,7 @@ async function handleLoginEntity(req, res) {
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
 
-    try { runcontrol.start('Login Coretax · ' + src.label, sessionOf(src)); }
+    try { runcontrol.start('Coretax login · ' + src.label, sessionOf(src)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
@@ -1308,6 +1387,8 @@ function createGuiServer(port) {
             if (pathname === '/api/import/inspect' && req.method === 'POST') return handleImportInspect(req, res);
             if (pathname === '/api/actions/import-coretax' && req.method === 'POST') return handleImportUpload(req, res);
             if (pathname === '/api/actions/create-konsep' && req.method === 'POST') return handleCreateKonsep(req, res);
+            if (pathname === '/api/ebupot/issue-preview' && req.method === 'POST') return handleIssuePreview(req, res);
+            if (pathname === '/api/actions/issue-ebupot' && req.method === 'POST') return handleIssueEbupot(req, res);
             if (pathname === '/api/a1/inspect' && req.method === 'POST') return handleA1Inspect(req, res);
             if (pathname === '/api/a1/bpa1-xml' && req.method === 'POST') return handleBpa1Xml(req, res);
             if (pathname === '/api/actions/check-dividen' && req.method === 'POST') return handleCheckDividen(req, res);
