@@ -49,6 +49,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         calls.push({ url, body: req.postDataJSON() });
         return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ started: true }) });
     });
+    // Pratinjau isian Pembetulan (tanpa Coretax): 2 NIK dari sheet NIK, tidak ada pembatalan.
+    await page.route('**/api/bpmp-amend/preview', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ byNik: 2, perSlip: 0, cancels: [], skipped: [] }) }));
     const shot = async (name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }); };
     const text = (sel) => page.locator(sel).first().innerText();
     const visible = (sel) => page.locator(sel).first().isVisible();

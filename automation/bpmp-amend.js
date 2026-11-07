@@ -36,11 +36,12 @@ async function readTargets(source) {
     const [cNik, cOld, cNew, cName] = ['NIK', 'NIK lama (dari #)', 'NIK Baru', 'Nama Baru'].map((h) => col.get(h));
     if (!cNik || !cOld || !cNew || !cName) throw new Error('Kolom NIK Baru / Nama Baru tidak ditemukan di sheet ' + ws.name + ' - susun ulang Excel dengan format terbaru.');
     const text = (v) => v && typeof v === 'object' ? ('result' in v ? v.result : v.text) : v;
-    const targets = [], skipped = [];
+    const targets = [], skipped = [], cancels = [], exclude = new Set();
     ws.eachRow((row, n) => {
         if (n <= headRow) return;
-        const nik = String(text(row.getCell(cNik).value) || '').trim(); if (!/^\d{16}$/.test(nik)) return;
+        const nik = String(text(row.getCell(cNik).value) || '').trim();
         const raw = text(row.getCell(cNew).value); if (raw === null || raw === undefined || raw === '') return;
+        if (!/^\d{16}$/.test(nik)) { if (nik) skipped.push('Sheet NIK baris ' + n + ' (NIK "' + nik + '"): NIK bukan 16 digit - bila NIK di L-IA diubah manual, kembalikan dan isi NIK Baru per bukti potong di sheet Pembetulan.'); return; }
         const old = nik === TEMP ? String(text(row.getCell(cOld).value) || '').trim() : nik;
         if (typeof raw === 'number') { skipped.push(old + ': NIK Baru tersimpan sebagai angka (digit akhir bisa hilang) - ketik ulang sebagai teks.'); return; }
         const newNik = String(raw).trim(), newName = String(text(row.getCell(cName).value) || '').trim();
@@ -49,12 +50,43 @@ async function readTargets(source) {
         if (!/^\d{16}$/.test(old)) { skipped.push((old || nik) + ': NIK lama tidak terbaca.'); return; }
         targets.push({ temp: nik === TEMP, old, newNik, newName });
     });
+    // Isian per bukti potong di sheet Pembetulan: NIK Baru diketik langsung (bukan rumus ke sheet NIK). Untuk NIK yang
+    // dipakai dua orang - hanya bukti potong yang diisi yang dibetulkan; sisanya tetap.
+    const pb = wb.getWorksheet('Pembetulan');
+    if (pb) {
+        const R = require('../lib/bpmp-report'), hr = R.detectHead(pb), h = R.headerMap(pb, hr), g = (r, k) => (h.has(k) ? r.getCell(h.get(k)).value : null);
+        if (h.has('Nomor Bukti Potong') && h.has('NIK Baru')) pb.eachRow((row, n) => {
+            if (n <= hr) return;
+            const number = String(text(g(row, 'Nomor Bukti Potong')) || '').trim(); if (!number) return;
+            const slipNik = String(text(g(row, 'NIK di Bukti Potong')) || '').trim(), temp = slipNik === TEMP;
+            const old = temp ? String(text(g(row, 'NIK Lama (dari #)')) || '').trim() : slipNik;
+            const status = String(text(g(row, 'Status')) || ''), tind = String(text(g(row, 'Tindakan')) || '').trim();
+            // Tindakan: Biarkan = bukti potong ini dilewati (juga oleh isian sheet NIK); Batalkan = dibatalkan sesudah konfirmasi.
+            if (tind === 'Biarkan') { exclude.add(number); return; }
+            if (tind === 'Batalkan') {
+                exclude.add(number);
+                if (!/^(Dibatalkan|Sudah dibatalkan)/.test(status)) cancels.push({ number, nik: slipNik, name: String(text(g(row, 'Nama di Bukti Potong')) || '').trim(), masa: String(text(g(row, 'Masa')) || '').trim(), gross: text(g(row, 'Penghasilan Bruto (Rp)')) });
+                return;
+            }
+            if (tind && tind !== 'Ganti NIK') { skipped.push(number + ': Tindakan "' + tind + '" tidak dikenal - pilih Ganti NIK, Batalkan atau Biarkan.'); exclude.add(number); return; }
+            const cell = g(row, 'NIK Baru'); if (cell === null || cell === undefined || cell === '' || (typeof cell === 'object' && cell.formula)) return;
+            if (/^DIBETULKAN/.test(status)) return;
+            const raw = text(cell);
+            if (typeof raw === 'number') { skipped.push(number + ': NIK Baru tersimpan sebagai angka - ketik ulang sebagai teks.'); return; }
+            const newNik = String(raw).trim(), newName = String(text(g(row, 'Nama Baru')) || '').trim();
+            if (!/^\d{16}$/.test(newNik)) { skipped.push(number + ': NIK Baru "' + newNik + '" bukan 16 digit.'); return; }
+            if (!newName) { skipped.push(number + ': Nama Baru kosong.'); return; }
+            if (!/^\d{16}$/.test(old)) { skipped.push(number + ': NIK di Bukti Potong "' + slipNik + '" tidak terbaca - harus sama dengan NIK di Coretax.'); return; }
+            if (newNik === old) return;
+            targets.push({ temp, old, newNik, newName, number });
+        });
+    }
     // Hasil pembetulan sebelumnya (sheet "Pembetulan", lib/bpmp-report.js) - untuk melanjutkan tanpa mengulang.
     const previous = require('../lib/bpmp-report').readPrevious(wb);
     // Tahun dari kop lampiran ("... · Tahun 2026").
     let year = null;
     for (const sheet of wb.worksheets) { const m = /Tahun (20\d{2})/.exec(String(text(sheet.getCell(3, 1).value) || '')); if (m) { year = m[1]; break; } }
-    return { targets, skipped, year, previous };
+    return { targets, skipped, year, previous, cancels, exclude };
 }
 
 /** Validasi NIK seperti formulir Coretax: daftarkan kunci publik RSA lalu buka respons /taxpayerdetail. */
@@ -123,6 +155,8 @@ function editDistance(a, b) {
     }
     return prev[b.length];
 }
+/** Banyaknya huruf yang berbeda antara dua nama, tanpa memperhitungkan spasi dan tanda baca. */
+function nameGap(a, b) { return editDistance(normName(a).replace(/ /g, ''), normName(b).replace(/ /g, '')); }
 function nameMatch(excelName, coretaxName) {
     const a = normName(excelName), b = normName(coretaxName);
     if (!a || !b) return 'different';
@@ -143,7 +177,7 @@ function nameMatch(excelName, coretaxName) {
 /** Uji (submit=false) atau kirim pembetulan untuk `targets`. Mengembalikan baris hasil per bukti potong.
  *  allowSimilar: nama 'similar' (lihat nameMatch) ikut dikirim, dengan nama resmi Coretax. previous: hasil
  *  pembetulan sebelumnya dari Excel, hanya untuk pesan - yang dicari tetap bukti potong yang MASIH ber-NIK lama. */
-async function run({ context, npwp, targets, year, submit, outDir, allowSimilar = false, previous = new Map(), emit = () => {} }) {
+async function run({ context, npwp, targets, year, submit, outDir, allowSimilar = false, previous = new Map(), exclude = new Set(), emit = () => {} }) {
     fs.mkdirSync(outDir, { recursive: true });
     const s = await openSession(context, npwp);
     const results = [], checked = new Map();
@@ -151,8 +185,20 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
     try {
         const all = [];
         for (let m = 1; m <= 12; m++) { const mm = String(m).padStart(2, '0'); all.push(...await s.list('getebupotmpissued', mm + mm + year)); }
+        // Isian per bukti potong (sheet Pembetulan, t.number) didahulukan: bukti potong itu tidak ikut isian per NIK
+        // (satu NIK bisa dipakai dua orang - mis. sebagian BPMP ber-NIK A sebenarnya milik B).
+        // exclude: Tindakan Biarkan / Batalkan di sheet Pembetulan - tidak ikut diganti NIK-nya.
+        const perSlip = new Set([...targets.filter((t) => t.number).map((t) => t.number), ...exclude]);
         for (const t of targets) {
-            const slips = all.filter((r) => t.temp ? String(r.Name || '').trim().endsWith('#' + t.old) && r.TaxIdentificationNumber === TEMP : r.TaxIdentificationNumber === t.old);
+            const slips = t.number
+                ? all.filter((r) => String(r.WithholdingSlipsNumber) === t.number && (t.temp ? r.TaxIdentificationNumber === TEMP : r.TaxIdentificationNumber === t.old))
+                : all.filter((r) => !perSlip.has(String(r.WithholdingSlipsNumber)) && (t.temp ? String(r.Name || '').trim().endsWith('#' + t.old) && r.TaxIdentificationNumber === TEMP : r.TaxIdentificationNumber === t.old));
+            if (t.number && !slips.length) {
+                const now = all.find((r) => String(r.WithholdingSlipsNumber) === t.number);
+                emit(now && now.TaxIdentificationNumber === t.newNik ? 'SUDAH ' + t.number + ': NIK sudah ' + t.newNik + ' - dilewati.'
+                    : t.number + ': tidak ada BPMP terbit bernomor ini dengan NIK ' + t.old + (now ? ' (NIK di Coretax ' + now.TaxIdentificationNumber + ')' : ' (mungkin sudah dibetulkan / diganti nomor baru)') + ' - dilewati.');
+                continue;
+            }
             if (!slips.length) {
                 const done = (previous.get(t.old) || []).filter((p) => /^DIBETULKAN/.test(p.status));
                 emit(done.length ? 'SUDAH ' + t.old + ' -> ' + done[0].newNik + ' ' + done[0].name + ': ' + done.length + ' bukti potong dibetulkan ' + done[0].at + ' (sheet Pembetulan) - dilewati.' : t.old + ': tidak ada BPMP terbit ber-NIK ini (mungkin sudah dibetulkan).');
@@ -163,12 +209,17 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
             const officialName = String(person.Name || '').trim();
             for (const slip of slips) {
                 const label = t.old + ' -> ' + t.newNik + ' · ' + slip.WithholdingSlipsNumber + ' masa ' + slip.TaxPeriodCode.slice(0, 2) + '/' + year;
-                const result = { old: t.old, newNik: t.newNik, newName: t.newName, number: slip.WithholdingSlipsNumber, period: slip.TaxPeriodCode, recordId: slip.RecordId, coretaxName: officialName };
+                // NIK salah: NIK di bukti potong valid (16 digit, bukan sementara / 0000) tetapi milik orang lain.
+                const kind = t.temp || nikProblem(slip) ? 'NIK bermasalah' : 'NIK salah';
+                const result = { old: t.old, newNik: t.newNik, newName: t.newName, number: slip.WithholdingSlipsNumber, period: slip.TaxPeriodCode, recordId: slip.RecordId, coretaxName: officialName,
+                    kind, slipNik: String(slip.TaxIdentificationNumber || ''), slipName: String(slip.Name || '').trim(), gross: slip.GrossIncome, tax: slip.IncomeTaxWithheld };
                 if (found.error) { result.status = 'GAGAL: validasi NIK - ' + found.error; results.push(result); emit('GAGAL ' + label + ' · validasi NIK gagal: ' + found.error); if (submit) throw new Error('validasi NIK gagal'); continue; }
                 const match = nameMatch(t.newName, officialName);
                 if (match === 'different') { result.status = 'BEDA NAMA - tidak dikirim'; results.push(result); emit('BEDA  ' + label + ' · Coretax: "' + officialName + '" vs Excel: "' + t.newName + '"'); continue; }
-                if (match === 'similar' && !allowSimilar) { result.status = 'NAMA MIRIP - tidak dikirim'; results.push(result); emit('MIRIP ' + label + ' · Coretax: "' + officialName + '" ≈ Excel: "' + t.newName + '" - cocokkan KTP, lalu centang "Kirim juga yang namanya mirip".'); continue; }
-                if (match === 'similar') result.note = 'nama mirip, dipakai nama resmi Coretax';
+                // Beda satu huruf saja (mis. R. BAGAS PRIYANTO / R.BAGAS PRYANTO): salah ketik, dikirim dengan nama resmi Coretax.
+                const minor = match === 'similar' && nameGap(t.newName, officialName) <= 1;
+                if (match === 'similar' && !allowSimilar && !minor) { result.status = 'NAMA MIRIP - tidak dikirim'; results.push(result); emit('MIRIP ' + label + ' · Coretax: "' + officialName + '" ≈ Excel: "' + t.newName + '" - cocokkan KTP, lalu centang "Kirim juga yang namanya mirip".'); continue; }
+                if (match === 'similar') result.note = (minor ? 'nama beda 1 huruf' : 'nama mirip') + ', dipakai nama resmi Coretax';
                 const view = await s.post(API + '/viewebupotmp', { RecordId: slip.RecordId });
                 const v = view.json && view.json.Payload && view.json.Payload.Result;
                 if (!v || v.RecordId !== slip.RecordId) throw new Error(label + ': detail bukti potong tidak terbaca');
@@ -194,6 +245,29 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
         }
     } catch (e) { e.results = results; throw e; } finally { save(); await s.close(); }
     return results;
+}
+
+/** Batalkan BPMP yang Tindakan-nya "Batalkan" di sheet Pembetulan - hanya nomor yang ada di `confirmed` (dikonfirmasi
+ *  pengguna setelah melihat daftarnya). Bukti potong harus masih Telah Terbit dengan NIK yang sama seperti di Excel.
+ *  Mengembalikan [{row, ok, msg, number}] (bentuk sama dengan lib/ebupot-vs-spt.js autoCancelZero). */
+async function cancelSlips({ context, npwp, year, cancels, confirmed, emit = () => {} }) {
+    const ok = new Set(confirmed || []), todo = cancels.filter((c) => ok.has(c.number));
+    for (const c of cancels) if (!ok.has(c.number)) emit('LEWATI BATAL ' + c.number + ': belum dikonfirmasi.');
+    if (!todo.length) return [];
+    const s = await openSession(context, npwp), done = [];
+    try {
+        const all = [];
+        for (let m = 1; m <= 12; m++) { const mm = String(m).padStart(2, '0'); for (const r of await s.list('getebupotmpissued', mm + mm + year)) all.push({ ...r, _masa: m }); }
+        for (const c of todo) {
+            const r = all.find((x) => String(x.WithholdingSlipsNumber) === c.number);
+            if (!r) { emit('LEWATI BATAL ' + c.number + ': tidak ada di BPMP Telah Terbit ' + year + ' (sudah dibatalkan / diganti?).'); continue; }
+            if (c.nik && r.TaxIdentificationNumber !== c.nik) { emit('LEWATI BATAL ' + c.number + ': NIK di Coretax ' + r.TaxIdentificationNumber + ' berbeda dengan Excel ' + c.nik + ' - periksa dulu.'); continue; }
+            const x = await require('../lib/ebupot-vs-spt').cancelOne(s, r, year);
+            done.push({ ...x, number: c.number });
+            emit((x.ok ? 'DIBATALKAN  ' : 'GAGAL BATAL ') + 'BPMP ' + c.number + ' masa ' + r._masa + '/' + year + ' · ' + r.TaxIdentificationNumber + ' ' + String(r.Name || '').trim() + (x.ok ? (r.IsReportedToTaxReturn ? ' - sudah dilaporkan di SPT, SPT Masa perlu dibetulkan.' : '.') : ': ' + x.msg + ' - batalkan manual di e-Bupot.'));
+        }
+    } finally { await s.close(); }
+    return done;
 }
 
 /** Pemeriksaan independen (hanya membaca): bukti potong yang DIBETULKAN di `dirs` dibuka lagi dari Coretax
@@ -278,4 +352,4 @@ async function sweep({ context, npwp, year, outDir, emit = () => {} }) {
     return { total, problems, people: people.length, sptMasa, amendedSlips, checkedAt: new Date() };
 }
 
-module.exports = { readTargets, run, check, sweep, nikProblem, nameMatch, openSession };
+module.exports = { readTargets, run, cancelSlips, check, sweep, nikProblem, nameMatch, nameGap, openSession };
