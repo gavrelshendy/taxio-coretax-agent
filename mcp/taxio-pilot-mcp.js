@@ -14,7 +14,7 @@ const path = require('path');
 
 const BASE = new URL(process.env.TAXIO_PILOT_URL || 'http://127.0.0.1:51733');
 const LOG = process.env.TAXIO_PILOT_LOG || path.join(__dirname, '..', 'dist', 'coretax-agent.log');
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 function call(method, p, body) {
     return new Promise((resolve, reject) => {
@@ -115,6 +115,13 @@ const TOOLS = [
             const e = await entityOf(entity);
             const r = await call('POST', '/api/actions/create-konsep', { entity: e, taxType: type === 'unifikasi' ? 'ICT_WT' : 'ICT_WIT', period });
             return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type, period, note: 'Pantau dengan read_log (entity ' + e.entity_id + ').' };
+        } },
+    { name: 'konsep_spt_download', description: 'Unduh Konsep SPT Masa (PPh 21/26 atau Unifikasi) untuk diperiksa: lampiran lewat alat unduh SPT Pilot (PDF + Excel) dan Induk dibuat ulang dari data konsep, digabung jadi satu PDF bertanda KONSEP. post=true menjalankan Posting SPT dulu (mengisi konsep dari bukti potong Telah Terbit; mengubah draft, minta konfirmasi pengguna). Tidak menandatangani / melapor. Pantau dengan read_log.',
+        inputSchema: { type: 'object', required: ['entity', 'type', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['pph21', 'unifikasi'] }, period: { type: 'string', description: 'Masa, mis. 1026.' }, post: { type: 'boolean', description: 'Posting dulu (default false).' } } },
+        run: async ({ entity, type, period, post }) => {
+            const e = await entityOf(entity);
+            const r = await call('POST', '/api/actions/konsep-download', { entity: e, taxType: type === 'unifikasi' ? 'ICT_WT' : 'ICT_WIT', period, post: !!post });
+            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type, period, post: !!post, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" (berisi path PDF & Excel) atau "GAGAL:".' };
         } },
     { name: 'read_log', description: 'Baris terakhir log aktivitas Taxio Pilot (progres dan hasil otomasi), bisa disaring per kode entitas.',
         inputSchema: { type: 'object', properties: { entity: { type: 'string', description: 'Kode entitas untuk disaring (opsional).' }, lines: { type: 'integer', description: 'Jumlah baris (default 40, maks 300).' } } },

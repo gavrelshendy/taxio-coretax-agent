@@ -984,11 +984,8 @@ async function handleImportUpload(req, res) {
                 try {
                     const pv = await require('../lib/coretax-issue').preview(page, { type: prepared.type, period: p });
                     if (body.filePath) ebupotReportDirs.set(target.folder, path.dirname(body.filePath));
-                    try {
-                        const file = await require('../lib/coretax-report').writeSlipReport(path.join(ebupotReportDir(target), 'Upload ' + pv.label + ' ' + p + ' - Belum Terbit.xlsx'),
-                            { entity: target.label, label: pv.label, period: pv.period, stage: 'uploaded', rows: pv.rows, note: 'Kode konfirmasi issue: ' + (pv.token || '-') + ' (berlaku selama Belum Terbit tidak berubah).' });
-                        log('Laporan: ' + file);
-                    } catch (e) { log('Laporan Excel gagal ditulis: ' + e.message); }
+                    try { log('Laporan: ' + await writeEbupotPeriodReport(page, target, prepared.type, p, 'sesudah upload ' + pv.label + ' · kode konfirmasi issue ' + (pv.token || '-'))); }
+                    catch (e) { log('Laporan Excel gagal ditulis: ' + e.message); }
                     log('Belum Terbit ' + pv.label + ' masa ' + pv.period + ': ' + pv.count + ' bukti potong, bruto ' + pv.totalGross.toLocaleString('id-ID') + ', PPh ' + pv.totalTax.toLocaleString('id-ID')
                         + ' · siap diterbitkan' + (pv.needsSign ? ' (tanda tangan passphrase PIC)' : '') + ', kode konfirmasi ' + pv.token + '.');
                 } catch (e) { log('Ringkasan Belum Terbit masa ' + p + ' gagal: ' + e.message); }
@@ -1031,6 +1028,15 @@ async function handleCreateKonsep(req, res) {
 /** Folder laporan e-Bupot per entitas: folder file impor terakhir, selain itu Downloads\CoretaxAgent\<kode>\e-Bupot. */
 const ebupotReportDirs = new Map();
 const ebupotReportDir = (target) => ebupotReportDirs.get(target.folder) || path.join(os.homedir(), 'Downloads', 'CoretaxAgent', target.folder || 'Manual', 'e-Bupot');
+/** Laporan gabungan per entitas & masa (lib/coretax-report.js writePeriodReport): PPh 21 = BPMP + BP21 + BPA1 (satu SPT),
+ *  Unifikasi = BPPU. Dibaca ulang dari Coretax, jadi selalu keadaan terbaru sesudah upload / issue & sign. */
+async function writeEbupotPeriodReport(page, target, type, mmyy, note) {
+    const unif = type === 'bpu', types = unif ? ['bpu'] : ['mp', 'bp21', 'bpa1'];
+    const period = require('../lib/coretax-issue').periodCode(mmyy), code = period.slice(2, 4) + period.slice(6, 8);
+    const snap = await require('../lib/coretax-issue').snapshot(page, types, period);
+    const file = path.join(ebupotReportDir(target), (target.folder ? target.folder + ' ' : '') + code + ' - Bukti Potong ' + (unif ? 'Unifikasi' : 'PPh 21') + '.xlsx');
+    return require('../lib/coretax-report').writePeriodReport(file, { entity: target.label, title: unif ? 'Bukti Potong Unifikasi (BPPU)' : 'Bukti Potong PPh 21 (BPMP, BP21, BPA1)', snap, note });
+}
 /** e-Bupot type code -> label (mp -> BPMP). */
 const typeLabel = (t) => ((require('../lib/coretax-import').TYPES[t] || {}).label || String(t || '').toUpperCase());
 
@@ -1076,15 +1082,37 @@ async function handleIssueEbupot(req, res) {
         const signer = iss.NEEDS_SIGN.has(type) ? await target.signer() : null;
         const page = await target.open();
         const r = await iss.issue(page, { type, period, token, signer, emit: (m) => log(m) });
-        try {
-            const file = await require('../lib/coretax-report').writeSlipReport(path.join(ebupotReportDir(target), (r.signed ? 'Issue & Sign ' : 'Issue ') + r.label + ' ' + String(period) + ' - Telah Terbit.xlsx'),
-                { entity: target.label, label: r.label, period: r.period, stage: 'issued', rows: r.rows || [], note: r.issued + ' diterbitkan' + (r.signed ? ' dan ditandatangani' : '') + (r.pending ? '; ' + r.pending + ' masih diproses Coretax' : '') + '. Lapor SPT tetap manual.' });
-            log('Laporan: ' + file);
-        } catch (e) { log('Laporan Excel gagal ditulis: ' + e.message); }
+        try { log('Laporan: ' + await writeEbupotPeriodReport(page, target, type, period, 'sesudah ' + (r.signed ? 'issue & sign ' : 'issue ') + r.label + ' (' + r.issued + ' bukti potong)')); }
+        catch (e) { log('Laporan Excel gagal ditulis: ' + e.message); }
         log('SELESAI: ' + r.issued + ' ' + r.label + ' masa ' + r.period + ' diterbitkan' + (r.signed ? ' (ditandatangani)' : '') + (r.pending ? ', ' + r.pending + ' masih diproses Coretax - cek Telah Terbit sebentar lagi' : '') + '. Lapor SPT tetap manual.');
     } catch (e) {
         if (e && e.isStop) log('Terbitkan dihentikan oleh pengguna.'); else log('GAGAL terbitkan: ' + e.message);
     } finally { runcontrol.finish(); }
+}
+
+/** Posting (opsional) dan unduh Konsep SPT (lib/konsep-download.js): lampiran lewat alat unduh SPT, Induk dibuat ulang. */
+async function handleKonsepDownload(req, res) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity, taxType, period, post } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (!['ICT_WIT', 'ICT_WT'].includes(taxType)) return sendJson(res, 400, { error: 'Jenis SPT: ICT_WIT (PPh 21/26) atau ICT_WT (Unifikasi).' });
+    if (taxType === 'ICT_WIT' && state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.' });
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    try { runcontrol.start((post ? 'Posting & download Konsep SPT ' : 'Download Konsep SPT ') + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, target.session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    sendJson(res, 202, { started: true, session: runSessionKey() });
+    try {
+        const page = await target.open();
+        const outDir = path.join(body.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder || 'Manual', 'Konsep SPT');
+        const r = await require('../lib/konsep-download').downloadKonsep(page, { taxType, period, post: !!post, outDir, entityName: target.label, entityCode: target.folder, entityNpwp: target.npwp || entity.npwp, emit: (m) => log(m) });
+        if (r.totals) log('Konsep ' + r.period + ': PPh 21 dipotong ' + Number(r.totals.pph21 || 0).toLocaleString('id-ID') + ' (L-IA bruto ' + Number(r.totals.l1aGross || 0).toLocaleString('id-ID') + ', L-III bruto ' + Number(r.totals.l3Gross || 0).toLocaleString('id-ID') + ').');
+        log('SELESAI: Konsep SPT ' + r.period + ' (' + r.model + ', posting ' + r.posting + ') diunduh: ' + r.pdf + (r.excel ? ' dan ' + r.excel : '') + '. Periksa, lalu tanda tangan & lapor manual di Coretax.');
+    } catch (e) {
+        if (e && e.isStop) log('Konsep SPT dihentikan oleh pengguna.'); else log('GAGAL: Konsep SPT - ' + e.message);
+    } finally { runcontrol.finish(); await require('../lib/html-to-pdf').closeRenderer().catch(() => {}); }
 }
 
 /** Penyisiran saja (tanpa Excel, tanpa mengubah apa pun): masih ada NIK bermasalah di BPMP Telah Terbit tahun ini? */
@@ -1387,6 +1415,7 @@ function createGuiServer(port) {
             if (pathname === '/api/import/inspect' && req.method === 'POST') return handleImportInspect(req, res);
             if (pathname === '/api/actions/import-coretax' && req.method === 'POST') return handleImportUpload(req, res);
             if (pathname === '/api/actions/create-konsep' && req.method === 'POST') return handleCreateKonsep(req, res);
+            if (pathname === '/api/actions/konsep-download' && req.method === 'POST') return handleKonsepDownload(req, res);
             if (pathname === '/api/ebupot/issue-preview' && req.method === 'POST') return handleIssuePreview(req, res);
             if (pathname === '/api/actions/issue-ebupot' && req.method === 'POST') return handleIssueEbupot(req, res);
             if (pathname === '/api/a1/inspect' && req.method === 'POST') return handleA1Inspect(req, res);

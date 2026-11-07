@@ -1,6 +1,6 @@
 {
   "name": "coretax-agent",
-  "version": "3.0.27",
+  "version": "3.0.28",
   "private": true,
   "description": "Standalone desktop app for Coretax automation - connects directly to your Taxio/Taxio.me account (email+password) and drives Coretax DJP via Playwright, controlled through a local GUI dashboard instead of a console.",
   "main": "main.js",
@@ -24,6 +24,7 @@
       "automation/bpmp-amend.js",
       "lib/coretax-import.js",
       "lib/coretax-issue.js",
+      "lib/konsep-download.js",
       "lib/lampiran-per11-layout-*.json",
       "lib/fonts/**/*",
       "scripts/test-lampiran-export.js",

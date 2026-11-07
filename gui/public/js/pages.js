@@ -664,7 +664,7 @@
     const impor = createPage({
         id: 'impor',
         init(api) {
-            return { view: imporView, file: null, info: null, infoError: '', konsepType: 'ICT_WIT', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }),
+            return { view: imporView, file: null, info: null, infoError: '', konsepType: 'ICT_WIT', konsepAction: 'create', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }),
                 issueType: 'mp', ipp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }), preview: null, previewError: '', previewing: false };
         },
         afterDraw(st) { if (st.view === 'konsep') st.pp.bind(); if (st.view === 'issue') st.ipp.bind(); },
@@ -672,7 +672,10 @@
             const tabs = '<div style="margin-bottom:4px">' + P.seg('iview', [{ value: 'upload', label: 'Upload e-Bupot' }, { value: 'issue', label: 'Issue & Sign' }, { value: 'konsep', label: 'Konsep SPT' }], st.view) + '</div>';
             if (st.view === 'konsep') return tabs
                 + P.card(1, 'SPT Type', '', '<div class="chips c2">' + [['ICT_WIT', 'PPh 21/26'], ['ICT_WT', 'PPh Unifikasi']].map(([v, l]) => '<button type="button" class="chip" data-act="ktype" data-val="' + v + '" aria-pressed="' + (st.konsepType === v) + '">' + l + '</button>').join('') + '</div>')
-                + P.card(2, 'Tax Period', '<span>Normal or Pembetulan is chosen automatically to match Coretax</span>', st.pp.html());
+                + P.card(2, 'Tax Period', '<span>Normal or Pembetulan is chosen automatically to match Coretax</span>', st.pp.html())
+                + P.card(3, 'Action', '', '<div class="chips c3">' + [['create', 'Create Konsep', 'Open a new Konsep SPT for the period'], ['post', 'Posting & Download', 'Fill the Konsep from Telah Terbit slips, then download it'], ['download', 'Download only', 'Download the Konsep as it is now']]
+                    .map(([v, l, h]) => '<button type="button" class="chip" data-act="kaction" data-val="' + v + '" aria-pressed="' + (st.konsepAction === v) + '">' + l + '<span class="hint">' + h + '</span></button>').join('') + '</div>'
+                    + '<div class="hint" style="margin-top:8px">Download = lampiran from the SPT download tool (PDF + Excel) plus an Induk recreated from the Konsep data, in one PDF marked KONSEP.</div>');
             if (st.view === 'issue') {
                 const pv = st.preview, rp = (n) => Number(n || 0).toLocaleString('id-ID');
                 const result = st.previewing ? '<div class="hint" style="margin-top:8px">Reading Belum Terbit from Coretax…</div>'
@@ -698,6 +701,7 @@
         async act(act, d, st, api) {
             if (act === 'iview') { st.view = imporView = d.val; return true; }
             if (act === 'ktype') { st.konsepType = d.val; return true; }
+            if (act === 'kaction') { st.konsepAction = d.val; return true; }
             if (act === 'itype') { st.issueType = d.val; st.preview = null; st.previewError = ''; return true; }
             if (act === 'ipreview') {
                 const masa = st.ipp.single(); if (!masa) { alert('Select a tax period first.'); return false; }
@@ -730,8 +734,8 @@
             if (st.view === 'konsep') {
                 const masa = st.pp.single();
                 return railCard({ title: 'Summary', rows: [['Entity', esc(name)], ['Login', esc(loginText(ent))], ['SPT', st.konsepType === 'ICT_WIT' ? 'PPh 21/26' : 'Unifikasi'], ['Period', masa ? esc(L.masaLabel(masa)) : '<span class="muted">Not selected</span>']],
-                    folder: false, ready: readiness(ent), blocked: masa ? '' : 'Select a tax period', cta: 'Create Konsep SPT', icon: 'file',
-                    notes: [['shield', 'var(--green)', 'Only creates the Konsep. Posting, checking, signing and filing still happen in Coretax.']] });
+                    folder: false, ready: readiness(ent), blocked: masa ? '' : 'Select a tax period', cta: { create: 'Create Konsep SPT', post: 'Posting & Download', download: 'Download Konsep' }[st.konsepAction], icon: st.konsepAction === 'create' ? 'file' : 'download',
+                    notes: [['shield', 'var(--green)', st.konsepAction === 'create' ? 'Only creates the Konsep. Posting, checking, signing and filing still happen in Coretax.' : 'Saved to Downloads\\CoretaxAgent\\<code>\\Konsep SPT. Never signs or files the SPT.']] });
             }
             const i = st.info;
             const blocked = !st.file ? 'Select an import file first' : st.infoError ? 'File cannot be used' : !i ? 'Checking file…' : (i.problems || []).length ? 'Fix the data problems in the file' : '';
@@ -746,7 +750,10 @@
                 await P.post('/api/actions/issue-ebupot', { entity: api.entity(), type: pv.forType, period: pv.forPeriod, token: pv.token });
                 st.preview = null; return;
             }
-            if (st.view === 'konsep') return P.post('/api/actions/create-konsep', { entity: api.entity(), taxType: st.konsepType, period: st.pp.single() });
+            if (st.view === 'konsep') {
+                if (st.konsepAction === 'create') return P.post('/api/actions/create-konsep', { entity: api.entity(), taxType: st.konsepType, period: st.pp.single() });
+                return P.post('/api/actions/konsep-download', { entity: api.entity(), taxType: st.konsepType, period: st.pp.single(), post: st.konsepAction === 'post' });
+            }
             await P.post('/api/actions/import-coretax', { entity: api.entity(), fileBase64: st.file.fileBase64, filePath: st.file.filePath, fileName: st.file.fileName });
         }
     });
