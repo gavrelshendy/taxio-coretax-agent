@@ -70,7 +70,14 @@ Bulk Process = menerbitkan / mengekspor yang sudah ada - keduanya bukan penggant
 ## Buat Konsep SPT
 
 `POST {SPT}/createreturnsheet` `{TaxpayerAggregateIdentifier, TaxPeriodCode: "MMMMYYYY", TaxTypeCode, ReturnSheetTypeCode,
-ReturnSheetModelCode, TaxObjectNumber: "", isEffFlag: true, ReturnSheetPeriodType}` (belum diuji kirim).
+ReturnSheetModelCode, TaxObjectNumber: "", isEffFlag: true, ReturnSheetPeriodType: null}`. Diuji live 2026-11-07:
+- Berhasil (Unifikasi, masa yang belum ada SPT-nya): `IsSuccessful: true`; konsep muncul di `/returnsheetsnotsubmitted`
+  dengan `ReturnSheetStatusCode: "CREATED"`.
+- Ditolak bila jenis SPT yang sama masih punya konsep berstatus Draft (masa mana pun): "Pembuatan SPT Masa PPh Pasal 21/26
+  tidak dapat dilakukan karena masih terdapat SPT dengan status Draft..." - selesaikan / hapus draft itu dulu.
+- Daftar konsep: `POST {SPT}/returnsheetsnotsubmitted` (grid: First, Rows, Filters, TaxpayerAggregateIdentifier) ->
+  RecordId, TaxTypeCode, TaxPeriodCode, ReturnSheetModel (NORMAL/AMENDMENT), ReturnSheetStatusCode (CREATED/DRAFT).
+- Implementasi: `lib/coretax-import.js` createKonsep; Pilot `/api/actions/create-konsep`; MCP `create_konsep_spt`.
 
 Isian dari dropdown (read-only, diuji live):
 - `/createreturnsheettaxtypes` `{TaxpayerAggregateIdentifier, LanguageCode: "id-ID"}` -> `Payload.Details`:

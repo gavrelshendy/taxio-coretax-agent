@@ -14,7 +14,7 @@ const path = require('path');
 
 const BASE = new URL(process.env.TAXIO_PILOT_URL || 'http://127.0.0.1:51733');
 const LOG = process.env.TAXIO_PILOT_LOG || path.join(__dirname, '..', 'dist', 'coretax-agent.log');
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 function call(method, p, body) {
     return new Promise((resolve, reject) => {
@@ -77,6 +77,23 @@ const TOOLS = [
             if (!i.excel) throw new Error('Belum ada Excel rekap ' + y + ' untuk ' + e.entity_id + ' - jalankan run_mode_a1 dulu.');
             return await call('POST', '/api/a1/bpa1-xml', { filePath: i.excel, year: y, outDir: outDir || undefined });
         } },
+    { name: 'inspect_import_file', description: 'Periksa file impor e-Bupot (Excel template impor DJP dengan XML map, atau XML) tanpa membuka Coretax: jenis (BPMP/BP21/BPA1/BPPU), jumlah bukti potong, masa, NPWP pemotong, dan masalah data. Panggil sebelum upload_ebupot.',
+        inputSchema: { type: 'object', required: ['filePath'], properties: { filePath: { type: 'string', description: 'Path lengkap file .xlsx / .xml di PC ini.' }, entity: { type: 'string', description: 'Kode entitas (opsional) - untuk mencocokkan NPWP pemotong.' } } },
+        run: async ({ filePath, entity }) => call('POST', '/api/import/inspect', { filePath, entity: entity ? await entityOf(entity) : undefined }) },
+    { name: 'upload_ebupot', description: 'Unggah file impor e-Bupot (BPMP, BP21, BPA1, BPPU; Excel template DJP atau XML) ke Belum Terbit Coretax untuk satu entitas, lalu tunggu hasil XML monitoring. TIDAK menerbitkan / menandatangani. PERHATIAN: membuat data nyata di Coretax - tampilkan hasil inspect_import_file dan minta konfirmasi pengguna dulu. Berjalan di latar - pantau dengan read_log.',
+        inputSchema: { type: 'object', required: ['entity', 'filePath'], properties: { entity: { type: 'string', description: 'Kode entitas, mis. GMF.' }, filePath: { type: 'string', description: 'Path lengkap file .xlsx / .xml.' } } },
+        run: async ({ entity, filePath }) => {
+            const e = await entityOf(entity);
+            const r = await call('POST', '/api/actions/import-coretax', { entity: e, filePath });
+            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type: r && r.type, count: r && r.count, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL:".' };
+        } },
+    { name: 'create_konsep_spt', description: 'Buat Konsep SPT Masa di Coretax (PPh 21/26 atau PPh Unifikasi) untuk satu entitas dan masa; Normal atau Pembetulan dipilih otomatis sesuai Coretax. Tidak melapor / menandatangani. PERHATIAN: membuat konsep nyata - minta konfirmasi pengguna dulu. Pantau dengan read_log.',
+        inputSchema: { type: 'object', required: ['entity', 'type', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['pph21', 'unifikasi'] }, period: { type: 'string', description: 'Masa pajak, mis. 1026 (MMYY) atau 102026.' } } },
+        run: async ({ entity, type, period }) => {
+            const e = await entityOf(entity);
+            const r = await call('POST', '/api/actions/create-konsep', { entity: e, taxType: type === 'unifikasi' ? 'ICT_WT' : 'ICT_WIT', period });
+            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type, period, note: 'Pantau dengan read_log (entity ' + e.entity_id + ').' };
+        } },
     { name: 'read_log', description: 'Baris terakhir log aktivitas Taxio Pilot (progres dan hasil otomasi), bisa disaring per kode entitas.',
         inputSchema: { type: 'object', properties: { entity: { type: 'string', description: 'Kode entitas untuk disaring (opsional).' }, lines: { type: 'integer', description: 'Jumlah baris (default 40, maks 300).' } } },
         run: async ({ entity, lines }) => {
@@ -96,7 +113,7 @@ async function handle(msg) {
     if (id === undefined) return; // notification (initialized, cancelled, ...)
     try {
         if (method === 'initialize') return send({ jsonrpc: '2.0', id, result: { protocolVersion: (params && params.protocolVersion) || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'taxio-pilot', version: VERSION },
-            instructions: 'Taxio Pilot otomatisasi Coretax DJP di PC pengguna. Mulai dengan pilot_status / list_entities. run_mode_a1 berjalan di latar dan bisa membatalkan BPMP bernilai 0 di Coretax - minta konfirmasi dulu, lalu pantau dengan read_log.' } });
+            instructions: 'Taxio Pilot otomatisasi Coretax DJP di PC pengguna. Mulai dengan pilot_status / list_entities. run_mode_a1, upload_ebupot dan create_konsep_spt mengubah data di Coretax (berjalan di latar) - minta konfirmasi dulu, lalu pantau dengan read_log. Upload: inspect_import_file dulu.' } });
         if (method === 'ping') return send({ jsonrpc: '2.0', id, result: {} });
         if (method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) } });
         if (method === 'tools/call') {
