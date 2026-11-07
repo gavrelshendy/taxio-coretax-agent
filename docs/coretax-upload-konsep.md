@@ -102,5 +102,18 @@ Isian dari dropdown (read-only, diuji live):
   -> `NORMAL`, atau `AMENDMENT` (Pembetulan) bila masa itu sudah punya SPT.
 - Jawaban gagal karena "kriteria" -> halaman mengulang dengan `isEffFlag: false`.
 
-Sesudah konsep dibuat, lampiran SPT diisi dari bukti potong Telah Terbit ("Posting"); alur posting di form
-SPT PPh 21 belum dipetakan (kodenya chunk terpisah yang dimuat saat SPT dibuka).
+### Posting dan unduh konsep (diuji live 2026-11-07, Konsep PPh 21 Normal, 82 BPMP + 72 BP21)
+
+- Form konsep: `returnsheets-portal/id-ID/article-21-26-tax-return/<taxpayer>/<RecordId>/ICT_WIT/<AggregateIdentifier>`;
+  Unifikasi `withholding-tax-return/<taxpayer>/<RecordId>/<TaxPeriodCode>/<AggregateIdentifier>`. Buka di tab yang sudah
+  impersonate (tab baru -> 401). Membuka form menyimpan konsep sebagai draft (`/savereturnsheet`, IsDraft, CREATED -> DRAFT).
+- Posting PPh 21 = tombol "Posting SPT" (`aria-label="Prefill Returnsheet"`) = `POST {SPT}/prefillreturnsheet/article-2126
+  {RecordId, onManualClick: true, TaxpayerAggregateIdentifier}`. Dengan `onManualClick: false` (dipanggil saat form dibuka)
+  = status: `Payload.PrefillStatus` (null = belum pernah, COMPLETED / FAILED, selain itu berjalan), `PrefillLastUpdated`,
+  dan `Payload.FormData` (JSON form lengkap: A21IncomeTaxWithheld, A21IncomeTaxUnderpaidOverpaid, A26..., Form1A/1B/2/3 bruto & PPh).
+- Unifikasi: `POST {SPT}/prefillreturnsheet/withholding-tax {RecordId}` (bundle chunk 625; belum diuji).
+- Hasil uji: status COMPLETED dalam detik; lampiran `loadarticle2126/l1a-grid` TotalRecords 82, `l3-bp21-grid` 72.
+- Tombol Download di daftar Konsep SPT (`/downloadreturnsheet/download-returnsheet-document`, IsReceipt) menghasilkan
+  halaman BPE kosong (tanpa angka / lampiran) - tidak berguna untuk memeriksa konsep.
+- Unduh konsep di Pilot (`lib/konsep-download.js`): lampiran lewat `automation/lampiran.js` downloadLampiran pada form
+  konsep (PDF + Excel), Induk dibuat ulang dari FormData (HTML -> PDF), digabung jadi "<kode> - Konsep SPT ... (KONSEP).pdf".
