@@ -15,14 +15,14 @@
     P.manual = {
         async open() {
             try { await P.post('/api/actions/open-coretax'); P.manual.poll(); }
-            catch (e) { alert('Gagal membuka Coretax: ' + e.message); }
+            catch (e) { alert('Failed to open Coretax: ' + e.message); }
         },
         async check(announce) {
             await P.manual.poll();
             if (!announce) return;
             const m = P.state.manual;
-            if (!m.loggedIn) P.info('Belum terdeteksi login. Pastikan sudah masuk ke Coretax di jendela yang terbuka, lalu periksa lagi.');
-            else P.info('Sedang login di Coretax sebagai: ' + (m.identity || '(tidak terbaca)'));
+            if (!m.loggedIn) P.info('No login detected yet. Make sure you have signed in to Coretax in the open window, then check again.');
+            else P.info('Signed in to Coretax as: ' + (m.identity || '(unreadable)'));
         },
         async poll() {
             if (!P.isConnected() || P.isRestricted()) return;
@@ -75,13 +75,13 @@
             const ent = E.current();
             if (!ent) return;
             if (L.isManualLike(ent)) return P.manual.check(true);
-            if (!ent.pic_id || ent.pic_id === 'unlinked') return P.info('Entitas ini belum tertaut PIC Coretax.');
+            if (!ent.pic_id || ent.pic_id === 'unlinked') return P.info('This entity is not linked to a Coretax PIC yet.');
             try {
                 const st = await P.post('/api/session/status', { picId: ent.pic_id });
-                if (!st.open) P.info('Belum ada jendela Coretax terbuka untuk entitas ini. Klik "Masuk Coretax" dulu.');
-                else if (!st.loggedIn) P.info('Jendela Coretax terbuka tapi belum login (masih di halaman masuk).');
-                else P.info('Sedang login di Coretax sebagai: ' + (st.identity || '(tidak terbaca)'));
-            } catch (e) { P.info('Gagal memeriksa sesi: ' + e.message); }
+                if (!st.open) P.info('No Coretax window is open for this entity yet. Click "Sign in to Coretax" first.');
+                else if (!st.loggedIn) P.info('The Coretax window is open but not signed in (still on the login page).');
+                else P.info('Signed in to Coretax as: ' + (st.identity || '(unreadable)'));
+            } catch (e) { P.info('Failed to check session: ' + e.message); }
         }
     };
 
@@ -89,7 +89,7 @@
     function roleLabel() {
         const h = P.hub(); const r = String(h.role || '').toLowerCase();
         if (r.includes('restricted')) return 'Restricted Editor';
-        return r ? r.charAt(0).toUpperCase() + r.slice(1) : 'Anggota';
+        return r ? r.charAt(0).toUpperCase() + r.slice(1) : 'Member';
     }
     function sidebarHtml() {
         const cur = P.state.page;
@@ -97,8 +97,8 @@
             '<button type="button" class="nav-item" data-nav="' + it.id + '"' + (it.id === cur ? ' aria-current="page"' : '') + '>' + P.icon(it.icon, 18) + '<span class="grow">' + esc(it.label) + '</span>' + (it.badge ? '<span class="nav-badge">' + it.badge + '</span>' : '') + '</button>').join('') + '</div>').join('');
         const email = P.hub().email || '';
         return '<aside class="sidebar"><div class="brand"><div class="brand-logo"><img src="/assets/taxio-pilot-logo.png" alt="Taxio Pilot"></div><div class="brand-name"><b>Taxio Pilot</b><span id="ver-badge">' + esc(P.state.version ? 'v' + P.state.version.version : '') + '</span></div></div>'
-            + groups + '<div class="spacer"></div><div class="stack" style="gap:6px"><button type="button" class="nav-item" id="open-settings">' + P.icon('gear', 18) + '<span class="grow">Pengaturan</span></button>'
-            + '<div class="userbox"><span class="avatar">' + esc((email[0] || 'T').toUpperCase() + ((email.split('@')[0] || '')[1] || '').toUpperCase()) + '</span><div class="who"><b title="' + esc(email) + '">' + esc(email || 'Taxio Hub') + '</b><span><i class="dot"></i>Terhubung · ' + esc(roleLabel()) + '</span></div></div></div></aside>';
+            + groups + '<div class="spacer"></div><div class="stack" style="gap:6px"><button type="button" class="nav-item" id="open-settings">' + P.icon('gear', 18) + '<span class="grow">Settings</span></button>'
+            + '<div class="userbox"><span class="avatar">' + esc((email[0] || 'T').toUpperCase() + ((email.split('@')[0] || '')[1] || '').toUpperCase()) + '</span><div class="who"><b title="' + esc(email) + '">' + esc(email || 'Taxio Hub') + '</b><span><i class="dot"></i>Connected · ' + esc(roleLabel()) + '</span></div></div></div></aside>';
     }
     function topbarHtml() {
         const meta = P.pages.meta(P.state.page) || { label: '', crumb: '' };
@@ -107,18 +107,18 @@
         const busy = P.state.run.active;
         let buttons = '';
         if (ent && L.isManualLike(ent)) {
-            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button><button type="button" class="btn" id="btn-check-session" style="background:var(--surface-2)">' + P.icon('shield', 17) + 'Periksa sesi</button>';
+            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Open Coretax</button><button type="button" class="btn" id="btn-check-session" style="background:var(--surface-2)">' + P.icon('shield', 17) + 'Check session</button>';
         } else if (ent) {
-            buttons = '<button type="button" class="icon-btn" id="btn-refresh-session" title="Cek ulang siapa yang sedang login di Coretax sekarang" aria-label="Segarkan status sesi">' + P.icon('retry', 16) + '</button>'
-                + (P.isRestricted() ? '' : '<button type="button" class="icon-btn" id="btn-manual-for-entity" title="Login manual untuk entitas ini - Anda ketik sandi Coretax sendiri, tanpa memakai kredensial tersimpan" aria-label="Login manual untuk entitas ini"' + (busy ? ' disabled' : '') + '>' + P.icon('user', 16) + '</button>')
-                + '<button type="button" class="btn" id="btn-login"' + (busy ? ' disabled' : '') + ' title="Login dan impersonate entitas ini, tanpa mengisi form">' + P.icon('globe', 17) + 'Masuk Coretax</button>';
+            buttons = '<button type="button" class="icon-btn" id="btn-refresh-session" title="Re-check who is signed in to Coretax right now" aria-label="Refresh session status">' + P.icon('retry', 16) + '</button>'
+                + (P.isRestricted() ? '' : '<button type="button" class="icon-btn" id="btn-manual-for-entity" title="Manual login for this entity - you type the Coretax password yourself, without using saved credentials" aria-label="Manual login for this entity"' + (busy ? ' disabled' : '') + '>' + P.icon('user', 16) + '</button>')
+                + '<button type="button" class="btn" id="btn-login"' + (busy ? ' disabled' : '') + ' title="Log in and impersonate this entity, without filling any form">' + P.icon('globe', 17) + 'Sign in to Coretax</button>';
         } else if (!P.isRestricted()) {
-            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Buka Coretax</button>';
+            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Open Coretax</button>';
         }
         return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + buttons + E.sessionStripHtml() + '</header>';
     }
     function appHtml() {
-        return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Periksa Pembaruan</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
+        return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Check for Updates</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
     }
 
     S.renderTopbar = function () { const s = P.$('topbar-slot'); if (s) s.innerHTML = topbarHtml(); };
@@ -156,10 +156,10 @@
     function openSettings() {
         const h = P.hub(); const v = P.state.version || {};
         const scrim = document.createElement('div'); scrim.className = 'scrim'; scrim.id = 'settings';
-        scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Pengaturan"><div class="dialog-head"><h2>Pengaturan</h2><button type="button" class="icon-btn" aria-label="Tutup" data-x="close">' + P.icon('x', 18) + '</button></div>'
-            + '<div class="dialog-body"><div class="stack"><div class="eyebrow">Akun</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Putuskan</button></div></div>'
-            + '<div class="stack"><div class="eyebrow">Versi aplikasi</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Periksa pembaruan</button></div></div></div>'
-            + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Tutup aplikasi</button><span class="grow"></span><button type="button" class="btn" data-x="close">Selesai</button></div></div>';
+        scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Settings"><div class="dialog-head"><h2>Settings</h2><button type="button" class="icon-btn" aria-label="Close" data-x="close">' + P.icon('x', 18) + '</button></div>'
+            + '<div class="dialog-body"><div class="stack"><div class="eyebrow">Account</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Disconnect</button></div></div>'
+            + '<div class="stack"><div class="eyebrow">App version</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div></div>'
+            + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Quit app</button><span class="grow"></span><button type="button" class="btn" data-x="close">Done</button></div></div>';
         document.body.appendChild(scrim);
         const onKey = (e) => { if (e.key === 'Escape') closeIt(); };
         const closeIt = () => { document.removeEventListener('keydown', onKey); scrim.remove(); };
@@ -170,14 +170,14 @@
             const x = b.dataset.x;
             if (x === 'close') closeIt();
             else if (x === 'disconnect') { closeIt(); P.state.session = await P.post('/api/disconnect', { project: 'taxio_hub' }); E.clear(); P.auth.screen = 'masuk'; P.emit('session'); }
-            else if (x === 'quit') { if (confirm('Tutup Taxio Pilot sepenuhnya?')) await P.post('/api/quit'); }
+            else if (x === 'quit') { if (confirm('Quit Taxio Pilot completely?')) await P.post('/api/quit'); }
             else if (x === 'update') {
-                const t = P.$('upd-text'); b.disabled = true; t.textContent = 'Mengecek pembaruan…';
+                const t = P.$('upd-text'); b.disabled = true; t.textContent = 'Checking for updates…';
                 try {
                     const info = await P.post('/api/check-update');
-                    t.textContent = info.available ? 'Pembaruan v' + info.version + ' ditemukan. Mengunduh dan memasang; aplikasi akan tertutup dan terbuka ulang otomatis…' : 'Sudah versi terbaru.';
+                    t.textContent = info.available ? 'Update v' + info.version + ' found. Downloading and installing; the app will close and reopen automatically…' : 'You are on the latest version.';
                     if (!info.available) b.disabled = false;
-                } catch (err) { t.textContent = 'Gagal cek pembaruan: ' + err.message; b.disabled = false; }
+                } catch (err) { t.textContent = 'Failed to check for updates: ' + err.message; b.disabled = false; }
             }
         });
     }
@@ -229,17 +229,17 @@
         const ent = E.current(); if (!ent) return;
         btn.disabled = true;
         try { await P.post('/api/actions/login-entity', { entity: ent }); P.run.poll(); }
-        catch (e) { alert('Gagal memulai login: ' + e.message); btn.disabled = false; }
+        catch (e) { alert('Failed to start login: ' + e.message); btn.disabled = false; }
     }
     async function checkUpdateFromBanner() {
-        const t = P.$('outdated-text'); const b = P.$('outdated-check'); b.disabled = true; t.textContent = 'Mengecek pembaruan…';
-        try { const info = await P.post('/api/check-update'); t.textContent = info.available ? 'Pembaruan v' + info.version + ' ditemukan. Mengunduh dan memasang; aplikasi akan tertutup dan terbuka ulang otomatis…' : 'Sudah versi terbaru. Coba lagi sebentar lagi.'; }
-        catch (e) { t.textContent = 'Gagal cek pembaruan: ' + e.message; }
+        const t = P.$('outdated-text'); const b = P.$('outdated-check'); b.disabled = true; t.textContent = 'Checking for updates…';
+        try { const info = await P.post('/api/check-update'); t.textContent = info.available ? 'Update v' + info.version + ' found. Downloading and installing; the app will close and reopen automatically…' : 'You are on the latest version. Try again shortly.'; }
+        catch (e) { t.textContent = 'Failed to check for updates: ' + e.message; }
         b.disabled = false;
     }
     function updateOutdated() {
         const v = P.state.version; const el = P.$('outdated'); if (!el) return;
-        if (v && v.outdated) { el.hidden = false; P.$('outdated-text').textContent = 'Versi ini (v' + v.version + ') sudah usang. v' + v.latestVersion + ' tersedia. Aksi baru diblokir sampai diperbarui.'; }
+        if (v && v.outdated) { el.hidden = false; P.$('outdated-text').textContent = 'This version (v' + v.version + ') is outdated. v' + v.latestVersion + ' is available. New actions are blocked until you update.'; }
     }
 
     /** Menentukan layar dari status sesi, dan memuat entitas saat baru saja terhubung. */

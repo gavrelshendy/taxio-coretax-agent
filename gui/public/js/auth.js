@@ -21,18 +21,18 @@
     const field = (id, label, type, ph, val, extra) => '<div class="field"><label for="' + id + '">' + label + '</label><input class="input" id="' + id + '" type="' + type + '" placeholder="' + esc(ph) + '" value="' + esc(val || '') + '" autocomplete="' + ((extra && extra.auto) || 'off') + '"' + ((extra && extra.attr) || '') + '></div>';
 
     function hero(version) {
-        return '<section class="auth-hero"><div class="brand"><div class="brand-logo"><img src="/assets/taxio-pilot-logo.png" alt="Taxio Pilot"></div><div class="brand-name"><b>Taxio Pilot</b><span>Autopilot untuk Coretax</span></div></div>'
-            + '<div class="hero-body"><h1>Coretax berjalan sendiri.</h1>'
-            + '<p>Pilih entitas dan masa, lalu agen yang mengerjakan sisanya: login, membuka halaman, mengunduh, sampai mengisi data. Anda tinggal mengawasi dan bisa menjeda kapan saja.</p>'
-            + '<div class="hero-run"><div class="top"><i class="dot"></i>Agen sedang bekerja<span class="n">7 / 15</span></div><div class="bar"><span class="ok"></span></div><div class="sub">PPh Unifikasi · masa 0226 — mengunduh Induk, BPE, dan Lampiran</div></div>'
-            + '<div class="hero-feats">' + feat('download', 'Unduh massal', 'SPT beserta lampiran, e-Bupot, dan Bukti Potong Saya untuk banyak masa sekaligus.')
-            + feat('upload', 'Isi dan impor dari Excel', 'Dividen dan pengkreditan faktur masukan masuk ke Coretax per baris; hasilnya ditulis balik ke file.')
-            + feat('bank', 'Buat Kode Billing PPh 25', 'Dicek dulu apakah sudah dibayar, lalu kode dibuat lewat wizard resmi Coretax.') + '</div></div>'
+        return '<section class="auth-hero"><div class="brand"><div class="brand-logo"><img src="/assets/taxio-pilot-logo.png" alt="Taxio Pilot"></div><div class="brand-name"><b>Taxio Pilot</b><span>Autopilot for Coretax</span></div></div>'
+            + '<div class="hero-body"><h1>Coretax runs itself.</h1>'
+            + '<p>Pick an entity and a period, and the agent does the rest: logging in, opening pages, downloading, even filling in data. You just watch, and can pause at any time.</p>'
+            + '<div class="hero-run"><div class="top"><i class="dot"></i>Agent at work<span class="n">7 / 15</span></div><div class="bar"><span class="ok"></span></div><div class="sub">PPh Unifikasi · period 0226 — downloading Induk, BPE, and Lampiran</div></div>'
+            + '<div class="hero-feats">' + feat('download', 'Bulk download', 'SPT with Lampiran, e-Bupot, and My Bukti Potong for many periods at once.')
+            + feat('upload', 'Fill and import from Excel', 'Dividends and Faktur Masukan crediting go into Coretax row by row; results are written back to the file.')
+            + feat('bank', 'Create PPh 25 Kode Billing', 'Checks first whether it is already paid, then creates the code through the official Coretax wizard.') + '</div></div>'
             + '<div class="hero-ver">' + esc(version ? 'v' + version : '') + '</div></section>';
     }
 
     function steps(cur) {
-        const list = [['Akun dibuat', 'Email dan kata sandi Anda tersimpan di Taxio Hub.'], ['Konfirmasi email', 'Klik tautan di email Anda, lalu masuk di sini.'], ['Menunggu admin', 'Admin Taxio Hub menempatkan Anda ke grup. Setelah itu entitas Anda muncul otomatis.']];
+        const list = [['Account created', 'Your email and password are saved in Taxio Hub.'], ['Confirm email', 'Click the link in your email, then sign in here.'], ['Waiting for admin', 'A Taxio Hub admin assigns you to a group. Your entities then appear automatically.']];
         return '<div class="progress-steps">' + list.map(([t, s], i) => {
             const n = i + 1; const cls = n < cur ? 'done' : n === cur ? 'now' : '';
             const dot = n < cur ? P.icon('check', 15, '', 3) : n === cur ? P.icon('loader', 14, 'spin', 2.6) : n;
@@ -45,31 +45,31 @@
         const err = '<div class="form-error" id="au-error" role="alert">' + esc(A.error) + '</div>';
         const busy = A.busy ? ' disabled' : '';
         if (A.screen === 'daftar') {
-            return '<div class="auth-form"><div><h2>Buat akun</h2><p class="lead">Daftar akun baru. Akses memerlukan persetujuan admin.</p></div>'
-                + '<div class="field"><label for="au-initial">Inisial (mis. SGA)</label><input class="input" id="au-initial" maxlength="8" placeholder="SGA" style="text-transform:uppercase" autocomplete="off"><span class="hint">Maks. 8 huruf. Admin memakainya untuk mencocokkan akun Anda dengan anggota tim.</span></div>'
-                + field('au-email', 'Email', 'email', 'nama@email.com', A.email, { auto: 'username' }) + field('au-pass', 'Kata sandi', 'password', 'Min. 6 karakter', '', { auto: 'new-password' })
-                + err + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="signup"' + busy + '>' + (A.busy ? 'Mendaftar…' : 'Mendaftar') + '</button>'
-                + '<div class="callout">' + P.icon('info', 16, '', 1.8) + '<span>Akun ini sama dengan akun Taxio Hub. Setelah disetujui, Anda bisa memakainya di keduanya.</span></div>'
-                + '<div class="auth-foot">Sudah punya akun? <button type="button" class="link" data-au="to-masuk">Masuk</button></div></div>';
+            return '<div class="auth-form"><div><h2>Create account</h2><p class="lead">Sign up for a new account. Access requires admin approval.</p></div>'
+                + '<div class="field"><label for="au-initial">Initials (e.g. SGA)</label><input class="input" id="au-initial" maxlength="8" placeholder="SGA" style="text-transform:uppercase" autocomplete="off"><span class="hint">Max. 8 letters. The admin uses them to match your account with a team member.</span></div>'
+                + field('au-email', 'Email', 'email', 'name@email.com', A.email, { auto: 'username' }) + field('au-pass', 'Password', 'password', 'Min. 6 characters', '', { auto: 'new-password' })
+                + err + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="signup"' + busy + '>' + (A.busy ? 'Signing up…' : 'Sign up') + '</button>'
+                + '<div class="callout">' + P.icon('info', 16, '', 1.8) + '<span>This is the same account as your Taxio Hub account. Once approved, you can use it in both.</span></div>'
+                + '<div class="auth-foot">Already have an account? <button type="button" class="link" data-au="to-masuk">Sign in</button></div></div>';
         }
         if (A.screen === 'status') {
             const st = pending.status;
             const cfg = st === 'confirm-email'
-                ? { cur: 2, title: 'Cek email Anda', msg: 'Akun berhasil dibuat. Silakan cek email Anda dan klik link konfirmasi, lalu kembali ke sini untuk masuk.', btn: 'Saya sudah konfirmasi — masuk', act: 'to-masuk' }
-                : { cur: 3, title: 'Menunggu admin', msg: st === 'waiting-approval' ? 'Pendaftaran Anda sedang menunggu persetujuan admin.' : 'Pendaftaran Anda sedang menunggu assignment grup oleh admin.' + (pending.initial ? ' Inisial yang diajukan: ' + pending.initial + '.' : ''), btn: 'Periksa status', act: 'check' };
+                ? { cur: 2, title: 'Check your email', msg: 'Your account has been created. Check your email and click the confirmation link, then come back here to sign in.', btn: 'I have confirmed — sign in', act: 'to-masuk' }
+                : { cur: 3, title: 'Waiting for admin', msg: st === 'waiting-approval' ? 'Your registration is waiting for admin approval.' : 'Your registration is waiting for an admin to assign you to a group.' + (pending.initial ? ' Submitted initials: ' + pending.initial + '.' : ''), btn: 'Check status', act: 'check' };
             return '<div class="auth-form"><div><h2>' + cfg.title + '</h2><p class="lead">' + esc(cfg.msg) + '</p></div>' + steps(cfg.cur) + err
-                + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="' + cfg.act + '"' + busy + '>' + P.icon('retry', 17, A.busy ? 'spin' : '', 2) + (A.busy ? 'Memeriksa…' : cfg.btn) + '</button>'
-                + '<div class="row" style="justify-content:space-between"><span class="hint">' + esc(pending.email || '') + '</span><button type="button" class="link" data-au="logout">Keluar</button></div></div>';
+                + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="' + cfg.act + '"' + busy + '>' + P.icon('retry', 17, A.busy ? 'spin' : '', 2) + (A.busy ? 'Checking…' : cfg.btn) + '</button>'
+                + '<div class="row" style="justify-content:space-between"><span class="hint">' + esc(pending.email || '') + '</span><button type="button" class="link" data-au="logout">Sign out</button></div></div>';
         }
         if (A.screen === 'inisial') {
-            return '<div class="auth-form"><div><h2>Satu langkah lagi</h2><p class="lead">Akun terhubung, tapi inisial Anda belum tercatat di sini (mis. konfirmasi email dibuka di perangkat lain). Ketik ulang inisial yang Anda pakai saat daftar:</p></div>'
-                + '<div class="input-group"><input class="input" id="au-initial" maxlength="8" placeholder="SGA" style="text-transform:uppercase" autocomplete="off"><button type="button" class="btn btn-primary" style="height:46px" data-au="initial"' + busy + '>Ajukan</button></div>' + err
-                + '<div class="row" style="justify-content:space-between"><span class="hint">' + esc(pending.email || '') + '</span><button type="button" class="link" data-au="logout">Keluar</button></div></div>';
+            return '<div class="auth-form"><div><h2>One more step</h2><p class="lead">Your account is connected, but your initials are not recorded here yet (e.g. the confirmation email was opened on another device). Re-enter the initials you used when signing up:</p></div>'
+                + '<div class="input-group"><input class="input" id="au-initial" maxlength="8" placeholder="SGA" style="text-transform:uppercase" autocomplete="off"><button type="button" class="btn btn-primary" style="height:46px" data-au="initial"' + busy + '>Submit</button></div>' + err
+                + '<div class="row" style="justify-content:space-between"><span class="hint">' + esc(pending.email || '') + '</span><button type="button" class="link" data-au="logout">Sign out</button></div></div>';
         }
-        return '<div class="auth-form"><div><h2>Masuk</h2><p class="lead">Masuk dengan akun Taxio Hub Anda untuk mengakses workspace tim.</p></div>'
-            + field('au-email', 'Email', 'email', 'nama@email.com', A.email, { auto: 'username' }) + field('au-pass', 'Kata sandi', 'password', '••••••••', '', { auto: 'current-password' })
-            + err + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="login"' + busy + '>' + (A.busy ? 'Masuk…' : 'Masuk') + '</button>'
-            + '<div class="auth-foot">Belum punya akun? <button type="button" class="link" data-au="to-daftar">Daftar</button></div></div>';
+        return '<div class="auth-form"><div><h2>Sign in</h2><p class="lead">Sign in with your Taxio Hub account to access your team workspace.</p></div>'
+            + field('au-email', 'Email', 'email', 'name@email.com', A.email, { auto: 'username' }) + field('au-pass', 'Password', 'password', '••••••••', '', { auto: 'current-password' })
+            + err + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="login"' + busy + '>' + (A.busy ? 'Signing in…' : 'Sign in') + '</button>'
+            + '<div class="auth-foot">Don\'t have an account? <button type="button" class="link" data-au="to-daftar">Sign up</button></div></div>';
     }
 
     A.html = () => hero(P.state.version && P.state.version.version) + '<section class="auth-panel" id="au-panel">' + panel() + '</section>';
@@ -94,18 +94,18 @@
             else if (act === 'to-masuk') { A.email = val('au-email') || A.email; A.screen = 'masuk'; A.error = ''; if (P.hub().pending && P.hub().pending.status === 'confirm-email') P.state.session.taxio_hub.pending = undefined; paint(A.email ? 'au-pass' : 'au-email'); }
             else if (act === 'login') {
                 const email = val('au-email').trim(); const password = val('au-pass'); A.email = email;
-                if (!email || !password) return setError('Email & kata sandi wajib diisi.');
+                if (!email || !password) return setError('Email and password are required.');
                 run(async () => { P.state.session = await P.post('/api/connect', { project: 'taxio_hub', email, password }); });
             } else if (act === 'signup') {
                 const initial = val('au-initial').trim().toUpperCase(); const email = val('au-email').trim(); const password = val('au-pass'); A.email = email;
-                if (!initial) return setError('Inisial wajib diisi.');
-                if (!email || !password) return setError('Email & kata sandi wajib diisi.');
-                if (password.length < 6) return setError('Kata sandi minimal 6 karakter.');
+                if (!initial) return setError('Initials are required.');
+                if (!email || !password) return setError('Email and password are required.');
+                if (password.length < 6) return setError('Password must be at least 6 characters.');
                 run(async () => { P.state.session = await P.post('/api/signup', { project: 'taxio_hub', initial, email, password }); });
-            } else if (act === 'check') run(async () => { P.state.session = await P.post('/api/registration/check', { project: 'taxio_hub' }); if (P.hub().pending) P.info('Belum ada perubahan. Admin belum menempatkan akun Anda ke grup.'); });
+            } else if (act === 'check') run(async () => { P.state.session = await P.post('/api/registration/check', { project: 'taxio_hub' }); if (P.hub().pending) P.info('No change yet. The admin has not assigned your account to a group.'); });
             else if (act === 'initial') {
                 const initial = val('au-initial').trim().toUpperCase();
-                if (!initial) return setError('Inisial wajib diisi.');
+                if (!initial) return setError('Initials are required.');
                 run(async () => { P.state.session = await P.post('/api/registration/initial', { project: 'taxio_hub', initial }); });
             } else if (act === 'logout') run(async () => { P.state.session = await P.post('/api/disconnect', { project: 'taxio_hub' }); A.screen = 'masuk'; });
         });

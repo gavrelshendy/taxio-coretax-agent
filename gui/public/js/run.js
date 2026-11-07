@@ -69,13 +69,13 @@
         const key = R.sessionKey();
         while (R.queue.length) {
             const next = R.queue.shift();
-            P.emit('log-local', 'Bupot: memulai ' + next.bupotType.toUpperCase() + (R.queue.length ? ' (' + R.queue.length + ' jenis lagi menyusul)' : '') + '…');
+            P.emit('log-local', 'Bupot: starting ' + next.bupotType.toUpperCase() + (R.queue.length ? ' (' + R.queue.length + ' more type(s) to follow)' : '') + '…');
             try {
                 const r = await P.post('/api/actions/download-ebupot', next);
                 R.poll();
                 await waitForRunToFinish((r && r.session) || key);
             } catch (e) {
-                alert('Gagal memulai ' + next.bupotType.toUpperCase() + ': ' + e.message);
+                alert('Failed to start ' + next.bupotType.toUpperCase() + ': ' + e.message);
                 R.queue = [];
             }
         }
@@ -85,12 +85,12 @@
     // Selalu ke proses sesi yang sedang ditampilkan, bukan "proses mana saja".
     async function control(act, body) {
         const key = P.state.run && P.state.run.key;
-        try { setStatus(await P.post('/api/run/' + act + (key ? '?session=' + encodeURIComponent(key) : ''), body), R.sessionKey()); } catch (e) { alert('Gagal: ' + e.message); }
+        try { setStatus(await P.post('/api/run/' + act + (key ? '?session=' + encodeURIComponent(key) : ''), body), R.sessionKey()); } catch (e) { alert('Failed: ' + e.message); }
     }
     R.control = {
         pauseResume: () => control(P.state.run.paused ? 'resume' : 'pause'),
         skip: () => control('skip'), retry: () => control('retry'), back: () => control('back'),
-        stop: () => { if (confirm('Hentikan proses di sesi ini? Sesi lain tetap berjalan.')) { R.queue = []; if (P.batch) P.batch.cancel(); control('stop'); } },
+        stop: () => { if (confirm('Stop the process in this session? Other sessions keep running.')) { R.queue = []; if (P.batch) P.batch.cancel(); control('stop'); } },
         pageSize: (n) => control('pagesize', { size: n })
     };
 
@@ -106,35 +106,35 @@
     function tallyHtml(st) {
         const req = st.jenisRequested || [];
         if (!req.length) return '';
-        const names = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN', badan: 'PPh Badan', spt_op: 'PPh OP' };
-        return '<div class="stack" style="gap:8px"><div class="eyebrow">Hasil per jenis pajak</div><div class="tally">' + req.map((k) => {
+        const names = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN', badan: 'Corporate PPh', spt_op: 'Individual PPh' };
+        return '<div class="stack" style="gap:8px"><div class="eyebrow">Results per tax type</div><div class="tally">' + req.map((k) => {
             const t = (st.jenisTally || {})[k] || { ok: 0, fail: 0 };
             const cls = t.ok > 0 ? 'ok' : t.fail > 0 ? 'fail' : (st.active ? '' : 'empty');
-            return '<span class="' + cls + '">' + P.icon(t.ok > 0 ? 'check' : t.fail > 0 ? 'x' : (st.active ? 'loader' : 'warn'), 13, !t.ok && !t.fail && st.active ? 'spin' : '', 2.4) + P.esc(names[k] || k) + (t.ok || t.fail ? ' · ' + t.ok + ' ok' + (t.fail ? ', ' + t.fail + ' gagal' : '') : (st.active ? '' : ' · tidak ada data')) + '</span>';
+            return '<span class="' + cls + '">' + P.icon(t.ok > 0 ? 'check' : t.fail > 0 ? 'x' : (st.active ? 'loader' : 'warn'), 13, !t.ok && !t.fail && st.active ? 'spin' : '', 2.4) + P.esc(names[k] || k) + (t.ok || t.fail ? ' · ' + t.ok + ' ok' + (t.fail ? ', ' + t.fail + ' failed' : '') : (st.active ? '' : ' · no data')) + '</span>';
         }).join('') + '</div></div>';
     }
     function holdBanner(st) {
-        return '<div class="banner warn"><span class="ico">' + P.icon('warn', 20, '', 2) + '</span><div class="body"><b>Proses ditahan — perlu keputusan Anda</b><span>' + P.esc(String(st.holdReason || 'Kombinasi saat ini bermasalah').replace(/[.\s]+$/, '')) + '. Tidak ada yang dilewati otomatis; atau perbaiki sendiri di jendela Coretax lalu tekan Lanjut.</span>'
-            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm" style="background:var(--ink);color:#fff;border-color:var(--ink)" data-run="retry">' + P.icon('retry', 15) + 'Ulang</button><button type="button" class="btn btn-sm" data-run="skip">' + P.icon('skipF', 15) + 'Lewati</button><button type="button" class="btn btn-sm" data-run="back">' + P.icon('skipB', 15) + 'Mundur</button></div></div></div>';
+        return '<div class="banner warn"><span class="ico">' + P.icon('warn', 20, '', 2) + '</span><div class="body"><b>Process on hold — your decision needed</b><span>' + P.esc(String(st.holdReason || 'The current combination has a problem').replace(/[.\s]+$/, '')) + '. Nothing is skipped automatically; or fix it yourself in the Coretax window, then press Resume.</span>'
+            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm" style="background:var(--ink);color:#fff;border-color:var(--ink)" data-run="retry">' + P.icon('retry', 15) + 'Retry</button><button type="button" class="btn btn-sm" data-run="skip">' + P.icon('skipF', 15) + 'Skip</button><button type="button" class="btn btn-sm" data-run="back">' + P.icon('skipB', 15) + 'Back</button></div></div></div>';
     }
     R.viewHtml = function (st) {
         const prog = L.planProgress(st.plan);
         const held = st.paused && st.holdReason;
         const cur = prog && st.plan.index >= 0 ? st.plan.items[st.plan.index] : null;
-        const left = '<section class="card"><div class="queue-head"><h2>' + (prog ? 'Antrean ' + (String(st.label || '').indexOf('Bupot') !== -1 || String(st.label || '').indexOf('Bukti') !== -1 ? 'unduhan' : 'masa') : 'Proses berjalan') + '</h2>'
-            + (prog ? '<span class="hint">' + prog.finished + ' selesai' + (prog.hold ? ' · ' + prog.hold + ' perlu keputusan' : '') + ' · ' + (prog.wait + prog.run) + ' menunggu</span>' : '') + '</div>'
-            + (held ? holdBanner(st) : (st.paused ? '<div class="banner info"><span class="ico">' + P.icon('pause', 20) + '</span><div class="body"><b>Proses dijeda</b><span>Tekan Lanjut untuk meneruskan.</span></div></div>' : ''))
-            + (prog ? pillsHtml(st.plan) : '<div class="hint" style="font-size:13.5px">Proses ini tidak dibagi per masa. Ikuti kemajuannya di log aktivitas di bawah.</div>')
+        const left = '<section class="card"><div class="queue-head"><h2>' + (prog ? (String(st.label || '').indexOf('Bupot') !== -1 || String(st.label || '').indexOf('Bukti') !== -1 ? 'Download' : 'Period') + ' queue' : 'Process running') + '</h2>'
+            + (prog ? '<span class="hint">' + prog.finished + ' done' + (prog.hold ? ' · ' + prog.hold + ' need a decision' : '') + ' · ' + (prog.wait + prog.run) + ' waiting</span>' : '') + '</div>'
+            + (held ? holdBanner(st) : (st.paused ? '<div class="banner info"><span class="ico">' + P.icon('pause', 20) + '</span><div class="body"><b>Process paused</b><span>Press Resume to continue.</span></div></div>' : ''))
+            + (prog ? pillsHtml(st.plan) : '<div class="hint" style="font-size:13.5px">This process is not split by period. Follow its progress in the activity log below.</div>')
             + tallyHtml(st) + '</section>';
         const bar = prog ? '<div class="bar"><span class="ok" style="width:' + prog.pct + '%"></span><span class="hold" style="width:' + prog.holdPct + '%"></span></div>' : '<div class="bar indet"><span class="ok"></span></div>';
         const sizes = [10, 25, 50, 100];
-        const rail = '<div class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">Progres</div>' + (st.currentPageSize ? '<span class="mono muted" style="font-size:12px">' + st.currentPageSize + ' baris/hal</span>' : '') + '</div>'
-            + (prog ? '<div class="big-num"><b>' + prog.finished + '</b><small>/ ' + prog.total + '</small></div>' : '<div class="big-num"><span style="font-size:15px;color:var(--ink);font-weight:600">' + P.esc(st.label || 'Berjalan…') + '</span></div>') + bar
-            + '<div class="divider"></div><div class="stack-lg" style="gap:12px"><div class="hint">' + (prog ? 'Sekarang' : 'Proses') + '</div><div style="font-size:15px;font-weight:700;color:var(--ink);margin-top:-8px">' + P.esc(cur ? cur.label : (st.label || '')) + '</div>'
-            + (st.coretaxAs ? '<div class="hint">Login Coretax: ' + P.esc(st.coretaxAs) + '</div>' : '') + '</div>'
-            + '<div class="divider"></div><div class="stack" style="gap:8px"><div class="eyebrow">Baris per halaman</div><div class="seg">' + sizes.map((n) => '<button type="button" data-run-size="' + n + '" aria-pressed="' + (st.currentPageSize === n) + '">' + n + '</button>').join('') + '</div></div>'
-            + '<div class="ctl-grid"><button type="button" class="btn ' + (st.paused ? 'btn-primary' : '') + '" data-run="pause">' + P.icon(st.paused ? 'play' : 'pause', 16) + (st.paused ? 'Lanjut' : 'Jeda') + '</button><button type="button" class="btn" data-run="back">' + P.icon('skipB', 16) + 'Mundur</button><button type="button" class="btn" data-run="retry">' + P.icon('retry', 16) + 'Ulang</button><button type="button" class="btn" data-run="skip">' + P.icon('skipF', 16) + 'Lewati</button></div>'
-            + '<button type="button" class="btn btn-danger btn-block" data-run="stop">' + P.icon('stop', 15) + 'Hentikan proses sesi ini</button></div>';
+        const rail = '<div class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">Progress</div>' + (st.currentPageSize ? '<span class="mono muted" style="font-size:12px">' + st.currentPageSize + ' rows/page</span>' : '') + '</div>'
+            + (prog ? '<div class="big-num"><b>' + prog.finished + '</b><small>/ ' + prog.total + '</small></div>' : '<div class="big-num"><span style="font-size:15px;color:var(--ink);font-weight:600">' + P.esc(st.label || 'Running…') + '</span></div>') + bar
+            + '<div class="divider"></div><div class="stack-lg" style="gap:12px"><div class="hint">' + (prog ? 'Now' : 'Process') + '</div><div style="font-size:15px;font-weight:700;color:var(--ink);margin-top:-8px">' + P.esc(cur ? cur.label : (st.label || '')) + '</div>'
+            + (st.coretaxAs ? '<div class="hint">Coretax login: ' + P.esc(st.coretaxAs) + '</div>' : '') + '</div>'
+            + '<div class="divider"></div><div class="stack" style="gap:8px"><div class="eyebrow">Rows per page</div><div class="seg">' + sizes.map((n) => '<button type="button" data-run-size="' + n + '" aria-pressed="' + (st.currentPageSize === n) + '">' + n + '</button>').join('') + '</div></div>'
+            + '<div class="ctl-grid"><button type="button" class="btn ' + (st.paused ? 'btn-primary' : '') + '" data-run="pause">' + P.icon(st.paused ? 'play' : 'pause', 16) + (st.paused ? 'Resume' : 'Pause') + '</button><button type="button" class="btn" data-run="back">' + P.icon('skipB', 16) + 'Back</button><button type="button" class="btn" data-run="retry">' + P.icon('retry', 16) + 'Retry</button><button type="button" class="btn" data-run="skip">' + P.icon('skipF', 16) + 'Skip</button></div>'
+            + '<button type="button" class="btn btn-danger btn-block" data-run="stop">' + P.icon('stop', 15) + 'Stop this session\'s process</button></div>';
         return '<div class="cols"><div class="col-main">' + left + '</div><aside class="rail">' + rail + '</aside></div>';
     };
     R.bindView = function (root) {
@@ -151,16 +151,16 @@
         const f = R.finished;
         if (!f || R.dismissed === f.at) return '';
         const prog = L.planProgress(f.plan);
-        let text = 'Proses selesai. Hasil rincinya ada di log aktivitas.';
+        let text = 'Process finished. Detailed results are in the activity log.';
         let kind = 'ok';
         if (prog) {
-            text = prog.ok + ' selesai' + (prog.skip ? ', ' + prog.skip + ' dilewati' : '') + (prog.wait + prog.run + prog.hold ? ', ' + (prog.wait + prog.run + prog.hold) + ' belum dikerjakan' : '') + ' dari ' + prog.total + ' kombinasi.';
+            text = prog.ok + ' done' + (prog.skip ? ', ' + prog.skip + ' skipped' : '') + (prog.wait + prog.run + prog.hold ? ', ' + (prog.wait + prog.run + prog.hold) + ' not processed' : '') + ' of ' + prog.total + ' combinations.';
             if (prog.skip || prog.wait || prog.hold) kind = 'warn';
         }
         const tally = f.tally || {};
         const anyFail = Object.keys(tally).some((k) => tally[k].fail > 0);
         if (anyFail) kind = 'warn';
-        return '<div class="banner ' + kind + '" style="margin-bottom:16px"><span class="ico">' + P.icon(kind === 'ok' ? 'check' : 'warn', 20, '', 2.2) + '</span><div class="body"><b>' + P.esc(f.label || 'Proses') + ' — selesai</b><span>' + P.esc(text) + '</span></div><button type="button" class="icon-btn" data-dismiss-run aria-label="Tutup ringkasan">' + P.icon('x', 16) + '</button></div>';
+        return '<div class="banner ' + kind + '" style="margin-bottom:16px"><span class="ico">' + P.icon(kind === 'ok' ? 'check' : 'warn', 20, '', 2.2) + '</span><div class="body"><b>' + P.esc(f.label || 'Process') + ' — finished</b><span>' + P.esc(text) + '</span></div><button type="button" class="icon-btn" data-dismiss-run aria-label="Close summary">' + P.icon('x', 16) + '</button></div>';
     };
 
     // ---------- Log aktivitas ----------
@@ -168,14 +168,14 @@
     // ("[HBI] ...") dan membawa kunci sesinya. "Sesi ini" menyaring ke sesi entitas terpilih
     // (baris umum tanpa sesi - mis. dari dashboard - tetap tampil).
     const D = P.dock = { open: false, count: 0, scope: P.store.get('logScope', 'all') === 'session' ? 'session' : 'all' };
-    let lastMsg = 'Siap.';
-    const scopeLabel = () => (D.scope === 'session' ? 'Sesi ini' : 'Semua sesi');
+    let lastMsg = 'Ready.';
+    const scopeLabel = () => (D.scope === 'session' ? 'This session' : 'All sessions');
     const visible = (b) => D.scope !== 'session' || !b.session || b.session === R.sessionKey();
     D.html = function () {
         return '<footer class="dock' + (D.open ? ' open' : '') + '" id="dock"><button type="button" class="dock-bar" id="dock-toggle" aria-expanded="' + D.open + '">'
-            + P.icon('term', 16) + '<b>Log aktivitas</b><span class="live"><i class="dot"></i>LIVE</span><span class="dock-last" id="dock-last">' + P.esc(lastMsg) + '</span>'
-            + '<span class="dock-tool" id="dock-scope" role="button" tabindex="0" title="Tampilkan log semua sesi, atau hanya sesi entitas yang dipilih" aria-pressed="' + (D.scope === 'session') + '">' + scopeLabel() + '</span>'
-            + '<span class="dock-tool" id="dock-clear" role="button" tabindex="0">Bersihkan</span>' + P.icon(D.open ? 'down' : 'up', 18) + '</button><div class="log-view" id="log-view" role="log"></div></footer>';
+            + P.icon('term', 16) + '<b>Activity log</b><span class="live"><i class="dot"></i>LIVE</span><span class="dock-last" id="dock-last">' + P.esc(lastMsg) + '</span>'
+            + '<span class="dock-tool" id="dock-scope" role="button" tabindex="0" title="Show the log of all sessions, or only the session of the selected entity" aria-pressed="' + (D.scope === 'session') + '">' + scopeLabel() + '</span>'
+            + '<span class="dock-tool" id="dock-clear" role="button" tabindex="0">Clear</span>' + P.icon(D.open ? 'down' : 'up', 18) + '</button><div class="log-view" id="log-view" role="log"></div></footer>';
     };
     function rerenderLog() {
         const view = P.$('log-view'); if (!view) return;
@@ -202,7 +202,7 @@
     };
     async function clear() {
         const v = P.$('log-view'); if (v) v.innerHTML = '';
-        lastMsg = 'Siap.'; const l = P.$('dock-last'); if (l) l.textContent = lastMsg;
+        lastMsg = 'Ready.'; const l = P.$('dock-last'); if (l) l.textContent = lastMsg;
         try { await P.post('/api/log/clear'); } catch (e) { /* diabaikan */ }
     }
     const buffered = [];

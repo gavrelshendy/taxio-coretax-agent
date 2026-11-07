@@ -3,8 +3,8 @@
 (function (root) {
     'use strict';
 
-    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-    const MONTHS_LONG = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
     // ---------- Masa pajak (mengikuti lib/masa.js di sisi server) ----------
     const isValidMasa = (s) => /^(0[1-9]|1[0-2])\d{2}$/.test(s);
@@ -32,7 +32,7 @@
         for (const seg of segs) {
             const range = seg.match(/^(\d{4})\s*-\s*(\d{4})$/);
             if (range) {
-                if (!isValidMasa(range[1]) || !isValidMasa(range[2])) return { set: new Set(), error: 'Masa tidak valid: "' + seg + '"' };
+                if (!isValidMasa(range[1]) || !isValidMasa(range[2])) return { set: new Set(), error: 'Invalid period: "' + seg + '"' };
                 let a = toIndex(range[1]); let b = toIndex(range[2]);
                 if (a > b) [a, b] = [b, a];
                 for (let i = a; i <= b; i++) set.add(fromIndex(i));
@@ -43,7 +43,7 @@
                 for (let m = 1; m <= 12; m++) set.add(mmYY(m, parseInt(seg, 10)));
                 continue;
             }
-            if (!isValidMasa(seg)) return { set: new Set(), error: 'Masa tidak valid: "' + seg + '"' };
+            if (!isValidMasa(seg)) return { set: new Set(), error: 'Invalid period: "' + seg + '"' };
             set.add(seg);
         }
         return { set, error: null };
@@ -65,13 +65,13 @@
         for (const seg of segs) {
             const range = seg.match(/^(\d{4})\s*-\s*(\d{4})$/);
             if (range) {
-                if (!isValidYear(range[1]) || !isValidYear(range[2])) return { set: new Set(), error: 'Tahun tidak valid: "' + seg + '"' };
+                if (!isValidYear(range[1]) || !isValidYear(range[2])) return { set: new Set(), error: 'Invalid year: "' + seg + '"' };
                 let a = parseInt(range[1], 10); let b = parseInt(range[2], 10);
                 if (a > b) [a, b] = [b, a];
                 for (let y = a; y <= b; y++) set.add(y);
                 continue;
             }
-            if (!isValidYear(seg)) return { set: new Set(), error: 'Tahun tidak valid: "' + seg + '"' };
+            if (!isValidYear(seg)) return { set: new Set(), error: 'Invalid year: "' + seg + '"' };
             set.add(parseInt(seg, 10));
         }
         return { set, error: null };
@@ -173,16 +173,16 @@
     /** { kind, text }: kind salah satu 'run' | 'ok' | 'manual' | 'wait' | 'off'. */
     function loginPill(ctx) {
         const { runActive, entity, manual, last } = ctx;
-        if (runActive) return { kind: 'run', text: 'Sedang berjalan' };
+        if (runActive) return { kind: 'run', text: 'Running' };
         const m = manual || {};
-        if (!entity) return m.loggedIn ? { kind: 'manual', text: 'Login manual aktif' } : { kind: 'off', text: 'Pilih entitas' };
+        if (!entity) return m.loggedIn ? { kind: 'manual', text: 'Manual login active' } : { kind: 'off', text: 'Select entity' };
         if (isManualLike(entity)) {
-            if (m.loggedIn) return { kind: 'manual', text: 'Login manual aktif' };
-            if (m.open) return { kind: 'wait', text: 'Menunggu login manual' };
-            return { kind: 'off', text: 'Belum membuka Coretax' };
+            if (m.loggedIn) return { kind: 'manual', text: 'Manual login active' };
+            if (m.open) return { kind: 'wait', text: 'Waiting for manual login' };
+            return { kind: 'off', text: 'Coretax not opened yet' };
         }
-        if (last && last.at && sameName(last.name, entity.entity_name)) return { kind: 'ok', text: 'Sesi Coretax aktif' };
-        return { kind: 'off', text: 'Belum masuk Coretax' };
+        if (last && last.at && sameName(last.name, entity.entity_name)) return { kind: 'ok', text: 'Coretax session active' };
+        return { kind: 'off', text: 'Not signed in to Coretax' };
     }
 
     // ---------- Progres proses ----------
@@ -207,9 +207,9 @@
     }
     function logLevel(msg) {
         const s = String(msg || '');
-        if (/gagal|galat|error|ditolak|tidak bisa|\bGAGAL\b/i.test(s)) return 'error';
-        if (/peringatan|dijeda|⏸|dilewati|perhatian|tidak ditemukan/i.test(s)) return 'warn';
-        if (/berhasil|selesai|tersimpan|dibuat|dipulihkan|terhubung|▶|✓/i.test(s)) return 'ok';
+        if (/gagal|galat|error|ditolak|tidak bisa|\bGAGAL\b|\bfailed\b/i.test(s)) return 'error';
+        if (/peringatan|dijeda|⏸|dilewati|perhatian|tidak ditemukan|\bskipped\b|\bpaused\b/i.test(s)) return 'warn';
+        if (/berhasil|selesai|tersimpan|dibuat|dipulihkan|terhubung|▶|✓|\bfinished\b/i.test(s)) return 'ok';
         return 'info';
     }
 

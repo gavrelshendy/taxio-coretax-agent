@@ -14,7 +14,7 @@ const path = require('path');
 
 const BASE = new URL(process.env.TAXIO_PILOT_URL || 'http://127.0.0.1:51733');
 const LOG = process.env.TAXIO_PILOT_LOG || path.join(__dirname, '..', 'dist', 'coretax-agent.log');
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 function call(method, p, body) {
     return new Promise((resolve, reject) => {
@@ -95,6 +95,20 @@ const TOOLS = [
             const r = await call('POST', '/api/actions/import-coretax', { entity: e, filePath });
             return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type: r && r.type, count: r && r.count, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL:".' };
         } },
+    { name: 'preview_issue_ebupot', description: 'Pratinjau terbitkan: daftar bukti potong Belum Terbit satu jenis & masa untuk satu entitas (penerima, bruto, PPh, total) dan KODE KONFIRMASI. Hanya membaca. Tampilkan ringkasan + totalnya ke pengguna dan minta persetujuan eksplisit sebelum issue_ebupot.',
+        inputSchema: { type: 'object', required: ['entity', 'type', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['mp', 'bp21', 'bpa1', 'bpu'], description: 'mp = BPMP, bp21 = BP21, bpa1 = BPA1, bpu = BPPU.' }, period: { type: 'string', description: 'Masa, mis. 1026 (MMYY). BPA1: masa akhir.' } } },
+        run: async ({ entity, type, period }) => {
+            const e = await entityOf(entity);
+            const p = await call('POST', '/api/ebupot/issue-preview', { entity: e, type, period });
+            return { entity: e.entity_id + ' - ' + e.entity_name, ...p, slips: (p.slips || []).slice(0, 60), slipsShown: Math.min(60, (p.slips || []).length) };
+        } },
+    { name: 'issue_ebupot', description: 'TERBITKAN bukti potong Belum Terbit (BPMP tanpa tanda tangan; BP21/BPA1/BPPU ditandatangani dengan passphrase PIC tersimpan di Pilot). TIDAK BISA DIBATALKAN dengan mudah. Panggil HANYA sesudah preview_issue_ebupot ditunjukkan ke pengguna DAN pengguna menyetujui secara eksplisit di percakapan ini; pakai kode konfirmasi dari pratinjau itu (ditolak bila daftar berubah). Lapor SPT tidak termasuk. Pantau dengan read_log.',
+        inputSchema: { type: 'object', required: ['entity', 'type', 'period', 'token'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['mp', 'bp21', 'bpa1', 'bpu'] }, period: { type: 'string' }, token: { type: 'string', description: 'Kode konfirmasi dari preview_issue_ebupot.' } } },
+        run: async ({ entity, type, period, token }) => {
+            const e = await entityOf(entity);
+            const r = await call('POST', '/api/actions/issue-ebupot', { entity: e, type, period, token });
+            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type, period, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL terbitkan".' };
+        } },
     { name: 'create_konsep_spt', description: 'Buat Konsep SPT Masa di Coretax (PPh 21/26 atau PPh Unifikasi) untuk satu entitas dan masa; Normal atau Pembetulan dipilih otomatis sesuai Coretax. Tidak melapor / menandatangani. PERHATIAN: membuat konsep nyata - minta konfirmasi pengguna dulu. Pantau dengan read_log.',
         inputSchema: { type: 'object', required: ['entity', 'type', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['pph21', 'unifikasi'] }, period: { type: 'string', description: 'Masa pajak, mis. 1026 (MMYY) atau 102026.' } } },
         run: async ({ entity, type, period }) => {
@@ -121,7 +135,7 @@ async function handle(msg) {
     if (id === undefined) return; // notification (initialized, cancelled, ...)
     try {
         if (method === 'initialize') return send({ jsonrpc: '2.0', id, result: { protocolVersion: (params && params.protocolVersion) || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'taxio-pilot', version: VERSION },
-            instructions: 'Taxio Pilot otomatisasi Coretax DJP di PC pengguna. Mulai dengan pilot_status / list_entities. run_mode_a1, upload_ebupot dan create_konsep_spt mengubah data di Coretax (berjalan di latar) - minta konfirmasi dulu, lalu pantau dengan read_log. Upload: inspect_import_file dulu.' } });
+            instructions: 'Taxio Pilot otomatisasi Coretax DJP di PC pengguna. Mulai dengan pilot_status / list_entities. run_mode_a1, upload_ebupot, issue_ebupot dan create_konsep_spt mengubah data di Coretax (berjalan di latar) - minta konfirmasi dulu, lalu pantau dengan read_log. Upload: inspect_import_file dulu. Terbitkan: preview_issue_ebupot, tunjukkan, tunggu persetujuan, lalu issue_ebupot dengan kodenya. Lapor SPT selalu manual.' } });
         if (method === 'ping') return send({ jsonrpc: '2.0', id, result: {} });
         if (method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) } });
         if (method === 'tools/call') {

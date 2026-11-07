@@ -27,17 +27,17 @@
         self.count = () => self.sel.size;
         self.values = () => Array.from(self.sel);
         self.single = () => (self.sel.size ? Array.from(self.sel)[0] : '');
-        self.unit = () => (mode === 'tahun' ? 'tahun' : 'masa');
+        self.unit = () => (mode === 'tahun' ? 'year(s)' : 'period(s)');
 
         function head() {
             if (mode === 'tahun') {
-                return '<div class="pills">' + [['last', 'Tahun lalu'], ['last2', '2 tahun terakhir'], ['clear', 'Bersihkan']].map(([v, t]) => '<button type="button" class="pill" data-pp="quick" data-val="' + v + '">' + t + '</button>').join('') + '</div>';
+                return '<div class="pills">' + [['last', 'Last year'], ['last2', 'Last 2 years'], ['clear', 'Clear']].map(([v, t]) => '<button type="button" class="pill" data-pp="quick" data-val="' + v + '">' + t + '</button>').join('') + '</div>';
             }
             const quick = mode === 'masa'
-                ? '<div class="pills">' + [['year', 'Setahun penuh'], ['q1', 'Kuartal I'], ['s1', 'Semester I'], ['clear', 'Bersihkan']].map(([v, t]) => '<button type="button" class="pill" data-pp="quick" data-val="' + v + '">' + t + '</button>').join('') + '</div>'
+                ? '<div class="pills">' + [['year', 'Full year'], ['q1', 'Q1'], ['s1', 'H1'], ['clear', 'Clear']].map(([v, t]) => '<button type="button" class="pill" data-pp="quick" data-val="' + v + '">' + t + '</button>').join('') + '</div>'
                 : '<span></span>';
             return '<div class="row" style="justify-content:space-between">' + quick
-                + '<div class="stepper-year"><button type="button" aria-label="Tahun sebelumnya" data-pp="yprev">' + P.icon('left', 16) + '</button><span>' + self.year + '</span><button type="button" aria-label="Tahun berikutnya" data-pp="ynext">' + P.icon('right', 16) + '</button></div></div>';
+                + '<div class="stepper-year"><button type="button" aria-label="Previous year" data-pp="yprev">' + P.icon('left', 16) + '</button><span>' + self.year + '</span><button type="button" aria-label="Next year" data-pp="ynext">' + P.icon('right', 16) + '</button></div></div>';
         }
         function grid() {
             if (mode === 'tahun') {
@@ -50,14 +50,14 @@
         }
         function sum() {
             const n = self.count();
-            const what = mode === 'tahun' ? 'tahun' : 'masa';
-            return '<div class="summary-line"><span class="grow">Terpilih: <b>' + n + ' ' + what + '</b></span><span class="code-chip">' + P.esc(self.code() || '—') + '</span>'
-                + '<button type="button" class="link link-quiet" style="font-size:12.5px" data-pp="text">' + (self.textOpen ? 'Tutup' : 'Ketik kode') + '</button></div>';
+            const what = mode === 'tahun' ? (n === 1 ? 'year' : 'years') : (n === 1 ? 'period' : 'periods');
+            return '<div class="summary-line"><span class="grow">Selected: <b>' + n + ' ' + what + '</b></span><span class="code-chip">' + P.esc(self.code() || '—') + '</span>'
+                + '<button type="button" class="link link-quiet" style="font-size:12.5px" data-pp="text">' + (self.textOpen ? 'Close' : 'Type code') + '</button></div>';
         }
         function text() {
             if (!self.textOpen) return '';
-            const ph = mode === 'tahun' ? 'mis. 2025 atau 2024-2025' : 'mis. 0126;0226 atau 0125-1225';
-            return '<div class="stack" style="gap:6px"><input type="text" class="input sm mono" data-pp-input placeholder="' + ph + '" value="' + P.esc(self.text) + '" aria-label="Kode periode">'
+            const ph = mode === 'tahun' ? 'e.g. 2025 or 2024-2025' : 'e.g. 0126;0226 or 0125-1225';
+            return '<div class="stack" style="gap:6px"><input type="text" class="input sm mono" data-pp-input placeholder="' + ph + '" value="' + P.esc(self.text) + '" aria-label="Period code">'
                 + '<div class="field-error" data-pp-error>' + P.esc(self.error) + '</div></div>';
         }
         const part = (name, fn) => '<div class="pp-' + name + '">' + fn() + '</div>';
@@ -116,7 +116,7 @@
                 self.text = e.target.value;
                 const r = mode === 'tahun' ? L.parseYears(self.text) : L.parseMasa(self.text);
                 let error = r.error;
-                if (!error && mode === 'masa1' && r.set.size > 1) error = 'Pilih satu masa saja.';
+                if (!error && mode === 'masa1' && r.set.size > 1) error = 'Select one period only.';
                 self.error = error || '';
                 const errEl = w.querySelector('[data-pp-error]'); if (errEl) errEl.textContent = self.error;
                 if (error) return;
