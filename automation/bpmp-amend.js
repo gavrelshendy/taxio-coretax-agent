@@ -136,8 +136,34 @@ async function openSession(context, npwp) {
         }
         return rows;
     };
+    // Satu bukti potong (cek sesudah kirim): disaring nomornya di server - satu permintaan kecil, bukan seluruh masa
+    // (ribuan baris). Bila saringan nomor tidak didukung / tidak ketemu, jatuh ke daftar masa lengkap.
+    const find = async (endpoint, code, number) => {
+        try {
+            const r = await post(API + '/' + endpoint, { First: 0, Rows: 50, SortField: '', SortOrder: 1, Filters: [{ PropertyName: 'TaxPeriodCode', Value: code, MatchMode: 'equals', CaseSensitive: true, AsString: false }, { PropertyName: 'WithholdingSlipsNumber', Value: number, MatchMode: 'equals', CaseSensitive: true, AsString: true }], LanguageId: 'id-ID', TaxpayerAggregateIdentifier: auth.claims.taxpayer_id });
+            const hit = r.status === 200 && r.json && ((r.json.Payload && r.json.Payload.Data) || []).find((x) => x.WithholdingSlipsNumber === number);
+            if (hit) return hit;
+        } catch (e) { /* jatuh ke daftar lengkap */ }
+        return (await list(endpoint, code)).find((x) => x.WithholdingSlipsNumber === number) || null;
+    };
     const lookup = (nik) => page.evaluate(`(${LOOKUP_IN_PAGE})(${JSON.stringify([API, auth, auth.claims.identifier, nik])})`);
-    return { page, auth, post, list, lookup, close };
+    return { page, auth, post, list, find, lookup, close };
+}
+
+/** BPMP Telah Terbit Januari-Desember `year`, 4 masa sekaligus (dulu satu per satu: ~1 menit untuk ~2.500 BPMP/masa).
+ *  Mengembalikan larik 12 masa; setiap baris diberi _masa (1-12). */
+async function listYear(s, year, emit, endpoint = 'getebupotmpissued') {
+    const out = new Array(12); let next = 0;
+    const worker = async () => {
+        for (;;) {
+            const m = ++next; if (m > 12) return;
+            const mm = String(m).padStart(2, '0'), rows = await s.list(endpoint, mm + mm + year);
+            out[m - 1] = rows.map((r) => ({ ...r, _masa: m }));
+            if (emit) emit('  masa ' + mm + '/' + year + ': ' + rows.length + ' BPMP');
+        }
+    };
+    await Promise.all([1, 2, 3, 4].map(worker));
+    return out;
 }
 
 /** Nama Excel vs nama resmi Coretax untuk NIK Baru. 'same': sama setelah huruf besar, tanda baca dan spasi
@@ -186,7 +212,7 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
         const all = [];
         // Membaca 12 masa bisa lebih dari semenit: tulis kemajuannya supaya tidak tampak macet.
         emit('Membaca BPMP Telah Terbit ' + year + ' (Januari-Desember) dari Coretax...');
-        for (let m = 1; m <= 12; m++) { const mm = String(m).padStart(2, '0'); const got = await s.list('getebupotmpissued', mm + mm + year); all.push(...got); emit('  masa ' + mm + '/' + year + ': ' + got.length + ' BPMP'); }
+        for (const rows of await listYear(s, year, emit)) all.push(...rows);
         // Isian per bukti potong (sheet Pembetulan, t.number) didahulukan: bukti potong itu tidak ikut isian per NIK
         // (satu NIK bisa dipakai dua orang - mis. sebagian BPMP ber-NIK A sebenarnya milik B).
         // exclude: Tindakan Biarkan / Batalkan di sheet Pembetulan - tidak ikut diganti NIK-nya.
@@ -238,7 +264,7 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
                     result.status = 'GAGAL: ditolak Coretax'; results.push(result); save();
                     throw new Error(label + ': ditolak Coretax - HTTP ' + res.status + ' ' + JSON.stringify(res.json && (res.json.Message || res.json.Errors || res.json.Payload)).slice(0, 300));
                 }
-                const after = (await s.list('getebupotmpissued', slip.TaxPeriodCode)).find((r) => r.WithholdingSlipsNumber === slip.WithholdingSlipsNumber);
+                const after = await s.find('getebupotmpissued', slip.TaxPeriodCode, slip.WithholdingSlipsNumber);
                 const ok = after && after.WithholdingSlipsStatus === 'AMENDMENT' && after.TaxIdentificationNumber === t.newNik && after.GrossIncome === slip.GrossIncome;
                 result.status = ok ? 'DIBETULKAN' + (result.note ? ' (' + result.note + ')' : '') : 'PERIKSA - hasil tidak sesuai'; results.push(result); save();
                 emit((ok ? 'OK    ' : 'CEK   ') + label + ' · ' + (after ? after.WithholdingSlipsStatus + ' ' + after.TaxIdentificationNumber + ' ' + after.Name : 'tidak ditemukan di Telah Terbit'));
@@ -259,7 +285,7 @@ async function cancelSlips({ context, npwp, year, cancels, confirmed, emit = () 
     const s = await openSession(context, npwp), done = [];
     try {
         const all = [];
-        for (let m = 1; m <= 12; m++) { const mm = String(m).padStart(2, '0'); for (const r of await s.list('getebupotmpissued', mm + mm + year)) all.push({ ...r, _masa: m }); }
+        for (const rows of await listYear(s, year)) all.push(...rows);
         for (const c of todo) {
             const r = all.find((x) => String(x.WithholdingSlipsNumber) === c.number);
             if (!r) { emit('LEWATI BATAL ' + c.number + ': tidak ada di BPMP Telah Terbit ' + year + ' (sudah dibatalkan / diganti?).'); continue; }
@@ -329,8 +355,9 @@ async function sweep({ context, npwp, year, outDir, emit = () => {} }) {
     const problems = [], sptMasa = [], amendedSlips = [];
     let total = 0;
     try {
+        const byMasa = await listYear(s, year);
         for (let m = 1; m <= 12; m++) {
-            const mm = String(m).padStart(2, '0'), rows = await s.list('getebupotmpissued', mm + mm + year);
+            const mm = String(m).padStart(2, '0'), rows = byMasa[m - 1];
             total += rows.length;
             const gross = (r) => Number(r.GrossIncome ?? r.TaxBase) || 0, tax = (r) => Number(r.IncomeTaxWithheld ?? r.IncomeTax) || 0;
             for (const r of rows) { const why = nikProblem(r); if (why) problems.push({ nik: r.TaxIdentificationNumber, name: String(r.Name || '').trim(), number: r.WithholdingSlipsNumber, masa: mm, status: r.WithholdingSlipsStatus, why, gross: gross(r), tax: tax(r) }); }
@@ -354,4 +381,4 @@ async function sweep({ context, npwp, year, outDir, emit = () => {} }) {
     return { total, problems, people: people.length, sptMasa, amendedSlips, checkedAt: new Date() };
 }
 
-module.exports = { readTargets, run, cancelSlips, check, sweep, nikProblem, nameMatch, nameGap, openSession };
+module.exports = { readTargets, run, cancelSlips, listYear, check, sweep, nikProblem, nameMatch, nameGap, openSession };
