@@ -842,6 +842,7 @@ async function handleA1Inspect(req, res) {
     try {
         const p = require('../lib/a1-paths').a1Paths({ entity, saveRoot, year: String(year) });
         const out = await require('../lib/a1-source').inspect({ a1Dir: p.readDirs, source: source || undefined, year: String(year), sptDir: p.sptDir, pdfDir: p.taxServer ? [p.pdfDir, p.outDir] : undefined });
+        if (out && out.excel) require('../lib/a1-autorefresh').watch(out.excel);
         return sendJson(res, 200, { ...out, a1Dir: p.outDir, taxServer: p.taxServer });
     } catch (e) { return sendJson(res, 400, { error: e.message }); }
 }
@@ -888,6 +889,7 @@ async function handleBpmpAmend(req, res) {
     catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.message }); }
     const taxYear = String(year || parsed.year || '');
     if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Tahun pajak tidak terbaca dari Excel - pilih tahunnya.' });
+    if (filePath) require('../lib/a1-autorefresh').watch(filePath);
     if (!parsed.targets.length && !parsed.cancels.length) return sendJson(res, 400, { error: 'Belum ada NIK Baru yang terisi di sheet NIK atau per bukti potong di sheet Pembetulan, dan tidak ada Tindakan = Batalkan.' + (parsed.skipped.length ? ' ' + parsed.skipped[0] : '') });
     // Pembatalan hanya untuk nomor yang dikonfirmasi pengguna (dialog daftar bukti potong di GUI, dari /api/bpmp-amend/preview).
     const confirmed = Array.isArray(confirmCancel) ? confirmCancel.map(String) : [];
@@ -936,6 +938,7 @@ async function handleBpmpAmend(req, res) {
         if (submit && (results.length || sweepRes || cancelled.length)) {
             const out = await require('../lib/bpmp-report').writeReport({ file: filePath && /\.xlsx$/i.test(filePath) ? filePath : null,
                 newFile: path.join(outDir || os.tmpdir(), 'Hasil Pembetulan NIK BPMP ' + taxYear + '.xlsx'), year: taxYear, results, checks, sweep: sweepRes, cancelled });
+            require('../lib/a1-autorefresh').own(out.file);
             log('Laporan ditulis ke ' + out.file + ' (sheet Pembetulan dan Ringkasan).' + (out.locked ? ' Excel rekap sedang terbuka, jadi disimpan sebagai file terpisah - tutup Excel lalu salin sheet-nya, atau pilih file ini di proses berikutnya.' : ''));
         }
     } catch (e) { log('Laporan ke Excel gagal: ' + e.message); }
@@ -962,14 +965,13 @@ async function handleA1Refresh(req, res) {
     const file = String((body && body.filePath) || '');
     if (!/\.xlsx$/i.test(file) || !fs.existsSync(file)) return sendJson(res, 400, { error: 'Pilih Excel rekap (.xlsx) yang ada di disk - "Use latest rekap" atau pilih file dari folder.' });
     try { fs.closeSync(fs.openSync(file, 'r+')); } catch (e) { return sendJson(res, 409, { error: 'Excel rekap sedang terbuka - tutup dulu di Excel, lalu klik Perbarui rekap lagi.' }); }
-    const m = /^(.*?)\s*(20\d{2}) - Rekap SPT PPh 21 Setahun \(A1\)/.exec(path.basename(file));
     try { runcontrol.start('Refresh rekap · ' + path.basename(file)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
         log('Perbarui rekap (tanpa Coretax): ' + file);
-        const { result } = await require('../lib/a1-import').convertA1Workbook(file, path.dirname(file), m ? m[1] : '');
-        log('Selesai: ' + result.file + ' · isian dibawa: ' + (result.carriedInputs || 0) + ' · bukti potong perlu pembetulan: ' + result.draftRows + '.');
+        const result = await require('../lib/a1-autorefresh').refreshInPlace(file, (m) => log(m));
+        log('Selesai · bukti potong perlu pembetulan: ' + result.draftRows + '.');
     } catch (e) { log('Perbarui rekap gagal: ' + e.message); }
     finally { runcontrol.finish(); }
 }
@@ -1171,6 +1173,7 @@ async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
         const rekap = entity.entity_id ? require('../lib/a1-source').resolve({ a1Dir: require('../lib/a1-paths').a1Paths({ entity, saveRoot, year: taxYear }).readDirs, year: taxYear }).excel : null;
         if (rekap) {
             const out = await require('../lib/bpmp-report').writeReport({ file: rekap, year: taxYear, results: [], sweep: sweepRes });
+            require('../lib/a1-autorefresh').own(out.file);
             log('Status ditulis ke ' + out.file + (out.locked ? ' (Excel rekap sedang terbuka - disimpan sebagai file terpisah).' : '.'));
             if (!out.locked) {
                 try { await require('../lib/ebupot-vs-spt').run({ context: page.context(), npwp: entity.project === 'manual' ? null : entity.npwp, file: rekap, year: taxYear, emit: (m) => log(m) }); }
