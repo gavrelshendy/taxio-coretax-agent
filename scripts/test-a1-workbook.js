@@ -56,7 +56,7 @@ module.exports=async function(){
  assert.equal(sum.getCell(5,9).value.formula,"SUM(I7:I9)-SUM('L-IA'!$E$8:$E$12)");
  // Per masa menyamping: kolom 10..21 = Jan..Des (Bruto).
  assert.equal(cell(7,10),1000);assert.equal(cell(7,11),2000);assert.equal(cell(7,12),0);assert.equal(cell(8,10),500);assert.equal(cell(8,11),250);assert.equal(cell(9,10),700);assert.equal(cell(4,10),2200);assert.equal(cell(4,11),2250);
- assert.match(sum.getCell(7,11).value.formula,/,'L-IA'!\$A\$8:\$A\$12,"Februari"\)$/);assert.equal(sum.getCell(6,10).value,'Bruto Jan');assert.equal(sum.getCell(6,21).value,'Bruto Des');
+ assert.equal(typeof sum.getCell(7,11).value,'number','kolom per bulan sheet NIK = nilai (bukan SUMIFS, file lebih ringan)');assert.equal(sum.getCell(6,10).value,'Bruto Jan');assert.equal(sum.getCell(6,21).value,'Bruto Des');
  assert.equal(sum.getCell(6,10).fill.fgColor.argb,'FFBDD7EE');assert.equal(sum.getCell(7,10).border.left.style,'thin');
 
  // NIK salah ketik di nomor urut: baris # diurutkan tepat di atas NIK benarnya, diwarnai berbeda, dan masuk sheet Pembetulan.
@@ -103,7 +103,7 @@ module.exports=async function(){
  assert.equal(rk2.getCell(10,6).value.formula,'COUNTIFS(Pembetulan!$A:$A,$A10,Pembetulan!$Q:$Q,"<>")');assert.equal(rk2.getCell(10,6).value.result,1);assert.equal(rk2.getCell(10,5).value.result,1);assert(rk2.getCell(10,7).value.formula.includes('COUNTIFS(Pembetulan!$A:$A,$A10,Pembetulan!$Q:$Q,"Belum")'));
  assert.equal(a.find('BP-FEB-3').getCell(a.h.get('Dilaporkan di SPT')).value,'Belum');
  {const lia=a.w.getWorksheet('L-IA');let head=0;lia.eachRow((r,n)=>{if(!head&&r.getCell(1).value==='Masa')head=n;});const hm=report.headerMap(lia,head),nc=hm.get('Catatan Pembetulan'),no=hm.get('Nomor Bukti Potong')||[...hm].find(([k])=>/NOMOR BUKTI/i.test(k))[1];
-  let feb3=null;lia.eachRow((r,n)=>{if(n>head&&r.getCell(no).value==='BP-FEB-3')feb3=r;});assert(nc,'kolom Catatan Pembetulan ada');lia.eachRow((r,n)=>{if(n>head)r.eachCell((c,i)=>{if(i!==nc)assert.notEqual(c.font&&c.font.color&&c.font.color.argb,'FFC00000','sel L-IA baris '+n+' kolom '+i+' ikut merah (gaya bersama ExcelJS)');});});assert.equal(feb3.getCell(nc).value.result,'DIBETULKAN · belum dilaporkan di SPT');assert(feb3.getCell(nc).value.formula.startsWith('IFERROR(')&&feb3.getCell(nc).value.formula.includes('INDEX(Pembetulan!$L:$L,MATCH('));}
+  let feb3=null;lia.eachRow((r,n)=>{if(n>head&&r.getCell(no).value==='BP-FEB-3')feb3=r;});assert(nc,'kolom Catatan Pembetulan ada');lia.eachRow((r,n)=>{if(n>head)r.eachCell((c,i)=>{if(i!==nc)assert.notEqual(c.font&&c.font.color&&c.font.color.argb,'FFC00000','sel L-IA baris '+n+' kolom '+i+' ikut merah (gaya bersama ExcelJS)');});});assert.equal(feb3.getCell(nc).value,'DIBETULKAN · belum dilaporkan di SPT','Catatan Pembetulan = nilai (bukan rumus)');}
  assert.match(rk2.getCell(5,1).value,/dicek 05\/11\/2026 10:00\): 1 NIK · 1 bukti potong/);assert.equal(rk2.getCell(6,1).value,'SPT Masa yang perlu dibetulkan: Februari.');
  assert.equal(a.w.worksheets.reduce((s,x)=>s+Object.keys(x._merges||{}).length,0),0);
  let parsed=await amendLib.readTargets(fs.readFileSync(nr.file));
