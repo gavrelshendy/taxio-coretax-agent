@@ -33,7 +33,7 @@ module.exports = async () => {
     assert(s, 'sheet e-Bupot vs SPT dibuat');
     assert.deepEqual(out.worksheets.map((w) => w.name), ['Pembetulan', report.SL_NAME]);
     const ph = report.headerMap(p, 4), sh = report.headerMap(s, 4);
-    assert.deepEqual([...ph.keys()].sort(), report.PB_COLS.map((c) => c[0]).sort(), 'kolom selisih dihapus dari Pembetulan, Tindakan ditambahkan');
+    assert.deepEqual([...ph.keys()], report.PB_COLS.map((c) => c[0]), 'susunan kolom terbaru: tanpa kolom selisih / Tanggal / Kode Objek, Jenis di sebelah Tindakan');
     const rows = (ws, h) => { const m = new Map(); ws.eachRow((r, n) => { if (n > 4) m.set(r.getCell(h.get('Nomor Bukti Potong')).value, (k) => r.getCell(h.get(k)).value); }); return m; };
     const P = rows(p, ph), S = rows(s, sh);
     assert.deepEqual([...P.keys()].sort(), ['N-1', 'W-1', 'Z-1'], 'Pembetulan: identitas + pembatalan saja');
