@@ -91,6 +91,13 @@ module.exports = async () => {
     assert.deepEqual([8, 9, 10].map((r) => eff(r).result), ['2222222222220012', '1111111111110012', '9990000000999000'], 'NIK sementara tidak dialihkan lewat kolom ini');
     assert.match(eff(8).formula, /^IF\(ISNA\(MATCH\(\$E8,Pembetulan!\$B:\$B,0\)\),\$C8&"",/);
 
+    // Membaca BPMP setahun: 4 masa sekaligus, hasil tetap urut masa, setiap baris diberi _masa.
+    let open = 0, peak = 0;
+    const fakeS = { list: async (ep, code) => { open++; peak = Math.max(peak, open); await new Promise((r) => setTimeout(r, 20)); open--; return [{ WithholdingSlipsNumber: 'X' + code }]; } };
+    const yr = await amend.listYear(fakeS, '2026');
+    assert.equal(peak, 4, 'paling banyak 4 permintaan bersamaan');
+    assert.deepEqual(yr.map((rows) => rows[0].WithholdingSlipsNumber + ':' + rows[0]._masa), Array.from({ length: 12 }, (_, i) => 'X' + String(i + 1).padStart(2, '0').repeat(2) + '2026:' + (i + 1)));
+
     // Tabel lampiran dibaca lalu ditulis ulang ExcelJS: tanpa fixTables jadi headerRowCount="0" + autoFilter (Excel "Removed
     // Records: AutoFilter from /xl/tables/table1.xml"). fixTables memulihkan baris judulnya.
     const tb = new ExcelJS.Workbook(), ws = tb.addWorksheet('L-IA'), tf = path.join(dir, 'table.xlsx');
