@@ -184,7 +184,9 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
     const save = () => fs.writeFileSync(path.join(outDir, 'hasil.json'), JSON.stringify(results, null, 1));
     try {
         const all = [];
-        for (let m = 1; m <= 12; m++) { const mm = String(m).padStart(2, '0'); all.push(...await s.list('getebupotmpissued', mm + mm + year)); }
+        // Membaca 12 masa bisa lebih dari semenit: tulis kemajuannya supaya tidak tampak macet.
+        emit('Membaca BPMP Telah Terbit ' + year + ' (Januari-Desember) dari Coretax...');
+        for (let m = 1; m <= 12; m++) { const mm = String(m).padStart(2, '0'); const got = await s.list('getebupotmpissued', mm + mm + year); all.push(...got); emit('  masa ' + mm + '/' + year + ': ' + got.length + ' BPMP'); }
         // Isian per bukti potong (sheet Pembetulan, t.number) didahulukan: bukti potong itu tidak ikut isian per NIK
         // (satu NIK bisa dipakai dua orang - mis. sebagian BPMP ber-NIK A sebenarnya milik B).
         // exclude: Tindakan Biarkan / Batalkan di sheet Pembetulan - tidak ikut diganti NIK-nya.
