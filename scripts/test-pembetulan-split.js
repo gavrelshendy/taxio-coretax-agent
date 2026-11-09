@@ -98,6 +98,33 @@ module.exports = async () => {
     assert.equal(peak, 4, 'paling banyak 4 permintaan bersamaan');
     assert.deepEqual(yr.map((rows) => rows[0].WithholdingSlipsNumber + ':' + rows[0]._masa), Array.from({ length: 12 }, (_, i) => 'X' + String(i + 1).padStart(2, '0').repeat(2) + '2026:' + (i + 1)));
 
+    // run(): hanya isian per bukti potong -> diambil per nomor (tanpa membaca setahun); nomor yang tidak ketemu di masanya
+    // atau ada isian sheet NIK -> baca setahun. Mode uji (submit=false): tidak ada yang dikirim.
+    const slip = (no, nik, masa) => ({ WithholdingSlipsNumber: no, TaxIdentificationNumber: nik, RecordId: 'rec-' + no, TaxPeriodCode: String(masa).padStart(2, '0').repeat(2) + '2026', Name: 'P', GrossIncome: 1000 });
+    const coretax = [slip('A-4', '1111111111110012', 4), slip('A-5', '1111111111110012', 5), slip('E-4', '1111111111110012', 4), slip('D-6', '2222222222220012', 6)];
+    const fake = () => {
+        const calls = { list: 0, find: [], amend: 0 };
+        return { calls, s: {
+            list: async (ep, code) => { calls.list++; return coretax.filter((r) => r.TaxPeriodCode === code); },
+            find: async (ep, code, no) => { calls.find.push(code + ':' + no); return coretax.find((r) => r.TaxPeriodCode === code && r.WithholdingSlipsNumber === no) || null; },
+            lookup: async () => ({ payload: { Name: 'AYU', TaxpayerType: 'OP' } }),
+            post: async (url, body) => { if (/amend/.test(url)) calls.amend++; const r = coretax.find((x) => x.RecordId === body.RecordId); return { status: 200, json: { Payload: { Result: { ...r, WithholdingSlipsStatus: 'NORMAL' } } } }; },
+            close: async () => {} } };
+    };
+    const outDir = path.join(dir, 'run');
+    const per = (no, masa) => ({ temp: false, old: '1111111111110012', newNik: '2222222222220012', newName: 'AYU', number: no, masa });
+    let f1 = fake(), r1 = await amend.run({ session: f1.s, targets: [per('A-4', 4), per('A-5', 5), per('D-6', 6)], year: '2026', submit: false, outDir });
+    assert.equal(f1.calls.list, 0, 'per nomor saja: tidak membaca setahun');
+    assert.deepEqual(f1.calls.find, ['04042026:A-4', '05052026:A-5', '06062026:D-6']);
+    assert.deepEqual(r1.map((x) => x.number + ':' + x.status), ['A-4:SIAP (uji, tidak dikirim)', 'A-5:SIAP (uji, tidak dikirim)'], 'D-6 sudah ber-NIK baru: dilewati');
+    assert.equal(f1.calls.amend, 0, 'mode uji tidak mengirim');
+    let f2 = fake(), r2 = await amend.run({ session: f2.s, targets: [per('A-4', 4), per('A-5', 7)], year: '2026', submit: false, outDir });
+    assert.equal(f2.calls.list, 12, 'nomor tidak ada di masanya: baca setahun');
+    assert.deepEqual(r2.map((x) => x.number), ['A-4', 'A-5'], 'A-5 tetap ketemu lewat pembacaan setahun');
+    let f3 = fake(), r3 = await amend.run({ session: f3.s, targets: [{ temp: false, old: '1111111111110012', newNik: '2222222222220012', newName: 'AYU' }, per('A-4', 4)], exclude: new Set(['E-4']), year: '2026', submit: false, outDir });
+    assert.equal(f3.calls.list, 12, 'ada isian sheet NIK: baca setahun');
+    assert.deepEqual(r3.map((x) => x.number).sort(), ['A-4', 'A-5'], 'E-4 (Biarkan) tidak ikut; A-4 sekali saja');
+
     // Tabel lampiran dibaca lalu ditulis ulang ExcelJS: tanpa fixTables jadi headerRowCount="0" + autoFilter (Excel "Removed
     // Records: AutoFilter from /xl/tables/table1.xml"). fixTables memulihkan baris judulnya.
     const tb = new ExcelJS.Workbook(), ws = tb.addWorksheet('L-IA'), tf = path.join(dir, 'table.xlsx');

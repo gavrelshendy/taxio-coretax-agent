@@ -78,7 +78,9 @@ async function readTargets(source) {
             if (!newName) { skipped.push(number + ': Nama Baru kosong.'); return; }
             if (!/^\d{16}$/.test(old)) { skipped.push(number + ': NIK di Bukti Potong "' + slipNik + '" tidak terbaca - harus sama dengan NIK di Coretax.'); return; }
             if (newNik === old) return;
-            targets.push({ temp, old, newNik, newName, number });
+            // Masa dari Excel: bukti potong bisa diambil langsung per nomor (tanpa membaca setahun).
+            const masa = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'].indexOf(String(text(g(row, 'Masa')) || '').trim()) + 1;
+            targets.push({ temp, old, newNik, newName, number, masa: masa || null });
         });
     }
     // Hasil pembetulan sebelumnya (sheet "Pembetulan", lib/bpmp-report.js) - untuk melanjutkan tanpa mengulang.
@@ -203,16 +205,31 @@ function nameMatch(excelName, coretaxName) {
 /** Uji (submit=false) atau kirim pembetulan untuk `targets`. Mengembalikan baris hasil per bukti potong.
  *  allowSimilar: nama 'similar' (lihat nameMatch) ikut dikirim, dengan nama resmi Coretax. previous: hasil
  *  pembetulan sebelumnya dari Excel, hanya untuk pesan - yang dicari tetap bukti potong yang MASIH ber-NIK lama. */
-async function run({ context, npwp, targets, year, submit, outDir, allowSimilar = false, previous = new Map(), exclude = new Set(), emit = () => {} }) {
+async function run({ context, npwp, targets, year, submit, outDir, allowSimilar = false, previous = new Map(), exclude = new Set(), emit = () => {}, session = null }) {
     fs.mkdirSync(outDir, { recursive: true });
-    const s = await openSession(context, npwp);
+    const s = session || await openSession(context, npwp);
     const results = [], checked = new Map();
     const save = () => fs.writeFileSync(path.join(outDir, 'hasil.json'), JSON.stringify(results, null, 1));
     try {
         const all = [];
         // Membaca 12 masa bisa lebih dari semenit: tulis kemajuannya supaya tidak tampak macet.
-        emit('Membaca BPMP Telah Terbit ' + year + ' (Januari-Desember) dari Coretax...');
-        for (const rows of await listYear(s, year, emit)) all.push(...rows);
+        // Hanya isian per bukti potong (nomor + masa dari Excel): ambil nomor itu saja. Ada isian sheet NIK (NIK lama bisa
+        // ada di masa mana pun, termasuk bukti potong yang terbit sesudah rekap dibuat) atau ada nomor yang tidak ketemu
+        // di masanya: baca setahun - lebih lama, tetapi tidak ada yang terlewat.
+        const direct = targets.length && targets.every((t) => t.number && t.masa);
+        let readYear = !direct;
+        if (direct) {
+            emit('Mengambil ' + targets.length + ' bukti potong langsung dari Coretax (per nomor, tanpa membaca setahun)...');
+            for (const t of targets) {
+                const mm = String(t.masa).padStart(2, '0'), r = await s.find('getebupotmpissued', mm + mm + year, t.number);
+                if (r) all.push(r); else { emit(t.number + ': tidak ada di BPMP Telah Terbit masa ' + mm + '/' + year + ' - membaca setahun untuk memastikan.'); readYear = true; break; }
+            }
+        }
+        if (readYear) {
+            all.length = 0;
+            emit('Membaca BPMP Telah Terbit ' + year + ' (Januari-Desember) dari Coretax...');
+            for (const rows of await listYear(s, year, emit)) all.push(...rows);
+        }
         // Isian per bukti potong (sheet Pembetulan, t.number) didahulukan: bukti potong itu tidak ikut isian per NIK
         // (satu NIK bisa dipakai dua orang - mis. sebagian BPMP ber-NIK A sebenarnya milik B).
         // exclude: Tindakan Biarkan / Batalkan di sheet Pembetulan - tidak ikut diganti NIK-nya.
@@ -271,7 +288,7 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
                 if (!ok) throw new Error(label + ': verifikasi sesudah kirim tidak sesuai');
             }
         }
-    } catch (e) { e.results = results; throw e; } finally { save(); await s.close(); }
+    } catch (e) { e.results = results; throw e; } finally { save(); if (!session) await s.close(); }
     return results;
 }
 
