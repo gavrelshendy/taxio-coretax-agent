@@ -59,7 +59,8 @@ async function readTargets(source) {
             if (n <= hr) return;
             const number = String(text(g(row, 'Nomor Bukti Potong')) || '').trim(); if (!number) return;
             const slipNik = String(text(g(row, 'NIK di Bukti Potong')) || '').trim(), temp = slipNik === TEMP;
-            const old = temp ? String(text(g(row, 'NIK Lama (dari #)')) || '').trim() : slipNik;
+            // NIK sementara tanpa "#NIK lama" di nama (NIK asli sama sekali tidak bisa dipakai): dikenali dari nomornya saja.
+            const old = temp ? (String(text(g(row, 'NIK Lama (dari #)')) || '').trim() || TEMP) : slipNik;
             const status = String(text(g(row, 'Status')) || ''), tind = String(text(g(row, 'Tindakan')) || '').trim();
             // Tindakan: Biarkan = bukti potong ini dilewati (juga oleh isian sheet NIK); Batalkan = dibatalkan sesudah konfirmasi.
             if (tind === 'Biarkan') { exclude.add(number); return; }
