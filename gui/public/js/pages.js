@@ -537,7 +537,7 @@
                 if (!st.file || !st.file.filePath) { alert('Use the latest rekap or pick the file from its folder first.'); return false; }
                 if (st.refreshing) return false;
                 try {
-                    const r = await P.post('/api/actions/a1-refresh', { filePath: st.file.filePath }); P.run.poll();
+                    const r = await P.post('/api/actions/a1-refresh', { filePath: st.file.filePath, entity: api.entity() }); P.run.poll();
                     // Tombol "Memperbarui…" sampai prosesnya selesai (sekitar 1 menit) - klik berulang tidak memulai proses kedua.
                     st.refreshing = true; api.redraw();
                     const key = r && r.session;

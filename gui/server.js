@@ -965,7 +965,12 @@ async function handleA1Refresh(req, res) {
     const file = String((body && body.filePath) || '');
     if (!/\.xlsx$/i.test(file) || !fs.existsSync(file)) return sendJson(res, 400, { error: 'Pilih Excel rekap (.xlsx) yang ada di disk - "Use latest rekap" atau pilih file dari folder.' });
     try { fs.closeSync(fs.openSync(file, 'r+')); } catch (e) { return sendJson(res, 409, { error: 'Excel rekap sedang terbuka - tutup dulu di Excel, lalu klik Perbarui rekap lagi.' }); }
-    try { runcontrol.start('Refresh rekap · ' + path.basename(file)); }
+    // Di sesi entitas yang dipilih (kunci PIC + tag entitas, sama dengan sessionOf): log ber-tag [kode] dan tampil di
+    // "This session"; Pembetulan ke Coretax di sesi yang sama menunggu sampai rekap selesai disusun.
+    const ent = body && body.entity;
+    const session = !ent ? undefined : ent.project === 'manual' ? { ...MANUAL_SESSION, tag: String(ent.entity_id || 'Manual').slice(0, 16) }
+        : ent.pic_id ? { key: ent.pic_id, tag: String(String(ent.entity_id || '').startsWith('local:') ? String(ent.entity_name || 'Lokal').split(/[\s,]+/)[0] : ent.entity_id || '').slice(0, 16) } : undefined;
+    try { runcontrol.start('Refresh rekap · ' + path.basename(file), session); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     try {
