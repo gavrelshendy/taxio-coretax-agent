@@ -71,8 +71,7 @@ module.exports = async function () {
     assert.match(v('MP-2', 'Keterangan'), /NIK 9990000000999000 → 2222222222220001/);
     const l3 = wb.getWorksheet('L-III'); let head = 0; l3.eachRow((r, n) => { if (!head && r.getCell(1).value === 'Masa') head = n; });
     const lh = report.headerMap(l3, head), note = (no) => { let x = null; l3.eachRow((r, n) => { if (n > head && r.getCell(lh.get('Nomor Bukti Potong')).value === no) x = r.getCell(lh.get('Catatan Pembetulan')).value; }); return x; };
-    assert.match(note('21-1').result, /^Berubah sesudah SPT dilaporkan/); assert.match(note('21-2').result, /^Tidak ada lagi di e-Bupot BP21/);
-    assert.match(note('21-1').formula, /'e-Bupot vs SPT'!\$/);
+    assert.match(note('21-1'), /^Berubah sesudah SPT dilaporkan/); assert.match(note('21-2'), /^Tidak ada lagi di e-Bupot BP21/);
     const rk = wb.getWorksheet('Ringkasan'); assert.equal(rk.getCell(11, 5).value.result, 1, 'Maret (baris 11, di bawah kop): hanya MP-2 di Pembetulan');
 
     // SPT Maret dibetulkan -> rekap baru sama dengan e-Bupot -> "Sudah sama", Dilaporkan = Ya, tetap tercatat.

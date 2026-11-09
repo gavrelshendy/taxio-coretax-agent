@@ -509,7 +509,7 @@
             const step = (n, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + n + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
             // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (<kode> <tahun> - Rekap SPT PPh 21 Setahun (A1).xlsx).
             return P.card(1, 'Rekap Excel', '<span>Output of the "Full-year download" tab</span>', '<div class="hint" style="font-size:13.5px">No template needed: use the Excel from the <b>Full-year download</b> tab (<b>… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx</b>). In the <b>NIK</b> sheet, wrong NIKs are highlighted yellow (filter the <b>Kategori</b> column) and the green <b>NIK Baru</b> / <b>Nama Baru</b> columns are pre-filled with suggestions where available - check them against the KTP, fill in the blanks, save, then select the file here. Rows with empty green columns are left untouched.</div>'
-                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Use latest rekap (' + st.year + ')</button><button type="button" class="btn btn-sm" data-act="nik-refresh"' + (st.file && st.file.filePath ? '' : ' disabled') + ' title="Rebuild this rekap from the file itself (no Coretax): sheet NIK and Draft SPT Desember follow the latest Pembetulan inputs, e.g. a NIK salah gets its own row. Close the file in Excel first.">' + P.icon('retry', 15) + 'Perbarui rekap</button></div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Use latest rekap (' + st.year + ')</button><button type="button" class="btn btn-sm" data-act="nik-refresh"' + (st.file && st.file.filePath && !st.refreshing ? '' : ' disabled') + ' title="Rebuild this rekap from the file itself (no Coretax): sheet NIK and Draft SPT Desember follow the latest Pembetulan inputs, e.g. a NIK salah gets its own row. Close the file in Excel first.">' + P.icon('retry', 15) + (st.refreshing ? 'Memperbarui… (±1 menit)' : 'Perbarui rekap') + '</button></div>'
                     + (st.latestError ? '<div class="hint warn">' + esc(st.latestError) + '</div>' : '')
                     + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…or select another rekap Excel</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>')
                 + P.card(2, 'Tax Year', '<span>Looks up this year\'s Telah Terbit BPMP Bukti Potong</span>', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
@@ -535,7 +535,17 @@
             }
             if (act === 'nik-refresh') {
                 if (!st.file || !st.file.filePath) { alert('Use the latest rekap or pick the file from its folder first.'); return false; }
-                try { await P.post('/api/actions/a1-refresh', { filePath: st.file.filePath }); P.run.poll(); } catch (e) { alert(e.message); }
+                if (st.refreshing) return false;
+                try {
+                    const r = await P.post('/api/actions/a1-refresh', { filePath: st.file.filePath }); P.run.poll();
+                    // Tombol "Memperbarui…" sampai prosesnya selesai (sekitar 1 menit) - klik berulang tidak memulai proses kedua.
+                    st.refreshing = true; api.redraw();
+                    const key = r && r.session;
+                    const wait = setInterval(async () => {
+                        try { const s = await P.api('/api/run/status' + (key ? '?session=' + encodeURIComponent(key) : '')); if (s && s.active) return; } catch (e) { /* coba lagi */ }
+                        clearInterval(wait); st.refreshing = false; api.redraw();
+                    }, 2000);
+                } catch (e) { alert(e.message); }
                 return false;
             }
             if (act === 'year') { st.year = Number(d.val); return true; }
