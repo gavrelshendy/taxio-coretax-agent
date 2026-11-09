@@ -61,12 +61,14 @@ module.exports = async () => {
     prow({ Masa: 'April', 'Nomor Bukti Potong': 'S-1', 'NIK di Bukti Potong': '1111111111110009', 'NIK Baru': '2222222222220009', 'Nama Baru': 'IRA', Status: 'Draft' });
     prow({ Masa: 'Mei', 'Nomor Bukti Potong': 'S-2', 'NIK di Bukti Potong': '1111111111110009', 'NIK Baru': '2222222222220009', 'Nama Baru': 'IRA', Status: 'DIBETULKAN' });
     prow({ Masa: 'Mei', 'Nomor Bukti Potong': 'S-3', 'NIK di Bukti Potong': '1111111111110007', 'NIK Baru': { formula: 'NIK!$D$7', result: '2222222222220007' }, 'Nama Baru': 'GITA S', Status: 'Draft' });
+    // NIK sementara tanpa "#NIK lama" (NIK asli sama sekali tidak bisa dipakai): isian per bukti potong tetap jadi target.
+    prow({ Masa: 'Maret', 'Nomor Bukti Potong': 'T-1', 'NIK di Bukti Potong': '9990000000999000', 'Nama di Bukti Potong': 'PENERIMA PENGHASILAN', 'NIK Baru': '2222222222220014', 'Nama Baru': 'LISA', Tindakan: 'Ganti NIK' });
     prow({ Masa: 'Juni', 'Nomor Bukti Potong': 'S-4', 'NIK di Bukti Potong': '1111111111110007', Tindakan: 'Biarkan', Status: 'Draft' });
     prow({ Masa: 'Juli', 'Nomor Bukti Potong': 'S-5', 'NIK di Bukti Potong': '1111111111110010', 'Nama di Bukti Potong': 'JOJO', Tindakan: 'Batalkan', 'Penghasilan Bruto (Rp)': 500 });
     prow({ Masa: 'Juli', 'Nomor Bukti Potong': 'S-6', 'NIK di Bukti Potong': '1111111111110011', Tindakan: 'Batalkan', Status: 'Dibatalkan oleh Pilot · 07/11/2026 10:00' });
     await tw.xlsx.writeFile(tfile);
     const tg = await amend.readTargets(tfile);
-    assert.deepEqual(tg.targets.map((x) => (x.number || '-') + ':' + x.old + '>' + x.newNik), ['-:1111111111110007>2222222222220007', 'S-1:1111111111110009>2222222222220009']);
+    assert.deepEqual(tg.targets.map((x) => (x.number || '-') + ':' + x.old + '>' + x.newNik + (x.temp ? ':temp' : '')), ['-:1111111111110007>2222222222220007', 'S-1:1111111111110009>2222222222220009', 'T-1:9990000000999000>2222222222220014:temp']);
     assert.match(tg.skipped.join(' '), /NIK "0".*per bukti potong di sheet Pembetulan/);
     // Tindakan: Biarkan / Batalkan tidak ikut diganti NIK-nya (juga oleh isian sheet NIK); Batalkan = daftar pembatalan (yang
     // sudah dibatalkan tidak diulang).
@@ -86,10 +88,14 @@ module.exports = async () => {
     assert.equal(ep.getCell(5, epc('Jenis')).value, 'NIK salah');
     assert.equal(ep.getCell(5, epc('Tindakan')).dataValidation.formulae[0], '"Ganti NIK,Batalkan,Biarkan"');
     assert.equal(ep.getCell(30, 1).protection.locked, false, 'baris cadangan terbuka');
-    assert.equal(report.refreshEffNik(ew), 1);
+    assert.equal(report.refreshEffNik(ew), 2);
     const eff = (r) => el.getCell(r, 6).value;
-    assert.deepEqual([8, 9, 10].map((r) => eff(r).result), ['2222222222220012', '1111111111110012', '9990000000999000'], 'NIK sementara tidak dialihkan lewat kolom ini');
+    assert.deepEqual([8, 9, 10].map((r) => eff(r).result), ['2222222222220012', '1111111111110012', '2222222222220013'], 'NIK salah dan NIK sementara (Ganti NIK) dialihkan ke NIK Baru; bukti potong lain tidak');
     assert.match(eff(8).formula, /^IF\(ISNA\(MATCH\(\$E8,Pembetulan!\$B:\$B,0\)\),\$C8&"",/);
+    // Sesudah SPT dibetulkan dan diunduh ulang, L-IA sudah ber-NIK lain dari "NIK di Bukti Potong" Pembetulan: tidak dialihkan lagi.
+    el.getCell(10, 3).value = '3333333333330013';
+    report.refreshEffNik(ew);
+    assert.equal(eff(10).result, '3333333333330013');
 
     // Membaca BPMP setahun: 4 masa sekaligus, hasil tetap urut masa, setiap baris diberi _masa.
     let open = 0, peak = 0;
