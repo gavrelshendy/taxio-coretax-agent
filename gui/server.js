@@ -1442,6 +1442,8 @@ function createGuiServer(port) {
             if (pathname === '/events' && req.method === 'GET') return handleEvents(req, res);
             if (pathname === '/api/session' && req.method === 'GET') return sendJson(res, 200, sessionSummary());
             if (pathname === '/api/version' && req.method === 'GET') return sendJson(res, 200, Object.assign({ version: pkg.version }, updater.getOutdatedInfo()));
+            // MCP (mcp/taxio-pilot-mcp.js) membaca log Pilot yang SEDANG berjalan - exe bisa dijalankan dari folder lain.
+            if (pathname === '/api/log-file' && req.method === 'GET') return sendJson(res, 200, { path: LOG_FILE });
             if (pathname === '/api/connect' && req.method === 'POST') return handleConnect(req, res);
             if (pathname === '/api/disconnect' && req.method === 'POST') return handleDisconnect(req, res);
             if (pathname === '/api/entities' && req.method === 'GET') return handleEntities(req, res, url.searchParams.get('mode'));
