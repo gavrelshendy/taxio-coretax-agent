@@ -384,9 +384,9 @@ function buildBillingFilename(entityCode, mmYY) {
  *  deep-link path discards the whole result, only checking .catch()). */
 function saveBillingPdf(entity, mmYY, buffer, saveRoot, compFolder) {
     const root = saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
-    const saveDir = path.join(root, entity.entity_id, 'PPh25');
+    const saveDir = path.join(root, require('../lib/entity-folder').folderCode(entity), 'PPh25');
     fs.mkdirSync(saveDir, { recursive: true });
-    const filePath = path.join(saveDir, buildBillingFilename(entity.entity_id, mmYY));
+    const filePath = path.join(saveDir, buildBillingFilename(require('../lib/entity-folder').folderCode(entity), mmYY));
     fs.writeFileSync(filePath, buffer);
     if (compFolder) {
         try {

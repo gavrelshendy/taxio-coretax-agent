@@ -36,3 +36,7 @@ assert(validA1Year(dl.a1_year) && validA1Year('2025') && !validA1Year('2024') &&
 assert(validA1Folder(dl.a1_folder) && validA1Folder('C:\\X\\2026\\A1 Preparation\\'), 'folder A1 sah');
 assert(!validA1Folder('C:\\Windows') && !validA1Folder('A1 preparation') && !validA1Folder(''), 'folder lain ditolak');
 console.log('deep link mode-a1 ok');
+
+// Entitas lokal (id 'local:...'): folder memakai nama entitas, tanpa titik dua (mkdir Windows gagal).
+{ const p2 = a1Paths({ entity: { entity_id: 'local:le_abc', entity_name: 'Contoh Lokal, PT' }, year: '2026', root: 'C:\\x' }); require('assert').equal(p2.localDir, require('path').join('C:\\x', 'Contoh Lokal, PT', 'SPT', 'A1', '2026')); require('assert').ok(!/:/.test(p2.localDir.slice(2))); console.log('local entity folder ok'); }
+
