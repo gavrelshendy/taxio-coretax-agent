@@ -1162,6 +1162,82 @@ async function handleKonsepDownload(req, res) {
     } finally { runcontrol.finish(); await require('../lib/html-to-pdf').closeRenderer().catch(() => {}); }
 }
 
+/** BPMP Telah Terbit: cari, ubah isian (PTKP / bruto / tarif / posisi), batalkan - lib/ebupot-edit.js. Cari dan pratinjau
+ *  menjawab langsung (hanya membaca); kirim dan batal berjalan di latar dan hanya dengan kode konfirmasi pratinjau. */
+async function handleEbupotEdit(req, res, kind) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Ubah / batal BPMP tidak tersedia untuk pengguna Restricted.' });
+    if ((kind === 'amend' || kind === 'cancel') && !body.token) return sendJson(res, 400, { error: 'Kode konfirmasi pratinjau wajib - jalankan pratinjau dulu.' });
+    if (body.filePath && !fs.existsSync(String(body.filePath))) return sendJson(res, 400, { error: 'File revisi tidak ditemukan: ' + body.filePath });
+    const ed = require('../lib/ebupot-edit');
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    const npwp = entity.project === 'manual' ? null : entity.npwp;
+    const input = { npwp, type: body.type || 'mp', issued: body.issued !== false, period: body.period, nik: body.nik, name: body.name, numbers: body.numbers, detail: !!body.detail, changes: body.changes, filePath: body.filePath, token: body.token };
+    const title = { find: 'Find BPMP', 'amend-preview': 'BPMP amend preview', amend: 'BPMP amend', 'cancel-preview': 'BPMP cancel preview', cancel: 'BPMP cancel' }[kind];
+    try { runcontrol.start(title + ' · ' + target.label, target.session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    if (kind === 'find' || kind === 'amend-preview' || kind === 'cancel-preview') {
+        try {
+            const page = await target.open();
+            if (kind === 'find') { const r = await ed.find(page, input); log('Cari BPMP ' + r.period + ': ' + r.total + ' bukti potong.'); return sendJson(res, 200, r); }
+            if (kind === 'cancel-preview') { const r = await ed.previewCancel(page, input); log('Pratinjau batal BPMP ' + r.period + ': ' + r.slips.length + ' bukti potong, PPh ' + r.totals.tax.toLocaleString('id-ID') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.'); return sendJson(res, 200, r); }
+            const r = await ed.previewAmend(page, input);
+            log('Pratinjau pembetulan BPMP: ' + r.items.length + ' bukti potong, PPh ' + r.totals.taxBefore.toLocaleString('id-ID') + ' -> ' + r.totals.taxAfter.toLocaleString('id-ID') + (r.notes.length ? ', ' + r.notes.length + ' dilewati' : '') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.');
+            return sendJson(res, 200, r);
+        } catch (e) { log(title + ' gagal: ' + e.message); return sendJson(res, 400, { error: e.message }); }
+        finally { runcontrol.finish(); }
+    }
+    sendJson(res, 202, { started: true, session: runSessionKey() });
+    try {
+        const page = await target.open();
+        if (kind === 'cancel') {
+            const r = await ed.cancel(page, { ...input, emit: (m) => log(m) });
+            const ok = r.done.filter((x) => x.ok).length;
+            log('SELESAI: ' + ok + ' BPMP dibatalkan' + (r.done.length > ok ? ', 1 gagal (proses berhenti) - batalkan manual di e-Bupot' : '') + '.' + (r.reported ? ' Ada yang sudah dilaporkan di SPT - SPT Masa perlu dibetulkan.' : ''));
+        } else {
+            const outDir = path.join(body.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder || 'Manual', 'Pembetulan BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
+            log('Pembetulan BPMP (PTKP / bruto / tarif / posisi) - cadangan di ' + outDir);
+            const r = await ed.amend(page, { ...input, outDir, emit: (m) => log(m) });
+            log('SELESAI: ' + r.results.filter((x) => x.status === 'DIBETULKAN').length + ' BPMP dibetulkan.' + (r.periodsReported.length ? ' Sudah dilaporkan di SPT masa ' + r.periodsReported.join(', ') + ' - buat pembetulan SPT Masa PPh 21.' : ' Posting ulang Konsep SPT sebelum lapor.'));
+        }
+    } catch (e) {
+        if (e && e.isStop) log(title + ' dihentikan oleh pengguna.'); else log('GAGAL: ' + title + ' - ' + e.message);
+    } finally { runcontrol.finish(); }
+}
+
+/** Rekam API Coretax (lib/coretax-recorder.js) selama `minutes` menit (atau sampai Stop) di jendela PIC entitas: pengguna
+ *  mengerjakan aksinya sendiri di Coretax; hasilnya (tanpa token / passphrase) menjadi dasar otomasi jenis baru. */
+async function handleCoretaxRecord(req, res) {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    const minutes = Math.min(30, Math.max(1, Number(body.minutes) || 10));
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    try { runcontrol.start('Record Coretax API · ' + target.label, target.session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    const file = path.join(os.homedir(), 'Downloads', 'CoretaxAgent', target.folder || 'Manual', 'Rekaman API', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + (body.note ? ' ' + String(body.note).replace(/[\\/:*?"<>|]/g, ' ').slice(0, 40) : '') + '.json');
+    sendJson(res, 202, { started: true, session: runSessionKey(), file });
+    let rec = null;
+    try {
+        const page = await target.open();
+        rec = require('../lib/coretax-recorder').start(page.context(), file, (m) => log(m));
+        log('MEREKAM ' + minutes + ' menit: kerjakan aksinya di jendela Coretax ini (mis. Ubah / Batal satu bukti potong), lalu klik Stop. Passphrase dan token tidak disimpan.');
+        const until = Date.now() + minutes * 60000;
+        while (Date.now() < until) { const run = runcontrol.current(); if (run && run.stopRequested) break; await new Promise((r) => setTimeout(r, 1000)); }
+    } catch (e) { log('Rekam gagal: ' + e.message); }
+    finally {
+        if (rec) { const r = await rec.stop(); log('SELESAI: ' + r.count + ' permintaan terekam -> ' + r.file); }
+        runcontrol.finish();
+    }
+}
+
 /** Penyisiran saja (tanpa Excel, tanpa mengubah apa pun): masih ada NIK bermasalah di BPMP Telah Terbit tahun ini? */
 async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
     if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Pilih tahun pajak dulu.' });
@@ -1467,6 +1543,12 @@ function createGuiServer(port) {
             if (pathname === '/api/actions/create-konsep' && req.method === 'POST') return handleCreateKonsep(req, res);
             if (pathname === '/api/actions/konsep-download' && req.method === 'POST') return handleKonsepDownload(req, res);
             if (pathname === '/api/ebupot/issue-preview' && req.method === 'POST') return handleIssuePreview(req, res);
+            if (pathname === '/api/ebupot/find' && req.method === 'POST') return handleEbupotEdit(req, res, 'find');
+            if (pathname === '/api/ebupot/amend-preview' && req.method === 'POST') return handleEbupotEdit(req, res, 'amend-preview');
+            if (pathname === '/api/ebupot/cancel-preview' && req.method === 'POST') return handleEbupotEdit(req, res, 'cancel-preview');
+            if (pathname === '/api/actions/ebupot-amend' && req.method === 'POST') return handleEbupotEdit(req, res, 'amend');
+            if (pathname === '/api/actions/ebupot-cancel' && req.method === 'POST') return handleEbupotEdit(req, res, 'cancel');
+            if (pathname === '/api/actions/coretax-record' && req.method === 'POST') return handleCoretaxRecord(req, res);
             if (pathname === '/api/actions/issue-ebupot' && req.method === 'POST') return handleIssueEbupot(req, res);
             if (pathname === '/api/a1/inspect' && req.method === 'POST') return handleA1Inspect(req, res);
             if (pathname === '/api/bpmp-amend/preview' && req.method === 'POST') return handleBpmpAmendPreview(req, res);
