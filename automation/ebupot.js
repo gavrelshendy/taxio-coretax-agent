@@ -489,8 +489,8 @@ async function runEbupotDownload(opts) {
 
         try {
             const saveDir = documentStatus === 'not_issued'
-                ? path.join(saveRoot, entity.entity_id, bupotLabel, 'Belum Terbit', saveSubdir)
-                : path.join(saveRoot, entity.entity_id, bupotLabel, saveSubdir);
+                ? path.join(saveRoot, require('../lib/entity-folder').folderCode(entity), bupotLabel, 'Belum Terbit', saveSubdir)
+                : path.join(saveRoot, require('../lib/entity-folder').folderCode(entity), bupotLabel, saveSubdir);
             const downloadedRefs = new Set();
             let gotCount = 0, rows = [];
             // Mid-run auto-logout recovers transparently here (re-login + resume this same

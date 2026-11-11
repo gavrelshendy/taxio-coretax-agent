@@ -722,7 +722,7 @@ async function runSptDownload(opts) {
     }
     const masaList = isAnnual ? parseAnnualYearListInput(opts.masaInput) : parseMasaListInput(opts.masaInput);
     // Mode A1: rekap ke folder Tax Server entitas bila ada (lib/a1-paths.js); PDF & cache tetap di folder lokal.
-    const a1P = a1Book ? require('../lib/a1-paths').a1Paths({ entity, year: opts.a1Year, root: a1SaveRoot(opts.saveRoot, entity.entity_id), outDir: opts.a1OutDir || undefined }) : null;
+    const a1P = a1Book ? require('../lib/a1-paths').a1Paths({ entity, year: opts.a1Year, root: a1SaveRoot(opts.saveRoot, require('../lib/entity-folder').folderCode(entity)), outDir: opts.a1OutDir || undefined }) : null;
     const saveRoot = a1Book ? a1P.root : (opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'));
     const a1Dir = a1Book ? a1P.outDir : null;
     if (a1Book) { a1Book.cacheDir = a1P.cacheDir; log('Mode A1 - rekap disimpan ke ' + a1Dir + (a1P.taxServer ? ' (folder Tax Server).' : '.')); }
@@ -835,7 +835,7 @@ async function runSptDownload(opts) {
     // cuma untuk jenis SPT Badan) supaya tersedia begitu saja kalau user membuka halaman "view"
     // SPT mana pun secara manual di jendela yang sama setelah run ini - fitur mendeteksi sendiri
     // via URL apakah halaman yang sedang dibuka didukung, jadi aman dipasang tanpa syarat di sini.
-    await lampiran.installLampiranWidget(page, { saveRoot, entityCode: entity.entity_id, compFolder: opts.compFolder, restricted })
+    await lampiran.installLampiranWidget(page, { saveRoot, entityCode: require('../lib/entity-folder').folderCode(entity), compFolder: opts.compFolder, restricted })
         .catch((e) => log('Peringatan: widget Lampiran gagal dipasang: ' + e.message));
 
     const stats = { downloaded: 0, combosDone: 0, combosSkipped: 0, combosEmpty: 0 };
@@ -870,17 +870,17 @@ async function runSptDownload(opts) {
         const emit = (m) => log('[SPT ' + comboLabel + '] ' + m);
         try {
             // Mode A1 dengan folder Tax Server: PDF SPT per masa ke subfolder SPT di folder A1 preparation (nama file memuat masanya).
-            const finalDir = a1Book && a1P.taxServer ? a1P.pdfDir : path.join(saveRoot, entity.entity_id, 'SPT', mmYY);
+            const finalDir = a1Book && a1P.taxServer ? a1P.pdfDir : path.join(saveRoot, require('../lib/entity-folder').folderCode(entity), 'SPT', mmYY);
             if(a1Book)fs.mkdirSync(finalDir,{recursive:true});
             const saveDir = a1Book ? fs.mkdtempSync(path.join(os.tmpdir(),'coretax-a1-')) : finalDir;
             for (let sessionRetries = 0; ; sessionRetries++) {
                 try {
                     const result = await processSptCombo({
-                        page, authState, saveDir, entityCode: entity.entity_id, mmYY, taxTypeCodes, sizeState,
+                        page, authState, saveDir, entityCode: require('../lib/entity-folder').folderCode(entity), mmYY, taxTypeCodes, sizeState,
                         compFolder: opts.compFolder, onRowDone: trackingOnRowDone, signParam, isAnnual, entityName: manual ? '' : entity.entity_name,
                         includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, entityNpwp: entity.npwp, saveRoot,
                         log: emit, a1Book, a1Fresh: !!opts.a1Fresh, finalDir,
-                        a1PdfFallback: a1Book ? [a1P.outDir, path.join(saveRoot, entity.entity_id, 'SPT', mmYY)] : null
+                        a1PdfFallback: a1Book ? [a1P.outDir, path.join(saveRoot, require('../lib/entity-folder').folderCode(entity), 'SPT', mmYY)] : null
                     });
                     if (result.downloadedAny) stats.downloaded++;
                     // foundAny:false ("Tidak ada data untuk filter ini.") sebelumnya cuma
@@ -998,7 +998,7 @@ async function runSptDownload(opts) {
         if(a1Book)await a1Book.renderSession.close().catch(()=>{});
     }
 
-    if(a1Book){const result=await a1Book.save(a1Dir,entity.entity_name,entity.entity_id);require('../lib/a1-autorefresh').own(result.file);
+    if(a1Book){const result=await a1Book.save(a1Dir,entity.entity_name,require('../lib/entity-folder').folderCode(entity));require('../lib/a1-autorefresh').own(result.file);
      // Bukti potong e-Bupot sekarang vs yang terlapor di SPT (lib/ebupot-vs-spt.js); gagal tidak menggagalkan rekapnya.
      if(page&&!stopped){try{await require('../lib/ebupot-vs-spt').run({context:page.context(),npwp:entity.npwp||null,file:result.file,year:opts.a1Year,emit:log});}catch(e){log('Cek e-Bupot vs SPT gagal: '+e.message);}}log('Mode A1: '+result.file+(result.partial?' — BELUM LENGKAP, periksa sheet Ringkasan.':' — selesai.'));if(result.nik&&result.nik.nik)log('Mode A1: '+result.nik.nik+' NIK bermasalah ('+result.nik.bukti+' bukti potong) — lihat sheet NIK (kolom Kategori) dan Pembetulan.');if(result.noA1&&result.noA1.length)log('Mode A1: '+result.noA1.length+' pegawai BPMP-nya berhenti tanpa BPA1 ('+result.noA1.map(p=>p.name+' s.d. '+p.last).join(', ')+') - lihat Ringkasan baris 7.');}
 

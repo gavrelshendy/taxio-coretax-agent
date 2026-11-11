@@ -366,7 +366,7 @@ async function runMyBuktiPotongDownload(opts) {
         try {
             // One folder per year (not per masa) - filenames already carry the masa (mmYY), see
             // buildFilename()/writeRingkasanExcel(), so nothing collides by sharing the folder.
-            const saveDir = path.join(saveRoot, entity.entity_id, 'BuktiPotongSaya', typeKey, '20' + mmYY.slice(2));
+            const saveDir = path.join(saveRoot, require('../lib/entity-folder').folderCode(entity), 'BuktiPotongSaya', typeKey, '20' + mmYY.slice(2));
             const downloadedRefs = new Set();
             let gotCount = 0, rows = [];
             for (let sessionRetries = 0; ; sessionRetries++) {

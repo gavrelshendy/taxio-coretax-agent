@@ -550,7 +550,7 @@ async function prepareEntityPage(res, entity) {
         };
     }
     return {
-        label: src.label, folder: src.entity.entity_id, session: sessionOf(src), picId: src.picId, entityId: src.entity.entity_id, npwp: src.entity.npwp,
+        label: src.label, folder: require('../lib/entity-folder').folderCode(src.entity), session: sessionOf(src), picId: src.picId, entityId: src.entity.entity_id, npwp: src.entity.npwp,
         // Penandatangan e-Bupot (lib/coretax-issue.js): NIK login PIC + passphrase yang tersimpan, sumber yang sama dengan login.
         signer: async () => { const cred = await entitiesLib.getCredential(src.client, src.orgId, src.picId); return { nik: cred && cred.username, passphrase: src.passphrase || null }; },
         open: () => runLoginOnly({
