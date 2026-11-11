@@ -13,7 +13,16 @@ const fs = require('fs');
 const path = require('path');
 
 const BASE = new URL(process.env.TAXIO_PILOT_URL || 'http://127.0.0.1:51733');
-const LOG = process.env.TAXIO_PILOT_LOG || path.join(__dirname, '..', 'dist', 'coretax-agent.log');
+// Log Pilot yang sedang berjalan: TAXIO_PILOT_LOG, atau ditanyakan ke Pilot (/api/log-file, v3.0.42+), atau log
+// terbaru di folder exe yang dikenal (dist, dist-fix, dist-next). Dulu selalu dist\ - bila Pilot dijalankan dari folder
+// lain, read_log membaca log lama dan run yang sudah SELESAI tampak tidak berjalan.
+const LOG_GUESSES = ['dist', 'dist-fix', 'dist-next'].map((d) => path.join(__dirname, '..', d, 'coretax-agent.log'));
+async function logFile() {
+    if (process.env.TAXIO_PILOT_LOG) return process.env.TAXIO_PILOT_LOG;
+    try { const r = await call('GET', '/api/log-file'); if (r && r.path && fs.existsSync(r.path)) return r.path; } catch (e) { /* Pilot lama / tidak berjalan */ }
+    const found = LOG_GUESSES.filter((f) => fs.existsSync(f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    return found[0] || LOG_GUESSES[0];
+}
 const VERSION = '1.3.0';
 
 function call(method, p, body) {
@@ -126,6 +135,7 @@ const TOOLS = [
     { name: 'read_log', description: 'Baris terakhir log aktivitas Taxio Pilot (progres dan hasil otomasi), bisa disaring per kode entitas.',
         inputSchema: { type: 'object', properties: { entity: { type: 'string', description: 'Kode entitas untuk disaring (opsional).' }, lines: { type: 'integer', description: 'Jumlah baris (default 40, maks 300).' } } },
         run: async ({ entity, lines }) => {
+            const LOG = await logFile();
             if (!fs.existsSync(LOG)) throw new Error('Log Taxio Pilot tidak ditemukan di ' + LOG + ' (atur TAXIO_PILOT_LOG).');
             const size = fs.statSync(LOG).size, fd = fs.openSync(LOG, 'r'), len = Math.min(size, 400000), buf = Buffer.alloc(len);
             fs.readSync(fd, buf, 0, len, size - len); fs.closeSync(fd);
