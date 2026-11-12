@@ -27,7 +27,7 @@
         self.count = () => self.sel.size;
         self.values = () => Array.from(self.sel);
         self.single = () => (self.sel.size ? Array.from(self.sel)[0] : '');
-        self.unit = () => (mode === 'tahun' ? 'year(s)' : 'period(s)');
+        self.unit = () => (mode === 'tahun' ? 'Tahun Pajak' : 'Masa Pajak');
 
         function head() {
             if (mode === 'tahun') {
@@ -50,14 +50,14 @@
         }
         function sum() {
             const n = self.count();
-            const what = mode === 'tahun' ? (n === 1 ? 'year' : 'years') : (n === 1 ? 'period' : 'periods');
+            const what = mode === 'tahun' ? 'Tahun Pajak' : 'Masa Pajak';
             return '<div class="summary-line"><span class="grow">Selected: <b>' + n + ' ' + what + '</b></span><span class="code-chip">' + P.esc(self.code() || '—') + '</span>'
                 + '<button type="button" class="link link-quiet" style="font-size:12.5px" data-pp="text">' + (self.textOpen ? 'Close' : 'Type code') + '</button></div>';
         }
         function text() {
             if (!self.textOpen) return '';
             const ph = mode === 'tahun' ? 'e.g. 2025 or 2024-2025' : 'e.g. 0126;0226 or 0125-1225';
-            return '<div class="stack" style="gap:6px"><input type="text" class="input sm mono" data-pp-input placeholder="' + ph + '" value="' + P.esc(self.text) + '" aria-label="Period code">'
+            return '<div class="stack" style="gap:6px"><input type="text" class="input sm mono" data-pp-input placeholder="' + ph + '" value="' + P.esc(self.text) + '" aria-label="Masa Pajak code">'
                 + '<div class="field-error" data-pp-error>' + P.esc(self.error) + '</div></div>';
         }
         const part = (name, fn) => '<div class="pp-' + name + '">' + fn() + '</div>';
@@ -116,7 +116,7 @@
                 self.text = e.target.value;
                 const r = mode === 'tahun' ? L.parseYears(self.text) : L.parseMasa(self.text);
                 let error = r.error;
-                if (!error && mode === 'masa1' && r.set.size > 1) error = 'Select one period only.';
+                if (!error && mode === 'masa1' && r.set.size > 1) error = 'Select one Masa Pajak only.';
                 self.error = error || '';
                 const errEl = w.querySelector('[data-pp-error]'); if (errEl) errEl.textContent = self.error;
                 if (error) return;

@@ -94,7 +94,7 @@
     function sidebarHtml() {
         const cur = P.state.page;
         const groups = P.pages.NAV.map((g) => '<div class="nav-group"><div class="nav-title">' + g.title + '</div>' + g.items.filter((it) => !(it.hideForRestricted && P.isRestricted())).map((it) =>
-            '<button type="button" class="nav-item" data-nav="' + it.id + '"' + (it.id === cur ? ' aria-current="page"' : '') + '>' + P.icon(it.icon, 18) + '<span class="grow">' + esc(it.label) + '</span>' + (it.badge ? '<span class="nav-badge">' + it.badge + '</span>' : '') + '</button>').join('') + '</div>').join('');
+            '<button type="button" class="nav-item" data-nav="' + it.id + '" title="' + esc(it.full || it.label) + '"' + (it.id === cur ? ' aria-current="page"' : '') + '>' + P.icon(it.icon, 18) + '<span class="grow">' + esc(it.label) + '</span>' + (it.badge ? '<span class="nav-badge">' + it.badge + '</span>' : '') + '</button>').join('') + '</div>').join('');
         const email = P.hub().email || '';
         return '<aside class="sidebar"><div class="brand"><div class="brand-logo"><img src="/assets/taxio-pilot-logo.png" alt="Taxio Pilot"></div><div class="brand-name"><b>Taxio Pilot</b><span id="ver-badge">' + esc(P.state.version ? 'v' + P.state.version.version : '') + '</span></div></div>'
             + groups + '<div class="spacer"></div><div class="stack" style="gap:6px"><button type="button" class="nav-item" id="open-settings">' + P.icon('gear', 18) + '<span class="grow">Settings</span></button>'
@@ -115,10 +115,10 @@
         } else if (!P.isRestricted()) {
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Open Coretax</button>';
         }
-        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + buttons + E.sessionStripHtml() + '</header>';
+        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.full || meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + buttons + E.sessionStripHtml() + '</header>';
     }
     function appHtml() {
-        return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Check for Updates</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
+        return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Check for updates</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
     }
 
     S.renderTopbar = function () { const s = P.$('topbar-slot'); if (s) s.innerHTML = topbarHtml(); };
@@ -183,11 +183,11 @@
             }
             else if (x === 'health') { b.disabled = true; await loadHealth(true); b.disabled = false; }
             else if (x === 'diag') {
-                const t = P.$('diag-text'); b.disabled = true; t.textContent = 'Menyusun file diagnostik…';
+                const t = P.$('diag-text'); b.disabled = true; t.textContent = 'Preparing the diagnostics file…';
                 try {
                     const r = await P.post('/api/diagnostics/export');
-                    t.textContent = 'Tersimpan: ' + r.file + ' — periksa dulu isinya; log bisa memuat nama entitas dan NPWP. Kirim hanya ke pihak yang Anda percaya.';
-                } catch (err) { t.textContent = 'Gagal mengekspor diagnostik: ' + err.message; }
+                    t.textContent = 'Saved: ' + r.file + ' — check its contents first; the log may contain entity names and NPWPs. Send it only to people you trust.';
+                } catch (err) { t.textContent = 'Failed to export diagnostics: ' + err.message; }
                 b.disabled = false;
             }
         });
@@ -206,12 +206,12 @@
     }
 
     // ---------- Pemeriksaan sistem (GET /api/health, lib/doctor.js) ----------
-    const HEALTH_LABEL = { ok: 'OK', warn: 'Perhatian', fail: 'Gagal' };
+    const HEALTH_LABEL = { ok: 'OK', warn: 'Warning', fail: 'Failed' };
     function healthSectionHtml() {
-        return '<div class="stack"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">Pemeriksaan sistem</div>'
-            + '<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" data-x="health">Periksa ulang</button><button type="button" class="btn btn-sm" data-x="diag">' + P.icon('download', 15) + 'Ekspor diagnostik</button></div></div>'
-            + '<div class="health-list" id="health-list" aria-live="polite"><div class="health-empty">Memeriksa…</div></div>'
-            + '<div class="hint" id="diag-text">Ekspor diagnostik menyimpan file zip di folder Downloads: hasil pemeriksaan, versi, lokasi folder, dan log terakhir - tanpa sesi login, kata sandi, passphrase, atau token. Log bisa memuat nama entitas dan NPWP, jadi tentukan sendiri kepada siapa file itu dikirim.</div></div>';
+        return '<div class="stack"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">System check</div>'
+            + '<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" data-x="health">Check again</button><button type="button" class="btn btn-sm" data-x="diag">' + P.icon('download', 15) + 'Export diagnostics</button></div></div>'
+            + '<div class="health-list" id="health-list" aria-live="polite"><div class="health-empty">Checking…</div></div>'
+            + '<div class="hint" id="diag-text">Export diagnostics saves a zip file in your Downloads folder: the check results, version, folder locations and recent log, without login sessions, passwords, passphrases or tokens. The log may contain entity names and NPWPs, so decide yourself who the file is sent to.</div></div>';
     }
     function healthRowsHtml(rep) {
         return (rep.checks || []).map((c) => '<div class="health-row ' + esc(c.status) + '"><span class="health-dot" aria-hidden="true"></span>'
@@ -220,12 +220,12 @@
     }
     async function loadHealth(fresh) {
         const box = P.$('health-list'); if (!box) return;
-        if (fresh) box.innerHTML = '<div class="health-empty">Memeriksa…</div>';
+        if (fresh) box.innerHTML = '<div class="health-empty">Checking…</div>';
         try {
             const rep = await P.api('/api/health' + (fresh ? '?fresh=1' : ''));
             const el = P.$('health-list'); if (el) el.innerHTML = healthRowsHtml(rep);
         } catch (e) {
-            const el = P.$('health-list'); if (el) el.innerHTML = '<div class="health-empty">Pemeriksaan gagal: ' + esc(e.message) + '</div>';
+            const el = P.$('health-list'); if (el) el.innerHTML = '<div class="health-empty">System check failed: ' + esc(e.message) + '</div>';
         }
     }
 
