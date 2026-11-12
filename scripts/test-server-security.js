@@ -80,7 +80,11 @@ async function test(name, fn) {
         });
 
         await test('tanpa token: /api/* dan /events ditolak 401 JSON yang jelas (GET dan POST)', async () => {
-            for (const o of [{ path: '/api/session' }, { path: '/api/version' }, { path: '/api/health' }, { path: '/events' }, { path: '/api/tidak-ada' }, { method: 'POST', path: '/api/run/stop', body: {} }, { method: 'POST', path: '/api/quit', body: {} }]) {
+            // GET /api/session TANPA header apa pun = bentuk probe exe versi 3 (gui/guards.js legacyProbeKind):
+            // dijawab 200 tanpa data sesi - lihat scripts/test-legacy-probe.js. Dengan header lain tetap 401.
+            const bare = await R({ auth: null });
+            assert.deepStrictEqual([bare.status, bare.json.legacyProbe, bare.json.taxio_hub], [200, true, undefined]);
+            for (const o of [{ path: '/api/session', origin: 'http://127.0.0.1:' + port }, { path: '/api/version' }, { path: '/api/health' }, { path: '/events' }, { path: '/api/tidak-ada' }, { method: 'POST', path: '/api/run/stop', body: {} }, { method: 'POST', path: '/api/quit', body: {} }]) {
                 const r = await R(Object.assign({ auth: null }, o));
                 assert.strictEqual(r.status, 401, (o.method || 'GET') + ' ' + o.path + ' -> ' + r.status);
                 if (o.path !== '/events') { assert.strictEqual(r.json.auth, true); assert.ok(/token/i.test(r.json.error)); }
