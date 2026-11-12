@@ -1,8 +1,10 @@
 /* Coretax Agent - local GUI server.
-   Plain node:http (no Express - zero new runtime deps, avoids reintroducing any pkg-bundling
-   risk). Bound to 127.0.0.1 only. Serves the static dashboard from gui/public/ and a small
-   hand-written JSON API. Route table (ROUTES, bottom of this file) is a literal object (no
-   directory-scanning route loader) so pkg's static analyzer can see every require() at build time.
+   Plain node:http (no Express - zero new runtime deps). Bound to 127.0.0.1 only. Serves the
+   static dashboard from gui/public/ and a small hand-written JSON API. Route table (ROUTES, bottom
+   of this file) is a literal object (no directory-scanning route loader) - every route is visible
+   in one place. The desktop shell (electron/main.js) shows this same server in a BrowserWindow;
+   the MCP server (mcp/taxio-pilot-mcp.js) uses the same API. Windows / dialogs / quitting go
+   through lib/shell.js, never Electron directly (tests run under plain node).
 
    Supports being connected to BOTH Taxio (Grup) and Taxio.me at once (see lib/state.js) -
    every route that touches "the connection" takes an explicit `project` id rather than
@@ -42,10 +44,8 @@ const localAuth = require('../lib/local-auth-client');
 const masaLib = require('../lib/masa');
 const deeplink = require('../lib/deeplink');
 const compliance = require('../lib/compliance');
-const tray = require('../lib/tray');
 const updater = require('../lib/updater');
-const fileDialog = require('../lib/file-dialog');
-const { closeWindow, ensureWindowOpenOrFocused } = require('./window');
+const shell = require('../lib/shell'); // jendela, dialog, keluar - Electron atau headless (lib/shell.js)
 const runtime = require('../lib/runtime');
 const doctor = require('../lib/doctor');
 const diagnostics = require('../lib/diagnostics');
@@ -63,8 +63,6 @@ const {
 const pkg = require('../package.json');
 
 const PROJECTS_WITH_OWNER_COLUMN = {};
-// Smoke run (main.js TAXIO_PILOT_SMOKE=1): never open / focus / close dashboard windows.
-const SMOKE = process.env.TAXIO_PILOT_SMOKE === '1';
 
 const LOG_BACKLOG_MAX = 200;
 const logBacklog = [];
@@ -1094,27 +1092,19 @@ const handleLoginEntity = action({}, async (req, res, body) => {
     }), { stopMsg: 'Login dibatalkan oleh pengguna.', failPrefix: 'Gagal login: ' });
 });
 
-/** Receives a taxio-coretax:// URL forwarded from a SECOND process launch (see main.js's
- *  forwardDeepLinkToRunningInstance) - this instance already owns the dashboard window, so it
- *  just dispatches the link itself instead of the caller trying to become its own primary. Acks
- *  immediately (fire-and-forget, same as the download/login routes) since dispatch can run for
- *  minutes. */
+/** Receives a taxio-coretax:// URL over HTTP (a local helper / an older launcher that forwards to
+ *  the running instance; the desktop app itself gets second launches through Electron's
+ *  single-instance lock - electron/main.js). Acks immediately (fire-and-forget, same as the
+ *  download/login routes) since dispatch can run for minutes. The dashboard is brought up first so
+ *  the log of what the link does is visible (a deep-link run with no window shown left the user
+ *  blind - real report). `req.headers.host` is this same server's own host:port (validated by the
+ *  Host check in createGuiServer). */
 async function handleDeepLink(req, res, ctx) {
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     if (!body || !body.url) return sendJson(res, 400, { error: 'URL kosong.' });
     sendJson(res, 202, { received: true });
-    // A click from Taxio/Taxio.me arrives here whenever Coretax Agent is ALREADY running in the
-    // background (this is the forwarded-to-primary-instance path - see main.js's
-    // forwardDeepLinkToRunningInstance). Previously that ran the automation with no window ever
-    // shown, so the user had no way to see what it was doing. Bring the dashboard up so the log
-    // is visible, same as a cold start via the same link already does (main.js calls openWindow
-    // unconditionally there). `req.headers.host` is this same server's own host:port (validated
-    // by the Host check in createGuiServer) - no need to hardcode GUI_PORT here. Goes through the
-    // serializing queue (not a raw isWindowOpen/openWindow check) - see ensureWindowOpenOrFocused()'s
-    // header comment for why: rapid back-to-back clicks from Taxio each hitting this handler
-    // concurrently used to race past the check and each spawn their own window.
-    if (!SMOKE) await ensureWindowOpenOrFocused(dashboardUrl(req, ctx));
+    await shell.showDashboard(dashboardUrl(req, ctx));
     deeplink.dispatch(body.url).catch((e) => log('Deep link gagal: ' + e.message));
 }
 
@@ -1129,44 +1119,48 @@ async function handleOpenCoretaxManual(req, res) {
     chrome.openCoretaxManual(false, null).catch((e) => log('Gagal membuka Coretax manual: ' + e.message));
 }
 
-async function handleQuit(req, res) {
-    sendJson(res, 200, { ok: true });
-    log('Menutup Taxio Pilot...');
-    tray.stop(); // otherwise the NotifyIcon is orphaned - still visible, both menu items dead
-    // closeWindow() finds the dashboard by its window TITLE - in a smoke run (no window of its own)
-    // that would close a real Taxio Pilot window running on the same PC, so it is skipped there.
-    if (!SMOKE) closeWindow(); // window is spawned detached+unref'd - survives process.exit() below on its own otherwise
-    // Chrome automation windows (per-PIC + manual login) are launchPersistentContext()'d - a
-    // genuinely separate OS process from this one, so process.exit() below never touches them on
-    // its own; any window opened this session (including a restricted editor's hidden off-screen
-    // one) would otherwise survive as an orphan. Race against a timeout so one stuck/unresponsive
-    // context can't block quitting forever.
-    await Promise.race([
-        chrome.closeAllAutomationWindows().catch(() => {}),
-        new Promise((resolve) => setTimeout(resolve, 2000))
-    ]);
-    try { chrome.clearDownloadTemp(); } catch (e) {} // after automation windows close, so nothing's still mid-download
-    setTimeout(() => process.exit(0), 300);
+/** THE quit path of the app - the dashboard's "Keluar" (POST /api/quit), the tray's "Keluar"
+ *  (electron/main.js) and the updater's "install now" all come through here, so automation windows
+ *  are always closed the same way. Idempotent (a second call returns the same promise).
+ *  `finalize` replaces the default end (shell.exit(0)) - the updater passes "quit and run the
+ *  installer". */
+let _quitting = null;
+function gracefulQuit({ finalize } = {}) {
+    if (_quitting) return _quitting;
+    _quitting = (async () => {
+        log('Menutup Taxio Pilot...');
+        shell.closeDashboard();
+        // Chrome automation windows (per-PIC + manual login) are launchPersistentContext()'d - a
+        // genuinely separate OS process from this one, so exiting never touches them on its own;
+        // any window opened this session (including a restricted editor's hidden off-screen one)
+        // would otherwise survive as an orphan. Race against a timeout so one stuck/unresponsive
+        // context can't block quitting forever.
+        await Promise.race([
+            chrome.closeAllAutomationWindows().catch(() => {}),
+            new Promise((resolve) => setTimeout(resolve, 2000))
+        ]);
+        try { chrome.clearDownloadTemp(); } catch (e) {} // after automation windows close, so nothing's still mid-download
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        try { (finalize || (() => shell.exit(0)))(); }
+        catch (e) { log('Gagal menutup aplikasi (' + e.message + ') - keluar paksa.'); shell.exit(0); }
+    })();
+    return _quitting;
 }
 
-// Manual "Cek Update" button in Settings - same checkAndApply() the startup check uses, so
-// behavior stays consistent (full-auto: finds it, downloads it, restarts into it - explicit
-// user request 2026-08-07, not a "review then confirm" flow). Responds immediately with
-// whatever checkForUpdate() alone reports (available/current/latest) so the UI has something to
-// show right away, then lets the full check-and-apply cycle run in the background - if an
-// update was found the app will restart itself within a few seconds regardless of what this
-// response said.
-async function handleCheckUpdate(req, res, ctx) {
+async function handleQuit(req, res) {
+    sendJson(res, 200, { ok: true });
+    gracefulQuit().catch(() => {});
+}
+
+// Manual "Cek Update" button in Settings - same checkAndApply() the startup check uses (opts from
+// updater.configure() in electron/main.js), so behavior stays consistent (full-auto: finds it,
+// downloads it, restarts into it - explicit user request 2026-08-07, not a "review then confirm"
+// flow). Responds immediately with whatever checkForUpdate() alone reports so the UI has something
+// to show right away, then lets the full check-and-apply cycle run in the background.
+async function handleCheckUpdate(req, res) {
     const info = await updater.checkForUpdate();
     sendJson(res, 200, info);
-    if (info.available) {
-        updater.checkAndApply({
-            isRunActive: () => runcontrol.anyActive(),
-            onBeforeRestart: async () => {
-                try { await fetch('http://127.0.0.1:' + ctx.port + '/api/quit', { method: 'POST', headers: { Authorization: 'Bearer ' + ctx.token } }); } catch (e) {}
-            }
-        }).catch((e) => log('Gagal menerapkan update: ' + e.message));
-    }
+    if (info.available) updater.checkAndApply().catch((e) => log('Gagal menerapkan update: ' + e.message));
 }
 
 /** URL pembuka jendela dashboard: membawa token sekali (/?t=), server menukarnya dengan cookie lalu
@@ -1176,11 +1170,10 @@ function dashboardUrl(req, ctx) {
     return 'http://' + req.headers.host + '/?t=' + encodeURIComponent(ctx.token);
 }
 
+/** "Open the dashboard" over HTTP (older launchers forwarded double-clicks here). Headless: no-op. */
 async function handleTrayOpen(req, res, ctx) {
     sendJson(res, 200, { ok: true });
-    if (SMOKE) return; // smoke run: no windows (gui/window.js matches windows by title - see handleQuit)
-    // Serializing queue, same reason as handleDeepLink above.
-    await ensureWindowOpenOrFocused(dashboardUrl(req, ctx));
+    await shell.showDashboard(dashboardUrl(req, ctx));
 }
 
 // ---- Pemeriksaan sistem & ekspor diagnostik (lib/doctor.js, lib/diagnostics.js) ----
@@ -1237,7 +1230,7 @@ async function handlePickFile(req, res) {
     try { body = await readJsonBody(req); } catch (e) { }
     // dir: folder awal dialog (mis. folder file impor terakhir; "downloads" = folder Downloads pengguna).
     const dir = body.dir === 'downloads' ? path.join(os.homedir(), 'Downloads') : (typeof body.dir === 'string' ? body.dir : '');
-    const filePath = await fileDialog.pick({ kind: 'file', title: body.title || 'Pilih File', filter: body.filter || 'Semua File (*.*)|*.*', dir });
+    const filePath = await shell.pick({ kind: 'file', title: body.title || 'Pilih File', filter: body.filter || 'Semua File (*.*)|*.*', dir });
     if (filePath && filePath.busy) return sendJson(res, 200, { canceled: true, busy: true });
     if (!filePath) return sendJson(res, 200, { canceled: true });
     let fileBase64 = null;
@@ -1254,7 +1247,7 @@ async function handlePickFile(req, res) {
 async function handlePickFolder(req, res) {
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { }
-    const folderPath = await fileDialog.pick({ kind: 'folder', title: body.title || 'Pilih Folder' });
+    const folderPath = await shell.pick({ kind: 'folder', title: body.title || 'Pilih Folder' });
     if (folderPath && folderPath.busy) return sendJson(res, 200, { canceled: true, busy: true });
     if (!folderPath) return sendJson(res, 200, { canceled: true });
     return sendJson(res, 200, { folderPath });
@@ -1365,7 +1358,6 @@ function serverError(res, e) {
  *  lib/runtime.js listenPreferred(). */
 function createGuiServer(port, opts) {
     const token = (opts && opts.token) || runtime.newToken();
-    fileDialog.warm();
     const server = http.createServer((req, res) => runcontrol.isolate(() => route(req, res)));
     server.token = token;
     let boundPort = null; // diisi begitu listen() berhasil (port 0 = dipilih OS)
@@ -1415,4 +1407,4 @@ function createGuiServer(port, opts) {
     });
 }
 
-module.exports = { createGuiServer, setLaunchInfo };
+module.exports = { createGuiServer, setLaunchInfo, gracefulQuit };

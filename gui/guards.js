@@ -18,7 +18,7 @@ const { sendJson } = require('./http-util');
 //     (termasuk menerbitkan / membatalkan bukti potong yang ditandatangani passphrase tersimpan).
 //     Ditolak lewat header Host: harus persis 127.0.0.1:<port> atau localhost:<port>, dengan port
 //     yang benar-benar di-bind server ini.
-// Permintaan TANPA Origin (server MCP, penerusan deep link main.js, tray, curl) lolos cek INI -
+// Permintaan TANPA Origin (server MCP, alat lokal, curl) lolos cek INI -
 // pemalsuan header oleh program lokal butuh eksekusi kode di mesin ini, ancaman yang berbeda, yang
 // sejak Tahap 1 ditahan oleh token per peluncuran (authProblem di bawah).
 function allowedHosts(port) { return ['127.0.0.1:' + port, 'localhost:' + port]; }
@@ -38,7 +38,7 @@ function requestOriginProblem(req, port) {
 // PC yang sama) tetap bisa memanggil API tanpa Origin - termasuk menerbitkan bukti potong dengan
 // passphrase tersimpan. Karena itu SEMUA /api/* dan /events butuh token acak per peluncuran
 // (lib/runtime.js; disimpan di runtime.json di bawah %LOCALAPPDATA% pengguna ini):
-//   - `Authorization: Bearer <token>` (main.js, tray, updater, server MCP), atau
+//   - `Authorization: Bearer <token>` (server MCP, alat lokal yang membaca runtime.json), atau
 //   - cookie HttpOnly SameSite=Strict yang dipasang saat jendela dashboard dibuka di /?t=<token>
 //     (server memvalidasi t, memasang cookie, lalu redirect ke / supaya token tidak tertinggal di
 //     alamat). fetch relatif + EventSource dashboard membawa cookie itu otomatis.

@@ -121,7 +121,6 @@ function assertNoSecrets(entries) {
         } finally {
             doctor.runChecks = realRun;
             await new Promise((res) => server.close(res));
-            require('../lib/file-dialog').stop();
         }
     });
 

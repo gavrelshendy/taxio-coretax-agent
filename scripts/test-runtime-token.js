@@ -186,7 +186,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
             const p = await runtime.probe(r.port, goodToken);
             assert.deepStrictEqual([p.status, p.pilot], [200, true]);
             assert.strictEqual((await runtime.probe(r.port, null)).status, 401);
-        } finally { await close(r.server); require('../lib/file-dialog').stop(); }
+        } finally { await close(r.server); }
     });
 
     await close(pilot); await close(oldPilot); await close(foreign);
