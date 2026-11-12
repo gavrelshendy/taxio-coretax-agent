@@ -603,7 +603,7 @@
             if (act === 'create-case') { try { await P.post('/api/actions/create-dividen-case', { entity }); P.run.poll(); } catch (e) { alert('Failed to create case: ' + e.message); } return false; }
             if (act === 'import' || act === 'check') {
                 if (!st.file) { alert('Select a .xlsx template file first.'); return false; }
-                try { await P.post(act === 'import' ? '/api/actions/import-dividen' : '/api/actions/check-dividen', { entity, fileBase64: st.file.fileBase64, fileName: st.file.fileName }); P.run.poll(); }
+                try { await P.post(act === 'import' ? '/api/actions/import-dividen' : '/api/actions/check-dividen', { entity, fileBase64: st.file.fileBase64 || undefined, filePath: st.file.fileBase64 ? undefined : st.file.filePath, fileName: st.file.fileName }); P.run.poll(); }
                 catch (e) { alert('Failed to start: ' + e.message); }
                 return false;
             }
@@ -645,7 +645,7 @@
                 folder: false, ready: readiness(ent), blocked, cta: 'Import to Coretax', icon: 'upload', notes: [['shield', 'var(--green)', 'Per-row results (SUKSES, GAGAL, DILEWATI) are written back to your Excel file and saved in the Downloads folder.']] });
         },
         async start(st, api) {
-            await P.post('/api/actions/import-pajak-masukan', { entity: api.entity(), fileBase64: st.file.fileBase64, targetMasaInput: st.mode === 'fixed' && st.pp.single() ? st.pp.single() : undefined });
+            await P.post('/api/actions/import-pajak-masukan', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.fileBase64 ? undefined : st.file.filePath, targetMasaInput: st.mode === 'fixed' && st.pp.single() ? st.pp.single() : undefined });
         }
     });
 

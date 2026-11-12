@@ -38,6 +38,25 @@
     P.on = (name, fn) => { (handlers[name] = handlers[name] || []).push(fn); };
     P.emit = (name, payload) => { (handlers[name] || []).slice().forEach((fn) => { try { fn(payload); } catch (e) { console.error(name, e); } }); };
 
+    // ---------- Polling yang berhenti saat jendela tersembunyi ----------
+    // Dashboard yang disembunyikan ke tray (atau di belakang jendela lain sebagai tab tersembunyi) tidak perlu
+    // menanyai server tiap 1,5-4 detik - beberapa permintaan itu membaca jendela Coretax yang sedang dipakai
+    // otomasi. Selama document.hidden putaran dilewati; begitu terlihat lagi semua poller langsung dijalankan
+    // sekali (mengejar), lalu kembali ke jadwalnya. Kabar dari server lewat /events (P.on('server-event'))
+    // juga hanya diproses saat terlihat - yang terlewat dikejar oleh putaran saat terlihat lagi.
+    const pollers = [];
+    P.isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    P.every = function (fn, ms) {
+        const p = { fn, ms };
+        p.timer = setInterval(() => { if (!P.isHidden()) fn(); }, ms);
+        pollers.push(p);
+        return p;
+    };
+    document.addEventListener('visibilitychange', () => {
+        if (P.isHidden()) return;
+        pollers.forEach((p) => { try { p.fn(); } catch (e) { /* diabaikan */ } });
+    });
+
     // ---------- State bersama ----------
     P.state = {
         session: { taxio_hub: { connected: false, label: 'Taxio Hub' } },
@@ -170,7 +189,9 @@
         picking = true;
         try {
             const data = await P.post('/api/actions/pick-file', { title, filter: filter || 'Excel Files (*.xlsx)|*.xlsx|All Files (*.*)|*.*', dir: dir || undefined });
-            if (data && !data.canceled && data.fileBase64) return { fileName: data.fileName, fileBase64: data.fileBase64, filePath: data.filePath };
+            // Dialog Windows: server hanya menyerahkan path (isinya tidak lagi dikirim bolak-balik sebagai base64) -
+            // halaman mengirim `filePath` ke route aksi. Cadangan <input type=file> di bawah tetap base64.
+            if (data && !data.canceled && (data.filePath || data.fileBase64)) return { fileName: data.fileName, fileBase64: data.fileBase64 || undefined, filePath: data.filePath };
             if (data && data.canceled) return null;
         } catch (e) { /* jatuh ke input file */ }
         finally { picking = false; }

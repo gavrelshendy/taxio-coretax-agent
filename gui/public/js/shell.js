@@ -159,7 +159,7 @@
         scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Settings"><div class="dialog-head"><h2>Settings</h2><button type="button" class="icon-btn" aria-label="Close" data-x="close">' + P.icon('x', 18) + '</button></div>'
             + '<div class="dialog-body"><div class="stack"><div class="eyebrow">Account</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Disconnect</button></div></div>'
             + '<div class="stack"><div class="eyebrow">App version</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div>'
-            + healthSectionHtml() + '</div>'
+            + healthSectionHtml() + profilesSectionHtml() + '</div>'
             + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Quit app</button><span class="grow"></span><button type="button" class="btn" data-x="close">Done</button></div></div>';
         document.body.appendChild(scrim);
         loadHealth(false);
@@ -182,6 +182,8 @@
                 } catch (err) { t.textContent = 'Failed to check for updates: ' + err.message; b.disabled = false; }
             }
             else if (x === 'health') { b.disabled = true; await loadHealth(true); b.disabled = false; }
+            else if (x === 'prof-list') { b.disabled = true; await loadStaleProfiles(); b.disabled = false; }
+            else if (x === 'prof-delete') { b.disabled = true; await deleteStaleProfiles(); b.disabled = false; }
             else if (x === 'diag') {
                 const t = P.$('diag-text'); b.disabled = true; t.textContent = 'Menyusun file diagnostik…';
                 try {
@@ -215,6 +217,40 @@
         } catch (e) {
             const el = P.$('health-list'); if (el) el.innerHTML = '<div class="health-empty">Pemeriksaan gagal: ' + esc(e.message) + '</div>';
         }
+    }
+
+    // ---------- Bersihkan profil Chrome yang lama (POST /api/profiles/stale|delete, lib/profile-housekeeping.js) ----------
+    const fmtBytes = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.round((b || 0) / 1048576) + ' MB');
+    function profilesSectionHtml() {
+        return '<div class="stack" id="prof-section"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">Profil Chrome</div>'
+            + '<div class="row" style="gap:8px"><label class="hint" for="prof-days">Tidak dipakai</label><input class="input sm" id="prof-days" type="number" min="1" value="60" style="width:72px"><span class="hint">hari</span>'
+            + '<button type="button" class="btn btn-sm" data-x="prof-list">Bersihkan profil Chrome yang lama</button></div></div>'
+            + '<div class="health-list" id="prof-list" aria-live="polite"></div>'
+            + '<div class="hint" id="prof-text">Setiap PIC punya profil Chrome sendiri. Menghapus profil PIC yang lama tidak dipakai hanya berarti PIC itu login otomatis lagi saat dipakai berikutnya. Profil yang jendelanya sedang terbuka tidak pernah dihapus.</div></div>';
+    }
+    let staleDays = 60;
+    async function loadStaleProfiles() {
+        const box = P.$('prof-list'); if (!box) return;
+        staleDays = Math.max(1, Number((P.$('prof-days') || {}).value) || 60);
+        box.innerHTML = '<div class="health-empty">Menghitung profil…</div>';
+        try {
+            const r = await P.post('/api/profiles/stale', { days: staleDays });
+            const rows = r.profiles.map((p) => '<label class="health-row ' + (p.inUse ? 'warn' : 'ok') + '"><input type="checkbox" data-prof="' + esc(p.dir) + '"' + (p.inUse ? ' disabled' : ' checked') + '>'
+                + '<div class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.kind) + ' · terakhir dipakai ' + p.ageDays + ' hari lalu · ' + fmtBytes(p.bytes) + (p.partial ? '+' : '') + (p.inUse ? ' · sedang terbuka, tidak bisa dihapus' : '') + '</span></div></label>').join('');
+            box.innerHTML = (rows || '<div class="health-empty">Tidak ada profil yang tidak dipakai ' + staleDays + ' hari atau lebih.</div>')
+                + '<div class="hint">' + r.count + ' profil, total ' + fmtBytes(r.totalBytes) + (r.partial ? '+' : '') + '.</div>'
+                + (rows ? '<button type="button" class="btn btn-sm btn-danger" data-x="prof-delete">Hapus profil yang dipilih</button>' : '');
+        } catch (e) { box.innerHTML = '<div class="health-empty">Gagal membaca profil: ' + esc(e.message) + '</div>'; }
+    }
+    async function deleteStaleProfiles() {
+        const dirs = Array.from(document.querySelectorAll('#prof-list input[data-prof]:checked')).map((i) => i.dataset.prof);
+        if (!dirs.length) return P.info('Pilih minimal satu profil.');
+        if (!confirm('Hapus ' + dirs.length + ' profil Chrome? PIC-nya akan login otomatis lagi saat dipakai berikutnya.')) return;
+        try {
+            const r = await P.post('/api/profiles/delete', { days: staleDays, dirs });
+            P.info(r.deleted.length + ' profil dihapus (' + fmtBytes(r.freedBytes) + ' dibebaskan)' + (r.skipped.length ? ', ' + r.skipped.length + ' dilewati.' : '.'));
+        } catch (e) { alert('Gagal menghapus profil: ' + e.message); }
+        await loadStaleProfiles();
     }
 
     // Sesi Coretax aktif kini digabung ke dalam palet entitas (Ctrl+K/Alt+K) sendiri, bukan
@@ -280,7 +316,8 @@
     /** Menentukan layar dari status sesi, dan memuat entitas saat baru saja terhubung. */
     async function onSession() {
         const connected = P.isConnected();
-        const sig = JSON.stringify([connected, P.hub().email, P.hub().role, P.hub().pending]);
+        const rs = P.hub().restore;
+        const sig = JSON.stringify([connected, P.hub().email, P.hub().role, P.hub().pending, rs ? [rs.phase, rs.attempt, rs.nextRetryAt, rs.error] : null]);
         if (sig === sessionSig && view) return;
         const wasConnected = view === 'app';
         sessionSig = sig;
@@ -314,12 +351,26 @@
         try { P.state.session = await P.api('/api/session'); } catch (e) { /* biarkan bawaan */ }
         await onSession();
         if (!view) showAuth();
+        // Semua polling berhenti selama dashboard tersembunyi (P.every, core.js) dan mengejar saat terlihat lagi.
         P.run.startPolling();
-        setInterval(P.manual.poll, 2000);
-        setInterval(pollLogin, 3000);
+        P.every(P.manual.poll, 2000);
+        P.every(pollLogin, 3000);
         pollLogin();
-        setInterval(pollSessions, 4000);
+        P.every(pollSessions, 4000);
         pollSessions();
+        // Selama sesi tersimpan masih dipulihkan: segarkan layar "Memulihkan sesi…" (hitung mundur, hasil).
+        P.every(() => { if (P.hub().restore) refreshSession(); }, 2000);
     };
+    async function refreshSession() {
+        try { P.state.session = await P.api('/api/session'); } catch (e) { return; }
+        P.emit('session');
+    }
+    // Kabar dari server lewat /events (lib/ui-events.js): muat ulang bagian yang berubah segera.
+    P.on('server-event', (ev) => {
+        if (ev === 'run') P.run.poll();
+        else if (ev === 'login') pollLogin();
+        else if (ev === 'sessions') { pollSessions(); P.manual.poll(); }
+        else if (ev === 'session') refreshSession();
+    });
     document.addEventListener('DOMContentLoaded', S.boot);
 })();

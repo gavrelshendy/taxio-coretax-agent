@@ -1000,6 +1000,30 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
 
     await test('tidak ada error JavaScript selama seluruh alur', async () => { assert.deepStrictEqual(errors, []); });
 
+    await test('pemulihan sesi di latar: "Memulihkan sesi…" (bukan form masuk), lalu offline -> Coba lagi', async () => {
+        const c2 = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+        const p2 = await c2.newPage();
+        const pageErrors = [];
+        p2.on('pageerror', (e) => pageErrors.push(e.message));
+        let restore = { phase: 'restoring', email: 'uji@contoh.com', attempt: 1, nextRetryAt: null, error: '' };
+        let retried = 0;
+        await p2.route('**/api/session', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ taxio_hub: { connected: false, label: 'Taxio Hub', restore: restore || undefined } }) }));
+        await p2.route('**/api/session/retry', (route) => { retried++; restore = null; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ taxio_hub: { connected: false, label: 'Taxio Hub' } }) }); });
+        try {
+            await p2.goto(BASE + '/?t=' + server.token);
+            await p2.waitForSelector('.auth-form[data-restore="restoring"]');
+            assert.ok((await p2.locator('.auth-form h2').innerText()).includes('Memulihkan sesi'));
+            assert.strictEqual(await p2.locator('#au-pass').count(), 0, 'form masuk tidak tampil selama pemulihan');
+            restore = { phase: 'retrying', email: 'uji@contoh.com', attempt: 1, nextRetryAt: Date.now() + 30000, error: 'Taxio Hub tidak bisa dihubungi (fetch failed)' };
+            await p2.waitForSelector('.auth-form[data-restore="retrying"]', { timeout: 6000 });
+            assert.ok((await p2.locator('.auth-form .lead').innerText()).includes('tetap tersimpan'));
+            await p2.click('[data-au="retry"]');
+            await p2.waitForSelector('[data-au="login"]');
+            assert.strictEqual(retried, 1);
+            assert.deepStrictEqual(pageErrors, []);
+        } finally { await c2.close(); }
+    });
+
     await browser.close();
     console.log('\n' + passed + ' tes lulus' + (process.exitCode ? ', ADA YANG GAGAL' : '.'));
     fs.rmSync(process.env.TAXIO_PILOT_DATA_DIR, { recursive: true, force: true });

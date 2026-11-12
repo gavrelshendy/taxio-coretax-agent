@@ -90,7 +90,10 @@ async function test(name, fn) {
         try {
             const f = await (await post('/api/actions/pick-file', { title: 'Pilih file uji' })).json();
             assert.strictEqual(f.fileName, 'impor.xlsx');
-            assert.strictEqual(Buffer.from(f.fileBase64, 'base64').toString(), 'PK-uji');
+            // Sejak audit 2026-11-12 hanya path (+ ukuran) yang dikirim; isinya dibaca route aksi dari disk.
+            assert.strictEqual(f.fileBase64, undefined);
+            assert.strictEqual(fs.readFileSync(f.filePath, 'utf8'), 'PK-uji');
+            assert.strictEqual(f.size, 6);
             assert.deepStrictEqual(await (await post('/api/actions/pick-folder', {})).json(), { folderPath: TMP });
             assert.strictEqual((await post('/api/tray/open')).status, 200);
             assert.strictEqual((await post('/api/deeplink', { url: 'taxio-coretax://open?action=open&path=' })).status, 202);
