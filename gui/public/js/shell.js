@@ -234,34 +234,34 @@
     // ---------- Bersihkan profil Chrome yang lama (POST /api/profiles/stale|delete, lib/profile-housekeeping.js) ----------
     const fmtBytes = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.round((b || 0) / 1048576) + ' MB');
     function profilesSectionHtml() {
-        return '<div class="stack" id="prof-section"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">Profil Chrome</div>'
-            + '<div class="row" style="gap:8px"><label class="hint" for="prof-days">Tidak dipakai</label><input class="input sm" id="prof-days" type="number" min="1" value="60" style="width:72px"><span class="hint">hari</span>'
-            + '<button type="button" class="btn btn-sm" data-x="prof-list">Bersihkan profil Chrome yang lama</button></div></div>'
+        return '<div class="stack" id="prof-section"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">Chrome Profiles</div>'
+            + '<div class="row" style="gap:8px"><label class="hint" for="prof-days">Unused for</label><input class="input sm" id="prof-days" type="number" min="1" value="60" style="width:72px"><span class="hint">days</span>'
+            + '<button type="button" class="btn btn-sm" data-x="prof-list">Clean up old Chrome profiles</button></div></div>'
             + '<div class="health-list" id="prof-list" aria-live="polite"></div>'
-            + '<div class="hint" id="prof-text">Setiap PIC punya profil Chrome sendiri. Menghapus profil PIC yang lama tidak dipakai hanya berarti PIC itu login otomatis lagi saat dipakai berikutnya. Profil yang jendelanya sedang terbuka tidak pernah dihapus.</div></div>';
+            + '<div class="hint" id="prof-text">Each PIC has its own Chrome profile. Deleting the profile of a PIC you have not used for a while only means that PIC signs in again automatically the next time it is used. Profiles whose window is currently open are never deleted.</div></div>';
     }
     let staleDays = 60;
     async function loadStaleProfiles() {
         const box = P.$('prof-list'); if (!box) return;
         staleDays = Math.max(1, Number((P.$('prof-days') || {}).value) || 60);
-        box.innerHTML = '<div class="health-empty">Menghitung profil…</div>';
+        box.innerHTML = '<div class="health-empty">Counting profiles…</div>';
         try {
             const r = await P.post('/api/profiles/stale', { days: staleDays });
             const rows = r.profiles.map((p) => '<label class="health-row ' + (p.inUse ? 'warn' : 'ok') + '"><input type="checkbox" data-prof="' + esc(p.dir) + '"' + (p.inUse ? ' disabled' : ' checked') + '>'
-                + '<div class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.kind) + ' · terakhir dipakai ' + p.ageDays + ' hari lalu · ' + fmtBytes(p.bytes) + (p.partial ? '+' : '') + (p.inUse ? ' · sedang terbuka, tidak bisa dihapus' : '') + '</span></div></label>').join('');
-            box.innerHTML = (rows || '<div class="health-empty">Tidak ada profil yang tidak dipakai ' + staleDays + ' hari atau lebih.</div>')
-                + '<div class="hint">' + r.count + ' profil, total ' + fmtBytes(r.totalBytes) + (r.partial ? '+' : '') + '.</div>'
-                + (rows ? '<button type="button" class="btn btn-sm btn-danger" data-x="prof-delete">Hapus profil yang dipilih</button>' : '');
-        } catch (e) { box.innerHTML = '<div class="health-empty">Gagal membaca profil: ' + esc(e.message) + '</div>'; }
+                + '<div class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.kind) + ' · last used ' + p.ageDays + ' days ago · ' + fmtBytes(p.bytes) + (p.partial ? '+' : '') + (p.inUse ? ' · currently open, cannot be deleted' : '') + '</span></div></label>').join('');
+            box.innerHTML = (rows || '<div class="health-empty">No profiles unused for ' + staleDays + ' days or more.</div>')
+                + '<div class="hint">' + r.count + (r.count === 1 ? ' profile, total ' : ' profiles, total ') + fmtBytes(r.totalBytes) + (r.partial ? '+' : '') + '.</div>'
+                + (rows ? '<button type="button" class="btn btn-sm btn-danger" data-x="prof-delete">Delete selected profiles</button>' : '');
+        } catch (e) { box.innerHTML = '<div class="health-empty">Could not read profiles: ' + esc(e.message) + '</div>'; }
     }
     async function deleteStaleProfiles() {
         const dirs = Array.from(document.querySelectorAll('#prof-list input[data-prof]:checked')).map((i) => i.dataset.prof);
-        if (!dirs.length) return P.info('Pilih minimal satu profil.');
-        if (!confirm('Hapus ' + dirs.length + ' profil Chrome? PIC-nya akan login otomatis lagi saat dipakai berikutnya.')) return;
+        if (!dirs.length) return P.info('Select at least one profile.');
+        if (!confirm('Delete ' + dirs.length + ' Chrome profile' + (dirs.length === 1 ? '' : 's') + '? The PICs will sign in automatically again the next time they are used.')) return;
         try {
             const r = await P.post('/api/profiles/delete', { days: staleDays, dirs });
-            P.info(r.deleted.length + ' profil dihapus (' + fmtBytes(r.freedBytes) + ' dibebaskan)' + (r.skipped.length ? ', ' + r.skipped.length + ' dilewati.' : '.'));
-        } catch (e) { alert('Gagal menghapus profil: ' + e.message); }
+            P.info(r.deleted.length + ' profile' + (r.deleted.length === 1 ? '' : 's') + ' deleted (' + fmtBytes(r.freedBytes) + ' freed)' + (r.skipped.length ? ', ' + r.skipped.length + ' skipped.' : '.'));
+        } catch (e) { alert('Could not delete profiles: ' + e.message); }
         await loadStaleProfiles();
     }
 

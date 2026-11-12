@@ -49,16 +49,16 @@
         const busy = A.busy ? ' disabled' : '';
         if (A.screen === 'pulih') {
             const r = P.hub().restore || {};
-            const who = r.email ? esc(r.email) : 'akun Taxio Hub Anda';
+            const who = r.email ? esc(r.email) : 'your Taxio Hub account';
             if (r.phase === 'retrying') {
                 const secs = r.nextRetryAt ? Math.max(0, Math.round((r.nextRetryAt - Date.now()) / 1000)) : 0;
-                return '<div class="auth-form" data-restore="retrying"><div><h2>Taxio Hub belum bisa dihubungi</h2><p class="lead">Sesi ' + who + ' tetap tersimpan, jadi Anda tidak perlu masuk lagi. Pilot mencoba lagi otomatis' + (secs ? ' dalam ±' + secs + ' detik' : '') + '. Periksa koneksi internet Anda.</p></div>'
+                return '<div class="auth-form" data-restore="retrying"><div><h2>Taxio Hub Is Unreachable</h2><p class="lead">The session for ' + who + ' is still saved, so you do not need to sign in again. Pilot will retry automatically' + (secs ? ' in about ' + secs + ' s' : '') + '. Check your internet connection.</p></div>'
                     + (r.error ? '<div class="callout">' + P.icon('info', 16, '', 1.8) + '<span>' + esc(r.error) + '</span></div>' : '') + err
-                    + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="retry"' + busy + '>' + P.icon('retry', 17, A.busy ? 'spin' : '', 2) + (A.busy ? 'Mencoba…' : 'Coba lagi') + '</button>'
-                    + '<div class="row" style="justify-content:space-between"><span class="hint">' + esc(r.email || '') + '</span><button type="button" class="link" data-au="logout">Masuk dengan akun lain</button></div></div>';
+                    + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="retry"' + busy + '>' + P.icon('retry', 17, A.busy ? 'spin' : '', 2) + (A.busy ? 'Retrying…' : 'Try again') + '</button>'
+                    + '<div class="row" style="justify-content:space-between"><span class="hint">' + esc(r.email || '') + '</span><button type="button" class="link" data-au="logout">Sign in with a different account</button></div></div>';
             }
-            return '<div class="auth-form" data-restore="restoring"><div><h2>Memulihkan sesi…</h2><p class="lead">Menyambungkan kembali ' + who + ' ke Taxio Hub. Mohon tunggu sebentar.</p></div>'
-                + '<div class="row" style="gap:10px">' + P.icon('loader', 18, 'spin', 2.4) + '<span class="hint">Memulihkan sesi…</span></div></div>';
+            return '<div class="auth-form" data-restore="restoring"><div><h2>Restoring Session…</h2><p class="lead">Reconnecting ' + who + ' to Taxio Hub. Please wait a moment.</p></div>'
+                + '<div class="row" style="gap:10px">' + P.icon('loader', 18, 'spin', 2.4) + '<span class="hint">Restoring session…</span></div></div>';
         }
         if (A.screen === 'daftar') {
             return '<div class="auth-form"><div><h2>Create account</h2><p class="lead">Sign up for a new account. Access requires admin approval.</p></div>'
