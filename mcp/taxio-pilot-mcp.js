@@ -25,10 +25,10 @@ async function logFile() {
 }
 const VERSION = '1.3.0';
 
-function call(method, p, body) {
+function call(method, p, body, timeoutMs = 120000) {
     return new Promise((resolve, reject) => {
         const data = body === undefined ? null : JSON.stringify(body);
-        const req = http.request({ host: BASE.hostname, port: BASE.port, path: p, method, timeout: 120000,
+        const req = http.request({ host: BASE.hostname, port: BASE.port, path: p, method, timeout: timeoutMs,
             headers: data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {} }, (res) => {
             let s = ''; res.setEncoding('utf8'); res.on('data', (d) => { s += d; });
             res.on('end', () => { let j = null; try { j = JSON.parse(s); } catch (e) {} if (res.statusCode >= 400) reject(new Error((j && j.error) || ('HTTP ' + res.statusCode))); else resolve(j ?? s); });
@@ -98,11 +98,16 @@ const TOOLS = [
         inputSchema: { type: 'object', required: ['filePath'], properties: { filePath: { type: 'string', description: 'Path lengkap file .xlsx / .xml di PC ini.' }, entity: { type: 'string', description: 'Kode entitas (opsional) - untuk mencocokkan NPWP pemotong.' } } },
         run: async ({ filePath, entity }) => call('POST', '/api/import/inspect', { filePath, entity: entity ? await entityOf(entity) : undefined }) },
     { name: 'upload_ebupot', description: 'Unggah file impor e-Bupot (BPMP, BP21, BPA1, BPPU; Excel template DJP atau XML) ke Belum Terbit Coretax untuk satu entitas, lalu tunggu hasil XML monitoring. TIDAK menerbitkan / menandatangani. PERHATIAN: membuat data nyata di Coretax - tampilkan hasil inspect_import_file dan minta konfirmasi pengguna dulu. Berjalan di latar - pantau dengan read_log.',
-        inputSchema: { type: 'object', required: ['entity', 'filePath'], properties: { entity: { type: 'string', description: 'Kode entitas, mis. GMF.' }, filePath: { type: 'string', description: 'Path lengkap file .xlsx / .xml.' }, allowUnregistered: { type: 'boolean', description: 'Default false: sebelum upload Pilot mengecek NIK/NPWP penerima ke Coretax dan MEMBATALKAN upload bila ada yang tidak dikenal (Coretax akan menggantinya dengan NIK sementara 9990000000999000). true hanya bila pengguna sengaja memakai NIK sementara.' } } },
-        run: async ({ entity, filePath, allowUnregistered }) => {
+        inputSchema: { type: 'object', required: ['entity', 'filePath'], properties: { entity: { type: 'string', description: 'Kode entitas, mis. GMF.' }, filePath: { type: 'string', description: 'Path lengkap file .xlsx / .xml.' }, proceed: { type: 'boolean', description: 'Default false: Pilot mengecek NIK/NPWP penerima ke Coretax dulu (maks 30 nomor). Bila ada yang tidak dikenal Coretax (akan diganti NIK sementara 9990000000999000), upload BELUM dijalankan - tunjukkan daftarnya dan TANYAKAN pengguna lanjut atau tidak. Panggil lagi dengan proceed=true hanya bila pengguna memilih lanjut.' } } },
+        run: async ({ entity, filePath, proceed }) => {
             const e = await entityOf(entity);
-            const r = await call('POST', '/api/actions/import-coretax', { entity: e, filePath, allowUnregistered: !!allowUnregistered });
-            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type: r && r.type, count: r && r.count, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL:".' };
+            if (!proceed) {
+                const c = await call('POST', '/api/import/check-nik', { entity: e, filePath }, 420000);
+                if (c && c.unknown && c.unknown.length) return { uploaded: false, needsConfirmation: true, entity: e.entity_id + ' - ' + e.entity_name, unknown: c.unknown.map((x) => ({ id: x.id, coretax: x.error })), note: c.unknown.length + ' NIK/NPWP tidak dikenal Coretax: bila di-upload, bukti potongnya memakai NIK sementara 9990000000999000 (nama "PENERIMA PENGHASILAN#NIK") dan perlu dibetulkan kemudian. Tanyakan pengguna: lanjut upload (panggil lagi dengan proceed=true) atau perbaiki NIK di file dulu. Untuk upload PENGGANTI (sesudah batal / ganti identitas), sebaiknya JANGAN lanjut sebelum NIK benar.' };
+                if (c && c.checked === false && c.note) var nikNote = c.note;
+            }
+            const r = await call('POST', '/api/actions/import-coretax', { entity: e, filePath, skipNikCheck: true });
+            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type: r && r.type, count: r && r.count, ...(typeof nikNote !== 'undefined' && nikNote ? { nikCheck: nikNote } : {}), note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL:".' };
         } },
     { name: 'preview_issue_ebupot', description: 'Pratinjau terbitkan: daftar bukti potong Belum Terbit satu jenis & masa untuk satu entitas (penerima, bruto, PPh, total) dan KODE KONFIRMASI. Hanya membaca. Tampilkan ringkasan + totalnya ke pengguna dan minta persetujuan eksplisit sebelum issue_ebupot.',
         inputSchema: { type: 'object', required: ['entity', 'type', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['mp', 'bp21', 'bpa1', 'bpu'], description: 'mp = BPMP, bp21 = BP21, bpa1 = BPA1, bpu = BPPU.' }, period: { type: 'string', description: 'Masa, mis. 1026 (MMYY). BPA1: masa akhir.' } } },
