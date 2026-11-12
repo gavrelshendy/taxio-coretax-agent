@@ -1,7 +1,30 @@
 # Taxio Pilot
 
-*Autopilot untuk Coretax.* Sebelumnya bernama "Coretax Agent". Yang berganti hanya nama yang tampil; nama
-file program (`coretax-agent.exe`), repositori, dan folder data (`~/.coretax-agent`) belum diubah.
+*Autopilot untuk Coretax.* Sebelumnya bernama "Coretax Agent". Nama file program (`coretax-agent.exe`)
+dan repositori belum diubah.
+
+## Lokasi data, port dan token (Tahap 1)
+
+Semua lokasi ditentukan `lib/paths.js`, di bawah satu akar `%LOCALAPPDATA%\TaxioPilot\`:
+
+| Folder / berkas | Isi | Dulu |
+|---|---|---|
+| `data\` | session.json, local-entities.json, pending-signup.json | `~/.coretax-agent` (disalin sekali, yang lama dibiarkan) |
+| `logs\coretax-agent.log` | log (+ `.1`/`.2` rotasi) | di samping exe (tidak dipindah) |
+| `profiles\terpasang\`, `profiles\bawaan\` | profil Chrome per PIC | `~/.coretax-agent-profile`, `~/.taxio-pilot-profile` (dipindah; yang gagal dipindah tetap dipakai dari lokasi lama) |
+| `chrome\`, `unduhan-sementara\` | Chrome bawaan, transit unduhan otomatis | sama |
+| `runtime.json` | `{ port, pid, token, version, startedAt }` instance yang berjalan | - |
+
+Hasil unduhan untuk pengguna tetap di `~/Downloads/CoretaxAgent/...`.
+
+Dashboard lokal memakai port 51733 bila bebas, selain itu port bebas lain. Semua `/api/*` dan `/events`
+butuh token acak per peluncuran: `Authorization: Bearer <token>` (alat lokal membaca port + token dari
+`runtime.json`; server MCP melakukannya sendiri) atau cookie yang dipasang saat jendela dibuka di
+`/?t=<token>`. Pengaturan > Pemeriksaan sistem (`GET /api/health`) dan Ekspor diagnostik
+(`POST /api/diagnostics/export`, zip ke Downloads) membantu mendiagnosis PC pengguna.
+
+Uji jalan terisolasi (tanpa jendela/tray/update/unduhan Chrome; tidak pernah menyentuh data asli):
+`TAXIO_PILOT_DATA_DIR=<folder sementara> TAXIO_PILOT_SMOKE=1 TAXIO_PILOT_PORT=0 node main.js`.
 
 Aplikasi desktop mandiri untuk otomasi Coretax. Terpisah dari, dan tidak menyentuh, `Taxio/coretax-helper`
 (`TaxioCoretaxHelper.exe`), yang tetap bekerja seperti biasa lewat deep link `taxio-coretax://` dari web
@@ -23,7 +46,7 @@ akun ke grup. Selama menunggu, sesi tetap tersimpan tapi akun belum dianggap ter
   dengan keterangan.
 - **Otomatis (lokal, tab Saya)**: klien yang belum ada di Taxio Hub bisa ditambahkan sendiri di komputer
   ini, dengan kredensial Coretax ASLI tersimpan lokal (lib/local-entities.js,
-  `~/.coretax-agent/local-entities.json` - plaintext dengan izin berkas 0600, sama seperti token sesi
+  `%LOCALAPPDATA%\TaxioPilot\data\local-entities.json` - plaintext dengan izin berkas 0600, sama seperti token sesi
   session-store.js). Orang Pribadi login dengan NPWP+kata sandi miliknya sendiri; Badan wajib menautkan
   >= 1 PIC (masing-masing dengan kredensial sendiri), karena Coretax membuka akun badan lewat akun
   PIC-nya (impersonate) - boleh lebih dari satu PIC. Login berjalan OTOMATIS lewat jalur yang identik
@@ -78,7 +101,7 @@ The e-Bupot flow's Coretax-side selectors (`setMasaPajakFilter`, `setBpa1RangeFi
 `setKodeObjekFilter`, `getDownloadButton`, `extractRowFields`'s header-name matching) are the
 one part of this codebase that couldn't be verified against the real site while building it.
 Run one small download (a single entity, a single masa, a handful of expected rows) first and
-check `coretax-agent.log` for anything logged as "tidak ditemukan" (not found) - that pinpoints
+check `coretax-agent.log` (`%LOCALAPPDATA%\TaxioPilot\logs\`) for anything logged as "tidak ditemukan" (not found) - that pinpoints
 exactly which selector needs adjusting.
 
 ## Tes

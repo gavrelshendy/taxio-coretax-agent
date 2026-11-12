@@ -18,8 +18,9 @@ const { sendJson } = require('./http-util');
 //     (termasuk menerbitkan / membatalkan bukti potong yang ditandatangani passphrase tersimpan).
 //     Ditolak lewat header Host: harus persis 127.0.0.1:<port> atau localhost:<port>, dengan port
 //     yang benar-benar di-bind server ini.
-// Permintaan TANPA Origin (server MCP, penerusan deep link main.js, tray, curl) tetap diterima -
-// pemalsuan header oleh program lokal butuh eksekusi kode di mesin ini, ancaman yang berbeda.
+// Permintaan TANPA Origin (server MCP, penerusan deep link main.js, tray, curl) lolos cek INI -
+// pemalsuan header oleh program lokal butuh eksekusi kode di mesin ini, ancaman yang berbeda, yang
+// sejak Tahap 1 ditahan oleh token per peluncuran (authProblem di bawah).
 function allowedHosts(port) { return ['127.0.0.1:' + port, 'localhost:' + port]; }
 function allowedOrigins(port) { return allowedHosts(port).map((h) => 'http://' + h); }
 
@@ -30,6 +31,41 @@ function requestOriginProblem(req, port) {
     const origin = req.headers.origin;
     if (origin !== undefined && !allowedOrigins(port).includes(String(origin).toLowerCase())) return 'Origin asing: ' + String(origin).slice(0, 100);
     return null;
+}
+
+// ---- Token per peluncuran (Tahap 1) ----
+// Cek Host/Origin di atas hanya menahan BROWSER. Program lokal apa pun (atau pengguna Windows lain di
+// PC yang sama) tetap bisa memanggil API tanpa Origin - termasuk menerbitkan bukti potong dengan
+// passphrase tersimpan. Karena itu SEMUA /api/* dan /events butuh token acak per peluncuran
+// (lib/runtime.js; disimpan di runtime.json di bawah %LOCALAPPDATA% pengguna ini):
+//   - `Authorization: Bearer <token>` (main.js, tray, updater, server MCP), atau
+//   - cookie HttpOnly SameSite=Strict yang dipasang saat jendela dashboard dibuka di /?t=<token>
+//     (server memvalidasi t, memasang cookie, lalu redirect ke / supaya token tidak tertinggal di
+//     alamat). fetch relatif + EventSource dashboard membawa cookie itu otomatis.
+// Berkas statis tetap tanpa token (halaman masuk harus bisa dimuat). Nama cookie memuat port: cookie
+// tidak dipisah per port oleh browser, dan dua instance (mis. dua pengguna Windows) tidak boleh saling
+// menimpa.
+const { tokenEquals } = require('../lib/runtime');
+function authCookieName(port) { return 'taxio_pilot_' + port; }
+function needsAuth(pathname) { return pathname === '/events' || pathname === '/api' || pathname.startsWith('/api/'); }
+function _cookie(req, name) {
+    for (const part of String(req.headers.cookie || '').split(';')) {
+        const i = part.indexOf('=');
+        if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+    }
+    return null;
+}
+/** null bila token permintaan benar; selain itu alasan penolakan (untuk log - tanpa isi token). */
+function authProblem(req, port, token) {
+    const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || '').trim());
+    if (m) return tokenEquals(m[1], token) ? null : 'token Bearer salah';
+    const c = _cookie(req, authCookieName(port));
+    if (c) return tokenEquals(c, token) ? null : 'cookie token salah (Taxio Pilot sudah dibuka ulang?)';
+    return 'tanpa token';
+}
+const UNAUTHORIZED_MESSAGE = 'Tidak diizinkan: token Taxio Pilot tidak ada atau salah. Buka dashboard lewat ikon / pintasan Taxio Pilot (alat lokal: baca port dan token dari runtime.json).';
+function setAuthCookieHeader(port, token) {
+    return authCookieName(port) + '=' + token + '; Path=/; HttpOnly; SameSite=Strict';
 }
 
 // ---- Restricted Editor ----
@@ -102,7 +138,7 @@ function rejectIfOutdated(res) {
 }
 
 module.exports = {
-    requestOriginProblem, isProjectRestricted, anyRestricted, rejectIfRestricted,
+    requestOriginProblem, authProblem, needsAuth, authCookieName, setAuthCookieHeader, UNAUTHORIZED_MESSAGE, isProjectRestricted, anyRestricted, rejectIfRestricted,
     isEbupotTypeAllowed, isMyBupotAllowed, isIndividualEntityBlocked, ABSOLUTELY_BLOCKED_MYBUPOT_TYPES,
     rejectIfOutdated
 };

@@ -8,14 +8,20 @@
  *
  * Exit code 0 = every non-excluded, non-known-failing test passed.
  *
- * Safety: none of the included tests bind the real app port 51733 or use the real data dir
- * (%USERPROFILE%\.coretax-agent). Tests that start the dashboard server use their own port
- * (0 / 52411 / 52433) and set TAXIO_PILOT_DATA_DIR to a temp dir. Some tests append to the
- * app log (coretax-agent.log in the repo root) via lib/log.js - existing behaviour. */
+ * Safety: none of the included tests bind the real app port 51733 or use the real data root
+ * (%LOCALAPPDATA%\TaxioPilot, or the legacy %USERPROFILE%\.coretax-agent*). Tests that start the
+ * dashboard server use their own port (0 / 52411 / 52433). Every child gets its OWN temp
+ * TAXIO_PILOT_DATA_DIR (removed afterwards) unless the test sets one itself, so data, logs, Chrome
+ * profiles and runtime.json of any test land there - never in the real root (lib/paths.js). The one
+ * exception is the bundled-Chrome binary cache: TAXIO_PILOT_CHROME_DIR points at the real one so
+ * browser-based tests reuse an already-installed Chrome instead of downloading ±185 MB per test
+ * (read-only use when it is installed - same as before Tahap 1). */
 'use strict';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const paths = require('../lib/paths');
 
 const ROOT = path.join(__dirname, '..');
 const SCRIPTS = __dirname;
@@ -58,6 +64,11 @@ function runOne(file, timeoutMs) {
         const env = Object.assign({}, process.env);
         // On CI, never download the ~185 MB bundled Chrome (lib/browser.js): use the runner's Chrome.
         if (process.env.CI && env.CORETAX_BUNDLED_CHROME === undefined) env.CORETAX_BUNDLED_CHROME = '0';
+        // Isolated data root per test (see the header). Computed from lib/paths.js BEFORE overriding.
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'taxio-pilot-run-'));
+        if (env.TAXIO_PILOT_CHROME_DIR === undefined) env.TAXIO_PILOT_CHROME_DIR = path.join(paths.defaultRoot(), 'chrome');
+        if (env.TAXIO_PILOT_DATA_DIR === undefined) env.TAXIO_PILOT_DATA_DIR = tmpRoot;
+        const cleanup = () => { try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch (e) { /* still locked - temp dir */ } };
         const child = spawn(process.execPath, [path.join('scripts', file)], { cwd: ROOT, env, windowsHide: true });
         let out = '';
         const add = (d) => { out += d; if (out.length > 2e6) out = out.slice(-1e6); };
@@ -67,9 +78,10 @@ function runOne(file, timeoutMs) {
         const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
         child.on('close', (code, signal) => {
             clearTimeout(timer);
+            cleanup();
             resolve({ code, signal, timedOut, out, ms: Date.now() - started });
         });
-        child.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, timedOut: false, out: out + '\n' + e.stack, ms: Date.now() - started }); });
+        child.on('error', (e) => { clearTimeout(timer); cleanup(); resolve({ code: -1, timedOut: false, out: out + '\n' + e.stack, ms: Date.now() - started }); });
     });
 }
 

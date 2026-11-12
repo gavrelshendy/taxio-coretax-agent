@@ -69,6 +69,9 @@ function install() {
     const fakePage = { isClosed: () => false, url: () => '', goto: async () => { throw new Error('halaman tiruan: tidak ada Coretax sungguhan di tes ini'); } };
     chrome.launchOrReuseContext = async () => ({ context: {}, page: fakePage, reused: false, userDataDir: '/tmp/fake' });
     chrome.loginAndImpersonate = async () => true;
+    // Pemeriksaan sistem (Pengaturan -> /api/health) tanpa jaringan / PowerShell sungguhan.
+    require('../lib/doctor').runChecks = async () => ({ at: new Date().toISOString(), summary: { ok: 1, warn: 0, fail: 0 },
+        checks: [{ id: 'data-root', label: 'Folder data dapat ditulis', status: 'ok', detail: 'tiruan', fix: '', ms: 0 }] });
 
     const realStatus = runcontrol.status;
     // ctl.run boleh fungsi (key) => status, untuk mengetes beberapa sesi dengan status berbeda.

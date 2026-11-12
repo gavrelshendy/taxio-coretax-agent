@@ -168,7 +168,7 @@ test('Nama unik per akun, boleh sama di akun lain; data terisolasi per akun', ()
 });
 
 test('Data bertahan di berkas (tanpa kredensial di toEntity), berkas rusak tidak menjatuhkan aplikasi', () => {
-    const f = require('path').join(process.env.TAXIO_PILOT_DATA_DIR, 'local-entities.json');
+    const f = require('path').join(process.env.TAXIO_PILOT_DATA_DIR, 'data', 'local-entities.json');
     const raw = JSON.parse(fs.readFileSync(f, 'utf8'));
     assert.ok(JSON.stringify(raw).includes('rahasia123'), 'kredensial memang tersimpan mentah di berkas (seperti session-store.js)');
     fs.writeFileSync(f, '{ bukan json');

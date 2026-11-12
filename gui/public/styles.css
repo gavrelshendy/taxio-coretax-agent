@@ -442,3 +442,16 @@ kbd { font: 500 11px var(--font-mono); color: var(--muted); background: #fff; bo
 .sp-hint { font-size: 11.5px; color: var(--muted); }
 .sp-empty { padding: 16px; text-align: center; color: var(--muted); font-size: 12.5px; }
 .batch-bar { margin-bottom: 14px; }
+/* Pemeriksaan sistem (Pengaturan) - hijau/amber/merah hanya sebagai penanda status */
+.health-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.health-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; }
+.health-row + .health-row { border-top: 1px solid var(--line); }
+.health-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--green); }
+.health-row.warn .health-dot { background: var(--amber); } .health-row.fail .health-dot { background: var(--red); }
+.health-row .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.health-row .t b { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.health-row .t span { font-size: 12.5px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
+.health-row .t .fix { color: var(--text); }
+.health-st { flex: none; font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--green-soft); color: var(--green-ink); }
+.health-row.warn .health-st { background: var(--amber-soft); color: var(--amber-ink); } .health-row.fail .health-st { background: var(--red-soft); color: var(--red-ink); }
+.health-empty { padding: 14px; font-size: 12.5px; color: var(--muted); }

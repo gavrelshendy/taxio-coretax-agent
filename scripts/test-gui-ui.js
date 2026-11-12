@@ -27,7 +27,8 @@ const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.getFullYear() % 100).padStart(2, '0');
 
 (async () => {
-    await createGuiServer(PORT);
+    // Token peluncuran: jendela dibuka di /?t=<token> seperti main.js; server menukarnya dengan cookie.
+    const server = await createGuiServer(PORT);
     // Chromium bawaan Playwright bila terpasang; kalau tidak (mis. "Executable doesn't exist"), pakai Google Chrome.
     let browser;
     try { browser = await chromium.launch({ headless: true }); }
@@ -67,7 +68,20 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     };
 
     console.log('gui ui');
-    await page.goto(BASE + '/');
+    await test('tanpa token: halaman statis termuat tetapi API ditolak 401; /?t= memasang cookie lalu redirect ke /', async () => {
+        const plain = await (await browser.newContext()).newPage();
+        try {
+            await plain.goto(BASE + '/');
+            const st = await plain.evaluate("fetch('/api/session').then(function (r) { return r.status; })");
+            assert.strictEqual(st, 401);
+        } finally { await plain.context().close(); }
+        const resp = await page.goto(BASE + '/?t=' + server.token);
+        assert.strictEqual(new URL(page.url()).pathname + new URL(page.url()).search, '/');
+        assert.ok(resp.ok());
+        const cookies = await ctx.cookies(BASE);
+        const c = cookies.find((x) => x.name === 'taxio_pilot_' + PORT);
+        assert.ok(c && c.httpOnly && c.sameSite === 'Strict', 'cookie HttpOnly SameSite=Strict');
+    });
     await page.waitForSelector('.auth-form');
 
     // ------------------------------------------------ masuk / daftar
@@ -478,6 +492,36 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(!(await page.locator('#btn-sessions').count()), 'tombol topbar terpisah untuk ini sudah dihapus');
         await page.keyboard.press('Escape');
         await page.waitForSelector('#settings', { state: 'detached' });
+    });
+    await test('Pengaturan: Pemeriksaan sistem tampil dengan status & saran, Periksa ulang meminta ?fresh=1, Ekspor diagnostik + peringatan NPWP', async () => {
+        // Hasil pemeriksaan & ekspor ditiru di browser: tes ini tidak boleh menyentuh jaringan / Downloads asli.
+        const healthUrls = [];
+        const rep = (detail) => ({ at: new Date().toISOString(), summary: { ok: 1, warn: 1, fail: 1 }, checks: [
+            { id: 'data-root', label: 'Folder data dapat ditulis', status: 'ok', detail, fix: '' },
+            { id: 'clock', label: 'Jam PC', status: 'warn', detail: 'Jam PC lebih cepat 5 menit dari jam server.', fix: 'Aktifkan "Atur waktu secara otomatis".' },
+            { id: 'hub', label: 'Taxio Hub terjangkau', status: 'fail', detail: 'Taxio Hub tidak terjangkau: <b>x</b>', fix: 'Periksa koneksi internet.' }] });
+        await page.route('**/api/health**', (route) => { healthUrls.push(route.request().url()); return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rep(healthUrls.length === 1 ? 'C:\\data' : 'C:\\data (ulang)')) }); });
+        await page.route('**/api/diagnostics/export', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ file: 'C:\\Users\\Budi\\Downloads\\TaxioPilot-diagnostik-1.zip', bytes: 1000, entries: [] }) }));
+        try {
+            await page.click('#open-settings');
+            await page.waitForSelector('#settings .health-row');
+            const rows = page.locator('#settings .health-row');
+            assert.strictEqual(await rows.count(), 3);
+            assert.ok((await rows.nth(1).getAttribute('class')).includes('warn'));
+            assert.ok((await rows.nth(2).getAttribute('class')).includes('fail'));
+            assert.ok((await rows.nth(1).innerText()).includes('Atur waktu secara otomatis'), 'saran tampil untuk warn');
+            assert.ok(!(await rows.nth(0).innerText()).includes('Saran'), 'ok tanpa saran');
+            assert.ok((await rows.nth(2).innerText()).includes('<b>x</b>'), 'detail di-escape, bukan HTML');
+            assert.ok(/NPWP/.test(await text('#diag-text')));
+            await page.click('#settings [data-x="health"]');
+            await page.waitForFunction(() => document.querySelector('#health-list').textContent.includes('(ulang)'));
+            assert.ok(/fresh=1/.test(healthUrls[healthUrls.length - 1]));
+            await page.click('#settings [data-x="diag"]');
+            await page.waitForFunction(() => document.querySelector('#diag-text').textContent.includes('TaxioPilot-diagnostik-1.zip'));
+            assert.ok(/NPWP/.test(await text('#diag-text')));
+            await page.keyboard.press('Escape');
+            await page.waitForSelector('#settings', { state: 'detached' });
+        } finally { await page.unroute('**/api/health**'); await page.unroute('**/api/diagnostics/export'); }
     });
     await test('topbar: tab sesi menampilkan jendela yang benar-benar terbuka, tab entitas terpilih menyala, X menutupnya; tidak terpotong di jendela sempit', async () => {
         fakes.ctl.sessions = [

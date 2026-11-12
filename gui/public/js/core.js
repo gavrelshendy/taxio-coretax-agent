@@ -13,6 +13,12 @@
         let body = null;
         try { body = await res.json(); } catch (e) { /* bukan JSON */ }
         if (!res.ok) {
+            // 401 + auth: cookie token dashboard tidak berlaku (Taxio Pilot dibuka ulang dengan token baru,
+            // atau halaman dibuka tanpa /?t=). Tampilkan sekali, jelas, bukan galat per tombol.
+            if (res.status === 401 && body && body.auth && !P._authNoticeShown) {
+                P._authNoticeShown = true;
+                P.notice({ id: 'local-auth', local: true, level: 'error', msg: 'Jendela dashboard ini tidak tersambung lagi ke Taxio Pilot (aplikasi sudah dibuka ulang). Tutup jendela ini, lalu buka Taxio Pilot lagi dari ikon atau pintasannya.' });
+            }
             const err = new Error((body && body.error) || ('Request failed (' + res.status + ')'));
             err.status = res.status; err.body = body;
             throw err;
