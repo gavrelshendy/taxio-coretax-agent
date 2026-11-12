@@ -22,7 +22,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const NOT_RUNNING = 'Taxio Pilot tidak berjalan - buka Taxio Pilot dulu (lalu coba lagi).';
 
 /** Akar data Pilot - sama dengan lib/paths.js root() (disalin di sini karena file ini berdiri sendiri). */
@@ -113,6 +113,9 @@ async function entityOf(code) {
     if (!pic) throw new Error('Entitas ' + e.entity_id + ' belum punya PIC Coretax tertaut.');
     return { ...e, pic_id: pic.pic_id, pic_name: pic.pic_name };
 }
+/** Kunci proses + antrean dari balasan aksi latar Pilot (sejak 4.x: beberapa proses per entitas / per PIC bisa berjalan
+ *  bersamaan; yang belum mendapat jendela Coretax ANTRE dan mulai sendiri). */
+const runRef = (r) => (r && r.run ? { key: 'run:' + r.run, ...(r.queued ? { queued: true, position: r.position, queueNote: 'Antre: mulai sendiri begitu jendela Coretax bebas (stop_run dengan key ini membatalkannya).' } : {}) } : {});
 const year4 = (y) => { const s = String(y || new Date().getFullYear()); if (!/^20\d{2}$/.test(s)) throw new Error('Tahun tidak valid: ' + y); return s; };
 
 const TOOLS = [
@@ -142,7 +145,7 @@ const TOOLS = [
         run: async ({ entity, year, fresh }) => {
             const e = await entityOf(entity), y = year4(year);
             const r = await call('POST', '/api/actions/download-spt', { entity: e, a1Year: y, a1Fresh: !!fresh });
-            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, year: y, pic: e.pic_name, note: 'Berjalan di Taxio Pilot. Pantau dengan read_log (entity ' + e.entity_id + ') sampai muncul "Mode A1: ... selesai" atau "SELESAI".' };
+            return { started: !!(r && r.started), ...runRef(r), entity: e.entity_id + ' - ' + e.entity_name, year: y, pic: e.pic_name, note: 'Berjalan di Taxio Pilot. Pantau dengan read_log (entity ' + e.entity_id + ') sampai muncul "Mode A1: ... selesai" atau "SELESAI".' };
         } },
     { name: 'make_bpa1_xml', description: 'Buat file XML impor BPA1 Desember dari sheet Draft SPT Desember rekap Mode A1 terakhir entitas (Status PTKP dan Gaji wajib terisi). Hanya membuat file; tidak mengirim apa pun ke Coretax.',
         inputSchema: { type: 'object', required: ['entity'], properties: { entity: { type: 'string' }, year: { type: 'integer' }, outDir: { type: 'string', description: 'Folder simpan XML (opsional, default di samping Excel rekap).' } } },
@@ -165,7 +168,7 @@ const TOOLS = [
                 if (c && c.checked === false && c.note) var nikNote = c.note;
             }
             const r = await call('POST', '/api/actions/import-coretax', { entity: e, filePath, skipNikCheck: true });
-            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type: r && r.type, count: r && r.count, ...(typeof nikNote !== 'undefined' && nikNote ? { nikCheck: nikNote } : {}), note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL:".' };
+            return { started: !!(r && r.started), ...runRef(r), entity: e.entity_id + ' - ' + e.entity_name, type: r && r.type, count: r && r.count, ...(typeof nikNote !== 'undefined' && nikNote ? { nikCheck: nikNote } : {}), note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL:".' };
         } },
     { name: 'preview_issue_ebupot', description: 'Pratinjau terbitkan: daftar bukti potong Belum Terbit satu jenis & masa untuk satu entitas (penerima, bruto, PPh, total) dan KODE KONFIRMASI. Hanya membaca. Tampilkan ringkasan + totalnya ke pengguna dan minta persetujuan eksplisit sebelum issue_ebupot.',
         inputSchema: { type: 'object', required: ['entity', 'type', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['mp', 'bp21', 'bpa1', 'bpu'], description: 'mp = BPMP, bp21 = BP21, bpa1 = BPA1, bpu = BPPU.' }, period: { type: 'string', description: 'Masa, mis. 1026 (MMYY). BPA1: masa akhir.' } } },
@@ -179,21 +182,21 @@ const TOOLS = [
         run: async ({ entity, type, period, token }) => {
             const e = await entityOf(entity);
             const r = await call('POST', '/api/actions/issue-ebupot', { entity: e, type, period, token });
-            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type, period, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL terbitkan".' };
+            return { started: !!(r && r.started), ...runRef(r), entity: e.entity_id + ' - ' + e.entity_name, type, period, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" atau "GAGAL terbitkan".' };
         } },
     { name: 'create_konsep_spt', description: 'Buat Konsep SPT Masa di Coretax (PPh 21/26 atau PPh Unifikasi) untuk satu entitas dan masa; Normal atau Pembetulan dipilih otomatis sesuai Coretax. Tidak melapor / menandatangani. PERHATIAN: membuat konsep nyata - minta konfirmasi pengguna dulu. Pantau dengan read_log.',
         inputSchema: { type: 'object', required: ['entity', 'type', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['pph21', 'unifikasi'] }, period: { type: 'string', description: 'Masa pajak, mis. 1026 (MMYY) atau 102026.' } } },
         run: async ({ entity, type, period }) => {
             const e = await entityOf(entity);
             const r = await call('POST', '/api/actions/create-konsep', { entity: e, taxType: type === 'unifikasi' ? 'ICT_WT' : 'ICT_WIT', period });
-            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type, period, note: 'Pantau dengan read_log (entity ' + e.entity_id + ').' };
+            return { started: !!(r && r.started), ...runRef(r), entity: e.entity_id + ' - ' + e.entity_name, type, period, note: 'Pantau dengan read_log (entity ' + e.entity_id + ').' };
         } },
     { name: 'konsep_spt_download', description: 'Unduh Konsep SPT Masa (PPh 21/26 atau Unifikasi) untuk diperiksa: lampiran lewat alat unduh SPT Pilot (PDF + Excel) dan Induk dibuat ulang dari data konsep, digabung jadi satu PDF bertanda KONSEP. post=true menjalankan Posting SPT dulu (mengisi konsep dari bukti potong Telah Terbit; mengubah draft, minta konfirmasi pengguna). Tidak menandatangani / melapor. Pantau dengan read_log.',
         inputSchema: { type: 'object', required: ['entity', 'type', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['pph21', 'unifikasi'] }, period: { type: 'string', description: 'Masa, mis. 1026.' }, post: { type: 'boolean', description: 'Posting dulu (default false).' } } },
         run: async ({ entity, type, period, post }) => {
             const e = await entityOf(entity);
             const r = await call('POST', '/api/actions/konsep-download', { entity: e, taxType: type === 'unifikasi' ? 'ICT_WT' : 'ICT_WIT', period, post: !!post });
-            return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, type, period, post: !!post, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" (berisi path PDF & Excel) atau "GAGAL:".' };
+            return { started: !!(r && r.started), ...runRef(r), entity: e.entity_id + ' - ' + e.entity_name, type, period, post: !!post, note: 'Pantau dengan read_log (entity ' + e.entity_id + ') sampai "SELESAI:" (berisi path PDF & Excel) atau "GAGAL:".' };
         } },
     { name: 'find_ebupot', description: 'Cari bukti potong satu jenis & masa di Coretax (BPMP, BP21, BP26, BPA1, BPA2, BPPU, BPNR, SP, CY; Telah Terbit atau Belum Terbit): nomor, NIK, nama, PTKP, kode objek, bruto/DPP, tarif, PPh, dokumen, status, sudah dilaporkan di SPT. Saring NIK / nama / nomor. Hanya membaca. Pakai sebelum mengubah atau membatalkan.',
         inputSchema: { type: 'object', required: ['entity', 'period'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['mp', 'bp21', 'bp26', 'bpa1', 'bpa2', 'bpu', 'bpnr', 'sp', 'cy'], description: 'mp = BPMP (default), bp21, bp26, bpa1, bpa2, bpu = BPPU, bpnr, sp, cy.' }, period: { type: 'string', description: 'Masa, mis. 1026 (MMYY). BPA1/BPA2: masa akhir.' }, issued: { type: 'boolean', description: 'true = Telah Terbit (default), false = Belum Terbit.' }, nik: { type: 'string' }, name: { type: 'string', description: 'Sebagian nama.' }, numbers: { type: 'array', items: { type: 'string' }, description: 'Nomor bukti potong.' }, detail: { type: 'boolean', description: 'Buka detail tiap bukti potong (PTKP, posisi, dll.) walau hasilnya banyak.' } } },
@@ -203,34 +206,56 @@ const TOOLS = [
         run: async ({ entity, type, filePath, changes }) => { const e = await entityOf(entity); return { entity: e.entity_id + ' - ' + e.entity_name, ...(await call('POST', '/api/ebupot/amend-preview', { entity: e, type, filePath, changes })) }; } },
     { name: 'amend_ebupot', description: 'KIRIM pembetulan sesuai preview_amend_ebupot (jenis bertanda tangan ditandatangani dengan passphrase PIC tersimpan di Pilot). Panggil HANYA sesudah pratinjau ditunjukkan ke pengguna DAN pengguna menyetujui secara eksplisit. Cukup entity + token (kode konfirmasi): jenis dan perubahan diambil dari pratinjau itu di Pilot (ditolak bila Coretax berubah atau jenis yang disebut berbeda). Tiap bukti potong dicadangkan, diperiksa sesudah kirim, berhenti di kegagalan pertama. Pantau dengan read_log sampai "SELESAI:" / "GAGAL:".',
         inputSchema: { type: 'object', required: ['entity', 'token'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['mp', 'bp21', 'bp26', 'bpa1', 'bpa2', 'bpu', 'bpnr', 'sp', 'cy'] }, token: { type: 'string' }, filePath: { type: 'string' }, changes: { type: 'array', items: { type: 'object' } } } },
-        run: async ({ entity, type, token, filePath, changes }) => { const e = await entityOf(entity); const r = await call('POST', '/api/actions/ebupot-amend', { entity: e, type, token, filePath, changes }); return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, note: 'Pantau dengan read_log (entity ' + e.entity_id + ').' }; } },
+        run: async ({ entity, type, token, filePath, changes }) => { const e = await entityOf(entity); const r = await call('POST', '/api/actions/ebupot-amend', { entity: e, type, token, filePath, changes }); return { started: !!(r && r.started), ...runRef(r), entity: e.entity_id + ' - ' + e.entity_name, note: 'Pantau dengan read_log (entity ' + e.entity_id + ').' }; } },
     { name: 'preview_cancel_ebupot', description: 'Pratinjau PEMBATALAN bukti potong Telah Terbit (semua jenis) satu masa per nomor: daftar, total PPh, yang sudah dilaporkan di SPT, perlu tanda tangan atau tidak, dan KODE KONFIRMASI. Hanya membaca. Untuk koreksi nilai lebih baik preview_amend_ebupot (nomor tetap, tanpa upload ulang).',
         inputSchema: { type: 'object', required: ['entity', 'period', 'numbers'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['mp', 'bp21', 'bp26', 'bpa1', 'bpa2', 'bpu', 'bpnr', 'sp', 'cy'], description: 'mp = BPMP (default), bp21, bp26, bpa1, bpa2, bpu = BPPU, bpnr, sp, cy.' }, period: { type: 'string' }, numbers: { type: 'array', items: { type: 'string' } } } },
         run: async ({ entity, type, period, numbers }) => { const e = await entityOf(entity); return { entity: e.entity_id + ' - ' + e.entity_name, ...(await call('POST', '/api/ebupot/cancel-preview', { entity: e, type, period, numbers })) }; } },
     { name: 'cancel_ebupot', description: 'BATALKAN bukti potong Telah Terbit sesuai preview_cancel_ebupot (tidak bisa dikembalikan - harus dibuat ulang; jenis bertanda tangan memakai passphrase PIC). Panggil HANYA sesudah pratinjau ditunjukkan DAN pengguna menyetujui eksplisit. Cukup entity + token: jenis, masa dan nomor diambil dari pratinjau itu. Jenis bertanda tangan bisa diproses Coretax beberapa menit: status DIPROSES = cek lagi dengan find_ebupot sebelum menerbitkan pengganti. Urutan aman ganti identitas/masa: check_nik NIK baru -> upload pengganti -> pratinjau terbit -> batalkan yang lama -> terbitkan. Pantau dengan read_log.',
         inputSchema: { type: 'object', required: ['entity', 'token'], properties: { entity: { type: 'string' }, type: { type: 'string', enum: ['mp', 'bp21', 'bp26', 'bpa1', 'bpa2', 'bpu', 'bpnr', 'sp', 'cy'] }, period: { type: 'string' }, numbers: { type: 'array', items: { type: 'string' } }, token: { type: 'string' } } },
-        run: async ({ entity, type, period, numbers, token }) => { const e = await entityOf(entity); const r = await call('POST', '/api/actions/ebupot-cancel', { entity: e, type, period, numbers, token }); return { started: !!(r && r.started), entity: e.entity_id + ' - ' + e.entity_name, note: 'Pantau dengan read_log (entity ' + e.entity_id + ').' }; } },
+        run: async ({ entity, type, period, numbers, token }) => { const e = await entityOf(entity); const r = await call('POST', '/api/actions/ebupot-cancel', { entity: e, type, period, numbers, token }); return { started: !!(r && r.started), ...runRef(r), entity: e.entity_id + ' - ' + e.entity_name, note: 'Pantau dengan read_log (entity ' + e.entity_id + ').' }; } },
     { name: 'check_nik', description: 'Cek NIK / NPWP di Coretax (sama dengan formulir Coretax): terdaftar + nama resmi, atau tidak ditemukan. Hanya membaca. WAJIB sebelum membuat bukti potong pengganti dengan NIK baru: NIK yang tidak dikenal Coretax akan diganti NIK sementara 9990000000999000 (nama "PENERIMA PENGHASILAN#NIK").',
         inputSchema: { type: 'object', required: ['entity', 'ids'], properties: { entity: { type: 'string' }, ids: { type: 'array', items: { type: 'string' }, description: 'NIK / NPWP 16 digit (maks 300).' } } },
         run: async ({ entity, ids }) => { const e = await entityOf(entity); return { entity: e.entity_id + ' - ' + e.entity_name, ...(await call('POST', '/api/ebupot/check-nik', { entity: e, ids })) }; } },
     { name: 'record_coretax', description: 'Rekam permintaan API Coretax di jendela PIC selama pengguna mengerjakan satu aksi secara MANUAL (fitur Coretax yang belum ada di Pilot, atau bila pembetulan / batal suatu jenis ditolak dan perlu dicek format aslinya). Token sesi dan passphrase tidak disimpan. Hasilnya (file JSON lokal) dipakai pengembang Pilot untuk membuat otomasinya. Selesai otomatis setelah `minutes` atau saat stop_run.',
         inputSchema: { type: 'object', required: ['entity'], properties: { entity: { type: 'string' }, minutes: { type: 'integer', description: '1-30, default 10.' }, note: { type: 'string', description: 'Label file, mis. "ubah BP21".' } } },
-        run: async ({ entity, minutes, note }) => { const e = await entityOf(entity); const r = await call('POST', '/api/actions/coretax-record', { entity: e, minutes, note }); return { started: !!(r && r.started), file: r && r.file, note: 'Minta pengguna mengerjakan aksinya di jendela Coretax entitas ini sekarang; pantau read_log.' }; } },
-    { name: 'run_status', description: 'Proses yang sedang berjalan di Taxio Pilot per entitas (aktif / dijeda / label).',
-        inputSchema: { type: 'object', properties: {} },
-        run: async () => { const s = await call('GET', '/api/run/status'); return ((s && s.runs) || []).map((r) => ({ entity: r.tag, active: !!r.active, paused: !!r.paused, label: r.label || r.lastLabel, hold: r.holdReason || '' })); } },
-    { name: 'stop_run', description: 'Hentikan proses Pilot yang sedang berjalan untuk satu entitas (berhenti setelah langkah saat ini selesai).',
-        inputSchema: { type: 'object', required: ['entity'], properties: { entity: { type: 'string', description: 'Kode entitas (tag di log).' } } },
-        run: async ({ entity }) => {
+        run: async ({ entity, minutes, note }) => { const e = await entityOf(entity); const r = await call('POST', '/api/actions/coretax-record', { entity: e, minutes, note }); return { started: !!(r && r.started), ...runRef(r), file: r && r.file, note: 'Minta pengguna mengerjakan aksinya di jendela Coretax entitas ini sekarang; pantau read_log.' }; } },
+    { name: 'run_status', description: 'Proses di Taxio Pilot: yang berjalan, yang ANTRE menunggu jendela Coretax bebas (posisi), dan yang terakhir selesai. Satu entitas / satu PIC bisa punya beberapa proses sekaligus (jendela berbeda) - tiap proses punya key (run:<id>) untuk stop_run / read_log.',
+        inputSchema: { type: 'object', properties: { entity: { type: 'string', description: 'Saring ke kode entitas (opsional).' } } },
+        run: async ({ entity } = {}) => {
             const s = await call('GET', '/api/run/status'), want = String(entity || '').toUpperCase();
-            const run = ((s && s.runs) || []).find((r) => r.active && String(r.tag || '').toUpperCase() === want);
-            if (!run) throw new Error('Tidak ada proses aktif untuk ' + entity + '.');
-            await call('POST', '/api/run/stop?session=' + encodeURIComponent(run.key), {});
-            return { stopping: true, entity: run.tag, label: run.label };
+            return ((s && s.runs) || []).filter((r) => !want || String(r.tag || '').toUpperCase() === want).map((r) => ({
+                key: r.id ? 'run:' + r.id : r.key, entity: r.tag, label: r.label || r.lastLabel, feature: r.feature || '', active: !!r.active, queued: !!r.queued,
+                ...(r.queued ? { position: r.position } : {}), window: r.window || null, paused: !!r.paused, hold: r.holdReason || (r.held ? 'ditahan - butuh keputusan' : '')
+            }));
         } },
-    { name: 'read_log', description: 'Baris terakhir log aktivitas Taxio Pilot (progres dan hasil otomasi), bisa disaring per kode entitas.',
-        inputSchema: { type: 'object', properties: { entity: { type: 'string', description: 'Kode entitas untuk disaring (opsional).' }, lines: { type: 'integer', description: 'Jumlah baris (default 40, maks 300).' } } },
-        run: async ({ entity, lines }) => {
+    { name: 'stop_run', description: 'Hentikan proses Pilot (berhenti setelah langkah saat ini selesai) atau batalkan proses yang masih antre. Sebut entity; bila entitas itu punya lebih dari satu proses aktif, sebut juga key dari run_status (ditolak dengan daftarnya bila ambigu).',
+        inputSchema: { type: 'object', properties: { entity: { type: 'string', description: 'Kode entitas (tag di log).' }, key: { type: 'string', description: 'Key proses dari run_status (run:<id>) - wajib bila entitas punya beberapa proses aktif.' } } },
+        run: async ({ entity, key }) => {
+            const s = await call('GET', '/api/run/status'), want = String(entity || '').toUpperCase();
+            const active = ((s && s.runs) || []).filter((r) => r.active);
+            const keyOf = (r) => (r.id ? 'run:' + r.id : r.key);
+            let run;
+            if (key) {
+                run = active.find((r) => keyOf(r) === key || r.key === key);
+                if (!run) throw new Error('Tidak ada proses aktif dengan key ' + key + '.');
+                if (want && String(run.tag || '').toUpperCase() !== want) throw new Error('Proses ' + key + ' milik ' + run.tag + ', bukan ' + entity + '.');
+            } else {
+                if (!want) throw new Error('Sebut entity (atau key dari run_status).');
+                const mine = active.filter((r) => String(r.tag || '').toUpperCase() === want);
+                if (!mine.length) throw new Error('Tidak ada proses aktif untuk ' + entity + '.');
+                if (mine.length > 1) throw new Error(entity + ' punya ' + mine.length + ' proses aktif - sebut key yang mau dihentikan: ' + mine.map((r) => keyOf(r) + ' = "' + r.label + '"' + (r.queued ? ' (antre)' : '')).join('; ') + '.');
+                run = mine[0];
+            }
+            await call('POST', '/api/run/stop?session=' + encodeURIComponent(keyOf(run)), {});
+            return { stopping: !run.queued, cancelled: !!run.queued, key: keyOf(run), entity: run.tag, label: run.label };
+        } },
+    { name: 'read_log', description: 'Baris terakhir log aktivitas Taxio Pilot (progres dan hasil otomasi), bisa disaring per kode entitas, atau per proses dengan key dari run_status / balasan aksi (perlu bila satu entitas menjalankan beberapa proses sekaligus - baris mereka berlabel kode entitas yang sama).',
+        inputSchema: { type: 'object', properties: { entity: { type: 'string', description: 'Kode entitas untuk disaring (opsional).' }, key: { type: 'string', description: 'Key proses (run:<id>) - hanya baris proses itu (Pilot 4.x yang sedang berjalan).' }, lines: { type: 'integer', description: 'Jumlah baris (default 40, maks 300).' } } },
+        run: async ({ entity, key, lines }) => {
+            if (key) {
+                const r = await call('GET', '/api/run/log?session=' + encodeURIComponent(key) + '&lines=' + Math.min(300, Math.max(1, lines || 40)));
+                return [r.label + (r.active ? ' (aktif)' : ' (selesai)') + ' - ' + r.key].concat(r.lines || []).join('\n');
+            }
             const LOG = await logFile();
             if (!fs.existsSync(LOG)) throw new Error('Log Taxio Pilot tidak ditemukan di ' + LOG + ' (atur TAXIO_PILOT_LOG).');
             const size = fs.statSync(LOG).size, fd = fs.openSync(LOG, 'r'), len = Math.min(size, 400000), buf = Buffer.alloc(len);

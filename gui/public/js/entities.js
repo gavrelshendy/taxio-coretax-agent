@@ -92,9 +92,10 @@
     function autoLoginAfterSelect() {
         const flat = E.current();
         if (!flat || flat.project === 'manual' || flat.pic_id === 'unlinked') return;
-        const key = L.sessionKeyOf(flat);
-        if (P.run.busy(key)) {
-            const r = P.run.runOf(key);
+        // Satu PIC bisa menjalankan beberapa jendela sekaligus: hanya proses ENTITAS INI yang menahan login otomatis
+        // (entitas lain milik PIC yang sama mendapat jendela lain).
+        const r = P.run.entityRun(flat);
+        if (r) {
             P.info('This PIC session is running "' + ((r && r.label) || 'another process') + '". Log in to ' + flat.entity_name + ' after that process finishes, or pick another PIC.');
             return;
         }
@@ -146,8 +147,11 @@
         return '';
     }
     // Entitas yang SEDANG diimpersonate di jendela sesi (dibaca dari identitas jendelanya: NPWP/nama).
+    /** PIC (pool) sebuah tab sesi: tab = satu jendela ("<pic>", "<pic>~2", ...), beberapa jendela bisa milik satu PIC. */
+    const poolOf = (s) => (s && s.pool) || (s && s.picId) || '';
+    const poolOfKey = (key) => poolOf(E.sessions().find((x) => x.picId === key)) || key;
     E.sessionEntity = function (s) {
-        const list = E.sessionEntities(s.picId);
+        const list = E.sessionEntities(poolOf(s));
         const id = String(s.identity || '');
         const byNpwp = list.find((e) => e.npwp && sameNpwp(e.npwp, id));
         if (byNpwp) return byNpwp;
@@ -159,7 +163,7 @@
         if (s.kind === 'manual') { const me = E.manualEntity(); if (me) E.select(me, null); return; }
         const ent = E.sessionEntity(s);
         if (!ent) { P.info('The entity open in this session cannot be recognized yet. Select it using the arrow on the session tab.'); return; }
-        E.select(ent, picId);
+        E.select(ent, poolOf(s));
     };
     /** "Login ulang" di tab sesi yang sudah tidak login: sesi manual membuka/menampilkan lagi jendela
      *  login manualnya; sesi PIC menjalankan login otomatis yang sama dengan memilih entitas
@@ -169,27 +173,34 @@
         const s = E.sessions().find((x) => x.picId === picId); if (!s) return;
         if (s.kind === 'manual') return P.manual.open();
         const cur = E.current();
-        const list = E.sessionEntities(picId);
-        const ent = (cur && cur.pic_id === picId) ? null : (E.sessionEntity(s) || (list.length === 1 ? list[0] : null));
-        if (!(cur && cur.pic_id === picId) && !ent) {
+        const pool = poolOf(s);
+        const list = E.sessionEntities(pool);
+        const ent = (cur && cur.pic_id === pool) ? null : (E.sessionEntity(s) || (list.length === 1 ? list[0] : null));
+        if (!(cur && cur.pic_id === pool) && !ent) {
             if (!list.length) { P.info('No entity is linked to this session\'s PIC yet. Select an entity via New session.'); return; }
             P.info('Select an entity to log this session in again.');
             return E.openSessionPopover(picId, anchor);
         }
-        if (ent) E.select(ent, picId);
+        if (ent) E.select(ent, pool);
         autoLoginAfterSelect();
     };
     E.sessionStripHtml = function () {
         const sess = E.sessions();
         if (!sess.length) return '';
         const cur = E.current();
+        // Jendela per PIC: PIC dengan lebih dari satu jendela diberi nomor jendela ("Andi #2"); tab yang menyala =
+        // jendela entitas terpilih (bila PIC-nya punya beberapa jendela: yang terakhir login sebagai entitas itu).
+        const perPool = {};
+        sess.forEach((s) => { const k = poolOf(s); perPool[k] = (perPool[k] || 0) + 1; });
         const tabs = sess.map((s, i) => {
             const manual = s.kind === 'manual';
-            const active = !!(cur && cur.pic_id === s.picId);
+            const pool = poolOf(s);
+            const multi = !manual && perPool[pool] > 1;
+            const active = !!(cur && cur.pic_id === pool && (!multi || !s.entityId || s.entityId === cur.entity_id));
             const idRest = String(s.identity || '').split('·').slice(1).join('·').trim();
             const idText = s.identity ? (idRest || s.identity) : (s.loggedIn ? 'Identity not read yet' : 'Not logged in');
-            const who = manual ? 'Manual' : (picNameOf(s.picId) || 'PIC').split(' ')[0];
-            const n = manual ? 0 : E.sessionEntities(s.picId).length;
+            const who = manual ? 'Manual' : (picNameOf(pool) || 'PIC').split(' ')[0] + (multi ? ' #' + (s.windowNo || 1) : '');
+            const n = manual ? 0 : E.sessionEntities(pool).length;
             const id = P.esc(s.picId);
             // Sesi yang sedang menjalankan proses (bisa beberapa sekaligus) diberi penanda berputar.
             const run = P.run.busy(s.picId) ? P.run.runOf(s.picId) : null;
@@ -203,7 +214,10 @@
                 + (manual ? '' : '<button type="button" class="sess-drop" data-sess-drop="' + id + '" aria-label="Select entity in this session" title="Switch entity in this window · ' + n + (n === 1 ? ' entity' : ' entities') + '">' + P.icon('down', 14) + '</button>')
                 + '<button type="button" class="sess-x" data-sess-close="' + id + '" aria-label="Close this session" title="Close this window">' + P.icon('x', 13) + '</button></div>';
         }).join('');
-        return '<div class="sess-strip" role="group" aria-label="Active Coretax sessions">' + tabs + '<button type="button" class="sess-new" id="sess-new">' + P.icon('plus', 14, '', 2.4) + 'New session</button></div>';
+        // Proses yang menunggu jendela bebas (batas sesi paralel, atau perintah yang sama untuk entitasnya masih berjalan).
+        const queued = (P.state.runs || []).filter((r) => r.queued);
+        const qPill = queued.length ? '<span class="sess-queue" title="' + P.esc('Waiting for a free Coretax window:\n' + queued.map((r) => '#' + r.position + ' ' + r.label).join('\n')) + '">' + P.icon('loader', 12, '', 2.4) + queued.length + ' queued</span>' : '';
+        return '<div class="sess-strip" role="group" aria-label="Active Coretax sessions">' + tabs + qPill + '<button type="button" class="sess-new" id="sess-new">' + P.icon('plus', 14, '', 2.4) + 'New session</button></div>';
     };
 
     // ---------- Antrean banyak entitas ----------
@@ -232,16 +246,17 @@
                 batch.progress = { i: i + 1, n: flats.length, name: f.entity_name }; P.emit('batch');
                 P.emit('log-local', 'Queue ' + (i + 1) + '/' + flats.length + ': ' + f.entity_name);
                 try {
-                    // Tunggu proses SESI INI saja; sesi lain boleh tetap berjalan.
+                    // Tunggu proses ENTITAS INI saja (proses lain, juga di jendela lain PIC yang sama, boleh tetap berjalan).
                     const skey = L.sessionKeyOf(f);
                     const r1 = await P.post('/api/actions/login-entity', { entity: f });
-                    await P.run.waitIdle((r1 && r1.session) || skey);
+                    await P.run.waitIdle(r1 && r1.run ? 'run:' + r1.run : ((r1 && r1.session) || skey), f.entity_id);
                     if (batch.cancel) break;
-                    const st = await P.post('/api/session/status', { picId: f.pic_id });
+                    // Jendela yang terakhir login sebagai entitas ini (PIC bisa punya beberapa jendela).
+                    const st = await P.post('/api/session/status', { picId: f.pic_id, entityId: f.entity_id });
                     if (!st.loggedIn || (f.npwp && !sameNpwp(f.npwp, st.identity))) throw new Error('has not switched to this entity in the session window');
                     E.select(all().find((e) => keyOf(e) === keyOf(f)) || f, f.pic_id);
                     await startOne(f);
-                    await P.run.waitIdle(skey);
+                    await P.run.waitIdle(skey, f.entity_id);
                     done.push({ name: f.entity_name, ok: true });
                 } catch (err) {
                     done.push({ name: f.entity_name, ok: false, err: err.message });
@@ -281,7 +296,7 @@
     function popOutside(ev) { if (popEl && !popEl.contains(ev.target) && !ev.target.closest('[data-sess-drop]')) closePop(); }
     function popKey(ev) { if (ev.key === 'Escape') closePop(); }
     function popList(q) {
-        return E.sessionEntities(popPic).filter((e) => !q || L.entityMatches(e, q));
+        return E.sessionEntities(poolOfKey(popPic)).filter((e) => !q || L.entityMatches(e, q));
     }
     function paintPopList() {
         if (!popEl) return;
@@ -290,7 +305,7 @@
         const list = popList(q);
         popEl.querySelector('.sp-list').innerHTML = list.map((e) => {
             const k = P.esc(keyOf(e));
-            const isCur = !!(cur && keyOf(cur) === keyOf(e) && cur.pic_id === popPic);
+            const isCur = !!(cur && keyOf(cur) === keyOf(e) && cur.pic_id === poolOfKey(popPic));
             const meta = (e.project === 'taxio_hub' ? P.esc(e.entity_id) : '') + (e.npwp ? (e.project === 'taxio_hub' ? ' · ' : '') + P.esc(L.formatNpwp(e.npwp)) : '');
             return '<div class="sp-row' + (isCur ? ' cur' : '') + '"><label class="sp-cb" title="Add to download queue"><input type="checkbox" data-sp-cb="' + k + '"' + (P.batch.has(e) ? ' checked' : '') + '></label>'
                 + '<button type="button" class="sp-pick" data-sp-pick="' + k + '"><b>' + P.esc(e.entity_name) + '</b><span>' + meta + '</span></button>'
@@ -304,8 +319,8 @@
         const sess = E.sessions(); const idx = sess.findIndex((s) => s.picId === picId); if (idx < 0) return;
         popPic = picId;
         popEl = document.createElement('div'); popEl.className = 'sess-pop'; popEl.setAttribute('role', 'dialog'); popEl.setAttribute('aria-label', 'Session ' + (idx + 1) + ' entities');
-        const n = E.sessionEntities(picId).length;
-        popEl.innerHTML = '<div class="sp-head"><div><b>Session ' + (idx + 1) + ' · ' + P.esc(picNameOf(picId) || 'PIC') + '</b><span>' + n + (n === 1 ? ' entity' : ' entities') + ' can be opened in this window without a new window</span></div>'
+        const n = E.sessionEntities(poolOfKey(picId)).length;
+        popEl.innerHTML = '<div class="sp-head"><div><b>Session ' + (idx + 1) + ' · ' + P.esc(picNameOf(poolOfKey(picId)) || 'PIC') + '</b><span>' + n + (n === 1 ? ' entity' : ' entities') + ' can be opened in this window without a new window</span></div>'
             + '<button type="button" class="icon-btn" data-sp-front aria-label="Show this session window" title="Show the Chrome window of this session">' + P.icon('globe', 15) + '</button></div>'
             + '<input type="text" class="sp-q" placeholder="Search entities in this session…" aria-label="Search entities in this session">'
             + '<div class="sp-list"></div>'
@@ -322,18 +337,18 @@
         popEl.querySelector('.sp-q').addEventListener('input', paintPopList);
         popEl.addEventListener('change', (ev) => {
             const cb = ev.target.closest('[data-sp-cb]'); if (!cb) return;
-            const e = E.sessionEntities(popPic).find((x) => keyOf(x) === cb.dataset.spCb); if (e) P.batch.toggle(e, popPic);
+            const e = E.sessionEntities(poolOfKey(popPic)).find((x) => keyOf(x) === cb.dataset.spCb); if (e) P.batch.toggle(e, poolOfKey(popPic));
             const c = popEl && popEl.querySelector('.sp-count'); if (c) c.textContent = P.batch.count() + ' selected for queue';
         });
         popEl.addEventListener('click', async (ev) => {
             const pick = ev.target.closest('[data-sp-pick]');
             if (pick) {
-                const e = E.sessionEntities(popPic).find((x) => keyOf(x) === pick.dataset.spPick);
-                if (e) { E.select(e, popPic); closePop(); autoLoginAfterSelect(); }
+                const e = E.sessionEntities(poolOfKey(popPic)).find((x) => keyOf(x) === pick.dataset.spPick);
+                if (e) { E.select(e, poolOfKey(popPic)); closePop(); autoLoginAfterSelect(); }
                 return;
             }
-            if (ev.target.closest('[data-sp-all]')) { P.batch.setMany(popList((popEl.querySelector('.sp-q') || {}).value || ''), popPic, true); paintPopList(); return; }
-            if (ev.target.closest('[data-sp-none]')) { P.batch.setMany(popList((popEl.querySelector('.sp-q') || {}).value || ''), popPic, false); paintPopList(); return; }
+            if (ev.target.closest('[data-sp-all]')) { P.batch.setMany(popList((popEl.querySelector('.sp-q') || {}).value || ''), poolOfKey(popPic), true); paintPopList(); return; }
+            if (ev.target.closest('[data-sp-none]')) { P.batch.setMany(popList((popEl.querySelector('.sp-q') || {}).value || ''), poolOfKey(popPic), false); paintPopList(); return; }
             if (ev.target.closest('[data-sp-front]')) { try { await P.post('/api/sessions/front', { picId: popPic }); } catch (e) { /* jendela mungkin sudah tertutup */ } }
         });
         document.addEventListener('mousedown', popOutside, true);

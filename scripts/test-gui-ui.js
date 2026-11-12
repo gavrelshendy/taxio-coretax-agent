@@ -925,6 +925,33 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(!(await visible('[data-dismiss-run]')));
         fakes.ctl.run = null;
     });
+    await test('beberapa jendela per PIC: tab bernomor, proses antre tampil (pil + tampilan), Start another command, Batalkan antrean', async () => {
+        fakes.ctl.sessions = [
+            { picId: 'p-andi', pool: 'p-andi', windowNo: 1, kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT Contoh Sejahtera Abadi', entityId: 'CSA' },
+            { picId: 'p-andi~2', pool: 'p-andi', windowNo: 2, kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI', entityId: 'MKA' }
+        ];
+        const queued = { key: 'run:9', id: 9, pool: 'p-andi', entity: 'CSA', tag: 'CSA', label: 'SPT pph21 · PT Contoh Sejahtera Abadi', active: true, queued: true, position: 1, waitReason: 'busy' };
+        fakes.ctl.run = () => Object.assign({ jenisRequested: [], jenisTally: {}, holdReason: '', plan: null, paused: false, runs: [queued], anyActive: true }, queued);
+        try {
+            await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 2, null, { timeout: 6000 });
+            const strip = await text('.sess-strip');
+            assert.ok(strip.includes('#1') && strip.includes('#2'), 'jendela PIC yang sama bernomor: ' + strip);
+            await page.waitForSelector('.sess-queue', { timeout: 4000 });
+            assert.ok((await text('.sess-queue')).includes('1 queued'));
+            await page.waitForSelector('.rail [data-run-hide]', { timeout: 4000 });
+            assert.ok((await text('.content')).includes('Queued') && (await text('.content')).includes('Position 1'));
+            await page.click('.rail [data-run-hide]');
+            await page.waitForSelector('[data-run-show]', { timeout: 4000 });
+            assert.ok((await text('.run-back')).includes('queued'), 'halaman fitur tampil dengan penanda proses yang antre');
+            await page.click('[data-run-show]');
+            await page.waitForSelector('.rail [data-run="stop"]', { timeout: 4000 });
+            fakes.ctl.runCalls.length = 0;
+            page.once('dialog', (d) => d.accept());
+            await page.click('.rail [data-run="stop"]'); await pause(200);
+            assert.deepStrictEqual(fakes.ctl.runCalls, ['stop']);
+        } finally { fakes.ctl.run = null; fakes.ctl.sessions = []; }
+        await page.waitForSelector('.sess-queue', { state: 'detached', timeout: 6000 });
+    });
 
     // ------------------------------------------------ log
     await test('log aktivitas: dock terlipat memuat baris terakhir, dapat dibuka', async () => {
