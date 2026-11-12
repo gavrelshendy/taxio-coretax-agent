@@ -3,41 +3,17 @@
   "version": "3.0.44",
   "private": true,
   "description": "Standalone desktop app for Coretax automation - connects directly to your Taxio/Taxio.me account (email+password) and drives Coretax DJP via Playwright, controlled through a local GUI dashboard instead of a console.",
-  "main": "main.js",
-  "bin": "main.js",
+  "author": "Taxio",
+  "main": "electron/main.js",
   "scripts": {
-    "start": "node main.js",
-    "build": "node scripts/build-exe.js --out-path dist",
+    "start": "electron .",
+    "headless": "node main.js",
+    "build": "electron-builder --win nsis --x64 --publish never",
     "test": "node scripts/run-tests.js"
-  },
-  "pkg": {
-    "scripts": [
-      "main.js"
-    ],
-    "assets": [
-      "node_modules/playwright-core/**/*",
-      "node_modules/playwright/**/*",
-      "gui/public/**/*",
-      "config/**/*",
-      "lib/lampiran-*.js",
-      "lib/returnsheet-grid-api.js",
-      "automation/lampiran.js",
-      "automation/bpmp-amend.js",
-      "lib/coretax-import.js",
-      "lib/coretax-issue.js",
-      "lib/konsep-download.js",
-      "lib/lampiran-per11-layout-*.json",
-      "lib/fonts/**/*",
-      "scripts/test-lampiran-export.js",
-      "scripts/fixtures/*.json"
-    ],
-    "targets": [
-      "node22-win-x64"
-    ],
-    "outputPath": "dist"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "electron-updater": "^6.8.11",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",
     "pdf-lib": "^1.17.1",
@@ -45,7 +21,63 @@
     "playwright": "1.61.1"
   },
   "devDependencies": {
-    "@yao-pkg/pkg": "^6.21.0",
-    "resedit": "^2.0.3"
+    "electron": "^45.3.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.taxio.pilot",
+    "productName": "Taxio Pilot",
+    "executableName": "taxio-pilot",
+    "copyright": "Taxio",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "package.json",
+      "electron/**/*",
+      "lib/**/*",
+      "gui/**/*",
+      "automation/**/*",
+      "config/**/*",
+      "!**/*.xlsx",
+      "gui/public/assets/template-pajak-masukan.xlsx",
+      "!**/.env",
+      "!**/.env.*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/playwright-core/**",
+      "node_modules/playwright/**"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "gui/public/assets/coretax-agent-icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "taxio-pilot-setup-${version}.${ext}",
+      "shortcutName": "Taxio Pilot",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "gavrelshendy",
+        "repo": "taxio-coretax-agent",
+        "releaseType": "release"
+      }
+    ]
   }
 }

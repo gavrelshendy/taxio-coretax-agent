@@ -224,7 +224,6 @@ async function test(name, fn) {
         });
     } finally {
         await new Promise((resolve) => server.close(resolve));
-        require('../lib/file-dialog').stop();
         fs.rmSync(process.env.TAXIO_PILOT_DATA_DIR, { recursive: true, force: true });
     }
     console.log('\n' + passed + ' tes lulus' + (process.exitCode ? ', ADA YANG GAGAL' : '.'));

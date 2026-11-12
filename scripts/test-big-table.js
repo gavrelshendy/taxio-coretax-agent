@@ -1,6 +1,6 @@
 /* Tabel lampiran di atas 1.000 baris (lib/lampiran-big-table.js): PDF memuat baris pertama (Lengkap 1.000,
  * Ringkas 50) dengan jumlah seluruh baris, dan seluruh baris menjadi sheet "... lengkap" di Excel lampiran
- * (ExcelJS - juga dijalankan di dalam exe lewat --test-lampiran-export).
+ * (ExcelJS - juga dijalankan oleh scripts/test-lampiran-export.js).
  *   node scripts/test-big-table.js */
 const assert = require('assert'), fs = require('fs'), os = require('os'), path = require('path');
 const ExcelJS = require('exceljs');

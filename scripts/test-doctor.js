@@ -81,9 +81,17 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
         assert.strictEqual(byId(await run({ browser: () => ({ ready: false, disabled: true }) })).browser.status, 'ok');
     });
 
-    await test('proxy/PAC configured => warn mentioning Taxio Hub / update', async () => {
-        const c = byId(await run({ proxy: () => ({ known: true, enabled: true, server: 'proxy.kantor:8080', pac: true, pacUrl: 'http://wpad/proxy.pac' }) })).proxy;
-        assert.strictEqual(c.status, 'warn'); assert.ok(/proxy\.kantor:8080/.test(c.detail) && /PAC/.test(c.detail) && /Taxio Hub/.test(c.detail));
+    await test('proxy/PAC configured: ok when the app honours it (Electron net.fetch), warn in headless mode', async () => {
+        const proxy = () => ({ known: true, enabled: true, server: 'proxy.kantor:8080', pac: true, pacUrl: 'http://wpad/proxy.pac' });
+        const honoured = byId(await run({ proxy, proxyHonoured: () => true })).proxy;
+        assert.strictEqual(honoured.status, 'ok'); assert.ok(/proxy\.kantor:8080/.test(honoured.detail) && /PAC/.test(honoured.detail) && /Taxio Hub/.test(honoured.detail));
+        const c = byId(await run({ proxy, proxyHonoured: () => false })).proxy;
+        assert.strictEqual(c.status, 'warn'); assert.ok(/proxy\.kantor:8080/.test(c.detail) && /tidak/.test(c.detail) && /Taxio Hub/.test(c.fix));
+        // default dep: follows lib/net.js (setFetch = honoured)
+        net.setFetch(async () => fakeResponse(200, NOW));
+        try { assert.strictEqual(byId(await doctor.runChecks({ deps: { proxy }, only: ['proxy'] })).proxy.status, 'ok'); }
+        finally { net.setFetch(null); }
+        assert.strictEqual(byId(await doctor.runChecks({ deps: { proxy }, only: ['proxy'] })).proxy.status, 'warn');
         assert.strictEqual(byId(await run({ proxy: () => ({ known: false }) })).proxy.status, 'ok');
         assert.deepStrictEqual(require('../lib/win-proxy').parse('    ProxyEnable    REG_DWORD    0x1\r\n    ProxyServer    REG_SZ    10.0.0.1:3128\r\n'),
             { known: true, enabled: true, server: '10.0.0.1:3128', pac: false, pacUrl: '' });
@@ -173,7 +181,6 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
         } finally {
             doctor.runChecks = realRun;
             await new Promise((r) => server.close(r));
-            require('../lib/file-dialog').stop();
         }
     });
 
