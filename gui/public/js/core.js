@@ -17,7 +17,7 @@
             // atau halaman dibuka tanpa /?t=). Tampilkan sekali, jelas, bukan galat per tombol.
             if (res.status === 401 && body && body.auth && !P._authNoticeShown) {
                 P._authNoticeShown = true;
-                P.notice({ id: 'local-auth', local: true, level: 'error', msg: 'Jendela dashboard ini tidak tersambung lagi ke Taxio Pilot (aplikasi sudah dibuka ulang). Tutup jendela ini, lalu buka Taxio Pilot lagi dari ikon atau pintasannya.' });
+                P.notice({ id: 'local-auth', local: true, level: 'error', msg: 'This dashboard window is no longer connected to Taxio Pilot (the app was reopened). Close this window, then open Taxio Pilot again from its icon or shortcut.' });
             }
             const err = new Error((body && body.error) || ('Request failed (' + res.status + ')'));
             err.status = res.status; err.body = body;

@@ -34,7 +34,7 @@
     E.manualEntity = function () {
         const m = P.state.manual;
         if (!m.loggedIn || P.isRestricted()) return null;
-        return { session: true, project: 'manual', project_label: 'Manual', entity_id: 'MANUAL', entity_name: m.identity ? 'Sesi Manual · ' + m.identity : 'Sesi Manual', npwp: '', individual: false, pic_id: 'manual', pic_name: 'Login manual', pic_is_mine: true, pics: [], linked: true };
+        return { session: true, project: 'manual', project_label: 'Manual', entity_id: 'MANUAL', entity_name: m.identity ? 'Manual session · ' + m.identity : 'Manual session', npwp: '', individual: false, pic_id: 'manual', pic_name: 'Manual login', pic_is_mine: true, pics: [], linked: true };
     };
     const all = () => E.group.concat(E.personal);
     const findByKey = (key) => all().find((e) => L.entityKey(e) === key) || null;
@@ -264,7 +264,7 @@
         }
         const names = P.batch.names();
         const shown = names.slice(0, 3).map(P.esc).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) + ' more' : '');
-        return '<div class="banner info batch-bar"><span class="ico">' + P.icon('layers', 20) + '</span><div class="body"><b>Download queue: ' + n + ' entities</b><span>' + shown + ' · Start Automation runs them in order.</span></div>'
+        return '<div class="banner info batch-bar"><span class="ico">' + P.icon('layers', 20) + '</span><div class="body"><b>Download queue: ' + n + ' entities</b><span>' + shown + ' · Start automation runs them in order.</span></div>'
             + '<button type="button" class="btn btn-sm" data-act="batch-clear">Clear</button></div>';
     };
 
@@ -310,7 +310,7 @@
             + '<input type="text" class="sp-q" placeholder="Search entities in this session…" aria-label="Search entities in this session">'
             + '<div class="sp-list"></div>'
             + '<div class="sp-foot"><span class="sp-count"></span><span class="sp-acts"><button type="button" class="link-btn" data-sp-all>Select all</button><button type="button" class="link-btn" data-sp-none>Clear</button></span></div>'
-            + '<div class="sp-hint">Click a name to switch entity. Tick several entities, then Start Automation: they are downloaded in order in this window.</div>';
+            + '<div class="sp-hint">Click a name to switch entity. Tick several entities, then Start automation: they are downloaded in order in this window.</div>';
         document.body.appendChild(popEl);
         const r = anchor.getBoundingClientRect();
         const w = Math.min(380, window.innerWidth - 16);
@@ -562,7 +562,7 @@
         autoLoginAfterSelect();
     }
     function useManualFor(e) {
-        E.select({ project: 'manual', project_label: 'Manual', entity_id: 'MANUAL', entity_name: e.entity_name, npwp: e.npwp || '', individual: !!e.individual, pic_id: 'manual', pic_name: 'Login manual', pic_is_mine: true, pics: [], linked: true }, null);
+        E.select({ project: 'manual', project_label: 'Manual', entity_id: 'MANUAL', entity_name: e.entity_name, npwp: e.npwp || '', individual: !!e.individual, pic_id: 'manual', pic_name: 'Manual login', pic_is_mine: true, pics: [], linked: true }, null);
     }
     // Dipakai tombol 👤 di topbar (sebelah tombol segarkan status) - beralih entitas yang SEDANG
     // dipilih ke sesi manual, membawa nama/NPWP-nya untuk konteks, tanpa kredensial tersimpan.
@@ -620,7 +620,7 @@
             + '<div class="field"><label>PIC name</label><input class="input sm" data-pic-field="name" data-idx="' + i + '" value="' + P.esc(p.name) + '" placeholder="e.g. Ani Sample Wijaya"></div>'
             + '<div class="field"><label>NPWP PIC</label><input class="input sm mono" data-pic-field="npwp" data-idx="' + i + '" value="' + P.esc(p.npwp) + '" placeholder="16 digits, no dots/dashes" maxlength="20" inputmode="numeric"></div>'
             + '<div class="field"><label>Coretax password</label><input class="input sm" type="password" data-pic-field="password" data-idx="' + i + '" value="' + P.esc(p.password) + '" placeholder="' + passHint + '" autocomplete="new-password"></div>'
-            + '<div class="field"><label>Signing passphrase <span class="hint" style="font-weight:400">(optional)</span></label><input class="input sm" type="password" data-pic-field="passphrase" data-idx="' + i + '" value="' + P.esc(p.passphrase) + '" placeholder="' + passphraseHint + '" autocomplete="new-password"></div>'
+            + '<div class="field"><label>Passphrase <span class="hint" style="font-weight:400">(optional)</span></label><input class="input sm" type="password" data-pic-field="passphrase" data-idx="' + i + '" value="' + P.esc(p.passphrase) + '" placeholder="' + passphraseHint + '" autocomplete="new-password"></div>'
             + '</div>';
     }
     function paintDialog() {
@@ -632,7 +632,7 @@
         const passHint = dlg.id ? 'Leave blank to keep unchanged' : 'Required';
         const passphraseHint = dlg.id ? 'Leave blank to keep unchanged' : 'Optional';
         const opFields = '<div class="field"><label for="led-pass">Coretax password</label><input id="led-pass" class="input" type="password" value="' + P.esc(dlg.password) + '" placeholder="' + passHint + '" autocomplete="new-password"></div>'
-            + '<div class="field"><label for="led-passphrase">Signing passphrase <span class="hint" style="font-weight:400">(optional)</span></label><input id="led-passphrase" class="input" type="password" value="' + P.esc(dlg.passphrase) + '" placeholder="' + passphraseHint + '" autocomplete="new-password"></div>';
+            + '<div class="field"><label for="led-passphrase">Passphrase <span class="hint" style="font-weight:400">(optional)</span></label><input id="led-passphrase" class="input" type="password" value="' + P.esc(dlg.passphrase) + '" placeholder="' + passphraseHint + '" autocomplete="new-password"></div>';
         const badanFields = '<div class="field" style="gap:10px"><span class="label">PIC (individual account)<span class="req">REQUIRED, MORE THAN ONE ALLOWED</span></span>'
             + '<span class="hint">Coretax opens a corporate account through the individual account of the person in charge. When automation runs, the agent logs in as this PIC, then selects this entity.</span>'
             + '<div class="stack-lg">' + dlg.pics.map(picRowHtml).join('') + '</div>'
