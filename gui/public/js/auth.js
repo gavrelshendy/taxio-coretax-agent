@@ -27,9 +27,9 @@
         return '<section class="auth-hero"><div class="brand"><div class="brand-logo"><img src="/assets/taxio-pilot-logo.png" alt="Taxio Pilot"></div><div class="brand-name"><b>Taxio Pilot</b><span>Autopilot for Coretax</span></div></div>'
             + '<div class="hero-body"><h1>Coretax runs itself.</h1>'
             + '<p>Pick an entity and a period, and the agent does the rest: logging in, opening pages, downloading, even filling in data. You just watch, and can pause at any time.</p>'
-            + '<div class="hero-run"><div class="top"><i class="dot"></i>Agent at work<span class="n">7 / 15</span></div><div class="bar"><span class="ok"></span></div><div class="sub">PPh Unifikasi · period 0226 — downloading Induk, BPE, and Lampiran</div></div>'
-            + '<div class="hero-feats">' + feat('download', 'Bulk download', 'SPT with Lampiran, e-Bupot, and My Bukti Potong for many periods at once.')
-            + feat('upload', 'Fill and import from Excel', 'Dividends and Faktur Masukan crediting go into Coretax row by row; results are written back to the file.')
+            + '<div class="hero-run"><div class="top"><i class="dot"></i>Agent at work<span class="n">7 / 15</span></div><div class="bar"><span class="ok"></span></div><div class="sub">PPh Unifikasi · Masa Pajak 0226 — downloading Induk, BPE, and Lampiran</div></div>'
+            + '<div class="hero-feats">' + feat('download', 'Bulk download', 'SPT with Lampiran, e-Bupot, and Bukti Potong Saya for many periods at once.')
+            + feat('upload', 'Fill and import from Excel', 'Dividen and Faktur Masukan crediting go into Coretax row by row; results are written back to the file.')
             + feat('bank', 'Create PPh 25 Kode Billing', 'Checks first whether it is already paid, then creates the code through the official Coretax wizard.') + '</div></div>'
             + '<div class="hero-ver">' + esc(version ? 'v' + version : '') + '</div></section>';
     }
