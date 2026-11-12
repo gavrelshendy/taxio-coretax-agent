@@ -1,6 +1,6 @@
 {
   "name": "coretax-agent",
-  "version": "3.0.50",
+  "version": "4.0.0",
   "private": true,
   "description": "Standalone desktop app for Coretax automation - connects directly to your Taxio/Taxio.me account (email+password) and drives Coretax DJP via Playwright, controlled through a local GUI dashboard instead of a console.",
   "author": "Taxio",
@@ -73,10 +73,8 @@
     },
     "publish": [
       {
-        "provider": "github",
-        "owner": "gavrelshendy",
-        "repo": "taxio-coretax-agent",
-        "releaseType": "release"
+        "provider": "generic",
+        "url": "https://github.com/gavrelshendy/taxio-coretax-agent/releases/download/pilot-v4/"
       }
     ]
   }
