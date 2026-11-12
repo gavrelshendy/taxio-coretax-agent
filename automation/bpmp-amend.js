@@ -111,8 +111,12 @@ const LOOKUP_IN_PAGE = `async ([api,auth,userId,nik])=>{
  return {payload:JSON.parse(new TextDecoder().decode(plain))};
 }`;
 
-/** Tab e-Bupot BPMP di jendela PIC + otorisasi API-nya; menolak bila jendela bukan entitas `npwp`. */
-async function openSession(context, npwp) {
+/** Halaman Telah Terbit satu jenis e-Bupot (mp, bp21, bpu, bpa1, ...) - sesi API dibuka di halaman jenis itu sendiri. */
+const issuedUrl = (type = 'mp') => ISSUED_URL.replace('/ebupotmp/', '/ebupot' + (/^[a-z0-9]+$/.test(type) ? type : 'mp') + '/');
+/** Tab e-Bupot (halaman jenis `type`) di jendela PIC + otorisasi API-nya; menolak bila jendela bukan entitas `npwp`.
+ *  Setiap permintaan API dibatasi waktunya (`timeoutMs`) dan diulang sekali bila halaman berpindah di tengah jalan
+ *  ("Execution context was destroyed") - dulu satu permintaan bisa menggantung beberapa menit (pratinjau macet). */
+async function openSession(context, npwp, { type = 'mp', timeoutMs = 90000 } = {}) {
     const auth = {};
     const onRequest = (req) => {
         if (!req.url().includes('/withholdingslipsportal/api/')) return;
@@ -122,12 +126,29 @@ async function openSession(context, npwp) {
     };
     context.on('request', onRequest);
     const page = await context.newPage();
-    await page.goto(ISSUED_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    for (let i = 0; i < 60 && !(auth.authorization && auth.claims); i++) await page.waitForTimeout(500);
     const close = async () => { context.off('request', onRequest); await page.close().catch(() => {}); };
+    try {
+        // Dua kali coba: halaman Coretax kadang belum memanggil API pada muatan pertama (sesi baru / dialihkan).
+        for (let attempt = 0; attempt < 2 && !(auth.authorization && auth.claims); attempt++) {
+            if (attempt) await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+            else await page.goto(issuedUrl(type), { waitUntil: 'domcontentloaded', timeout: 60000 });
+            for (let i = 0; i < 50 && !(auth.authorization && auth.claims); i++) await page.waitForTimeout(500);
+        }
+    } catch (e) { await close(); throw new Error('Halaman e-Bupot Coretax tidak terbuka: ' + e.message); }
     if (!auth.claims) { await close(); throw new Error('Sesi API e-Bupot Coretax tidak tertangkap - pastikan jendela PIC sudah login.'); }
     if (npwp && auth.claims.sub !== npwp) { await close(); throw new Error('Jendela Coretax sedang sebagai ' + auth.claims.sub + ' (' + auth.claims.full_name + '), bukan ' + npwp + ' - dihentikan.'); }
-    const post = (url, body) => page.evaluate(async ([url, body, a]) => { const r = await fetch(url, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', Authorization: a.authorization, 'x-dgt-code': a.dgtCode }, body: JSON.stringify(body) }); let j = null; try { j = await r.json(); } catch (e) {} return { status: r.status, json: j }; }, [url, body, auth]);
+    const once = (url, body) => Promise.race([
+        page.evaluate(async ([url, body, a]) => { const r = await fetch(url, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', Authorization: a.authorization, 'x-dgt-code': a.dgtCode }, body: JSON.stringify(body) }); let j = null; try { j = await r.json(); } catch (e) {} return { status: r.status, json: j }; }, [url, body, auth]),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Coretax tidak menjawab dalam ' + Math.round(timeoutMs / 1000) + ' detik (' + url.split('/').pop() + ')')), timeoutMs))
+    ]);
+    const post = async (url, body) => {
+        try { return await once(url, body); }
+        catch (e) {
+            if (!/Execution context was destroyed|Target closed|navigation/i.test(e.message)) throw e;
+            await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+            return once(url, body);
+        }
+    };
     // property: filter masa - TaxPeriodCode (BPMP, BP21), IncomePeriodCodeEnd (BPA1; automation/ebupot.js PERIOD_FILTER_PROPERTY).
     const list = async (endpoint, code, property = 'TaxPeriodCode') => {
         const rows = [];
@@ -399,4 +420,4 @@ async function sweep({ context, npwp, year, outDir, emit = () => {} }) {
     return { total, problems, people: people.length, sptMasa, amendedSlips, checkedAt: new Date() };
 }
 
-module.exports = { readTargets, run, cancelSlips, listYear, check, sweep, nikProblem, nameMatch, nameGap, openSession };
+module.exports = { readTargets, run, cancelSlips, listYear, check, sweep, nikProblem, nameMatch, nameGap, openSession, issuedUrl };
