@@ -331,6 +331,29 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         assert.strictEqual((await POST('/api/run/stop', {}, { Origin: BASE })).status, 200);
     });
 
+    // ---- e-Bupot v3.0.45 lewat tabel ROUTES + action()/runForResult ----
+    await test('cek NIK: rute ada, wajib token, galat Coretax -> 400 { error } dan proses selesai', async () => {
+        const nt = await call('POST', '/api/ebupot/check-nik', { entity: localSelEntity(), ids: ['3201011201900013'] }, { Authorization: '' });
+        assert.strictEqual(nt.status, 401, 'tanpa token harus ditolak: ' + JSON.stringify(nt.json));
+        const ne = await POST('/api/ebupot/check-nik', { ids: ['3201011201900013'] });
+        assert.strictEqual(ne.status, 400); assert.strictEqual(ne.json.error, 'Entitas belum dipilih.');
+        const a = await POST('/api/ebupot/check-nik', { entity: localSelEntity(), ids: ['3201011201900013'] });
+        assert.strictEqual(a.status, 400, JSON.stringify(a.json)); assert.ok(a.json.error && !/Cek NIK gagal/.test(a.json.error), 'galat tanpa awalan log: ' + a.json.error);
+        await waitIdle();
+    });
+    await test('cari e-Bupot: galat dibalas "<judul> <pesan>" (format v3.0.45)', async () => {
+        const a = await POST('/api/ebupot/find', { entity: localSelEntity(), type: 'bp21', period: '0126' });
+        assert.strictEqual(a.status, 400, JSON.stringify(a.json)); assert.ok(/^Find BP21 /.test(a.json.error), a.json.error);
+        await waitIdle();
+    });
+    await test('kirim / batal dengan kode yang tidak dikenal dan tanpa type -> 400, tidak ada proses', async () => {
+        for (const url of ['/api/actions/ebupot-amend', '/api/actions/ebupot-cancel']) {
+            const a = await POST(url, { entity: localSelEntity(), token: 'ZZZZ99' });
+            assert.strictEqual(a.status, 400, url); assert.ok(/Pratinjau untuk kode ZZZZ99 tidak ditemukan/.test(a.json.error), a.json.error);
+        }
+        assert.ok(!(await GET('/api/run/status')).json.anyActive);
+    });
+
     // ---- Restricted Editor ----
     await test('Restricted Editor: entitas lokal dan login manual diblokir, daftar Saya tanpa entitas lokal', async () => {
         await POST('/api/disconnect', { project: 'taxio_hub' });
@@ -348,6 +371,10 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         }
         const personal = await GET('/api/entities?mode=personal');
         assert.ok(!personal.json.entities.some((e) => e.project === 'local'));
+        for (const url of ['/api/ebupot/check-nik', '/api/ebupot/find', '/api/actions/ebupot-cancel']) {
+            const a = await POST(url, { entity: localSelEntity(), ids: ['3201011201900013'], token: 'ZZZZ99', type: 'mp' });
+            assert.strictEqual(a.status, 403, url + ': ' + JSON.stringify(a.json)); assert.ok(/Restricted/.test(a.json.error), url);
+        }
     });
 
     await test('keluar: sesi dan status menunggu ikut dibersihkan', async () => {
