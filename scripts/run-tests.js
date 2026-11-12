@@ -10,7 +10,7 @@
  *
  * Safety: none of the included tests bind the real app port 51733 or use the real data root
  * (%LOCALAPPDATA%\TaxioPilot, or the legacy %USERPROFILE%\.coretax-agent*). Tests that start the
- * dashboard server use their own port (0 / 52411 / 52433). Every child gets its OWN temp
+ * dashboard server use an OS-assigned port (0), so two checkouts can run the suite at once. Every child gets its OWN temp
  * TAXIO_PILOT_DATA_DIR (removed afterwards) unless the test sets one itself, so data, logs, Chrome
  * profiles and runtime.json of any test land there - never in the real root (lib/paths.js). The one
  * exception is the bundled-Chrome binary cache: TAXIO_PILOT_CHROME_DIR points at the real one so

@@ -65,8 +65,9 @@ let loginDelay = 0; // >0: login tiruan berlangsung lama, untuk mengetes dua ses
 chrome.loginAndImpersonate = async () => { if (loginDelay) await new Promise((r) => setTimeout(r, loginDelay)); return true; };
 
 const { createGuiServer } = require('../gui/server');
-const PORT = 52411;
-const BASE = 'http://127.0.0.1:' + PORT;
+// Port pilihan OS (0): dua checkout yang menjalankan tes bersamaan tidak bentrok (EADDRINUSE).
+let PORT = 0;
+let BASE = '';
 
 let TOKEN = null; // token peluncuran server (Bearer) - lihat gui/guards.js
 async function call(method, url, body, headers) {
@@ -95,7 +96,10 @@ async function test(name, fn) {
 const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
 
 (async () => {
-    TOKEN = (await createGuiServer(PORT)).token;
+    const server = await createGuiServer(0);
+    TOKEN = server.token;
+    PORT = server.address().port;
+    BASE = 'http://127.0.0.1:' + PORT;
     console.log('gui api');
 
     await test('awal: belum terhubung dan tidak ada pendaftaran menunggu', async () => {
