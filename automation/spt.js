@@ -521,6 +521,9 @@ async function processSptCombo(ctx) {
         }
 
         let rowOk = true;
+        // BPE berhasil diambil dari Coretax tetapi gagal DICETAK di komputer ini (mis. jaringan memblokir sumber luar):
+        // bukan soal PIC, jadi masa ini tidak diulang sebagai PIC lain (laporan 2026-11-12: 9 masa diulang sia-sia).
+        let bpeRenderFailed = false;
 
         // BPE first: it's a single fast fetch (no server-side "still generating" wait), so it
         // should never sit blocked behind a slow/stuck SPT induk. Explicit user request
@@ -529,7 +532,8 @@ async function processSptCombo(ctx) {
             try {
                 const html = await fetchBpeHtml(page, authState, row);
                 fs.mkdirSync(saveDir, { recursive: true });
-                await htmlToPdf.renderHtmlToPdf(html, bpePath);
+                try { await htmlToPdf.renderHtmlToPdf(html, bpePath); }
+                catch (re) { bpeRenderFailed = true; throw new Error('BPE terambil dari Coretax tetapi gagal dicetak ke PDF di komputer ini (' + re.message.split('\n')[0] + ')'); }
                 downloadedAny = true;
                 emit('Terunduh: ' + path.basename(bpePath));
             } catch (e) {
@@ -652,7 +656,9 @@ async function processSptCombo(ctx) {
 
         if(ctx.a1Book)ctx.a1Book.record(mmYY,row,lampiranResult?.sheets,rowOk&&a1ConfidentialOk&&fs.existsSync(packagePath));
         if(ctx.a1Book&&!a1ConfidentialOk)rowOk=false;
-        if (onRowDone) { try { onRowDone(jenisKey, mmYY, rowOk); } catch (e) {} }
+        // Gagal HANYA karena BPE tidak tercetak (Induk ada): jangan diulang sebagai PIC lain - PIC tidak berpengaruh.
+        const localOnly = !rowOk && bpeRenderFailed && !fs.existsSync(bpePath) && (!includeInduk || fs.existsSync(sptPath));
+        if (onRowDone) { try { onRowDone(jenisKey, mmYY, rowOk, { localOnly }); } catch (e) {} }
     }
     return { downloadedAny, foundAny: true };
 }
@@ -859,9 +865,9 @@ async function runSptDownload(opts) {
     const failedPairs = new Set(); // "jenisKey|mmYY"
     const failedMmYYSet = () => new Set(Array.from(failedPairs, (p) => p.slice(p.indexOf('|') + 1)));
     const baseOnRowDone = opts.onRowDone;
-    const trackingOnRowDone = (jk, m, ok) => {
+    const trackingOnRowDone = (jk, m, ok, info) => {
         const key = jk + '|' + m;
-        if (ok) failedPairs.delete(key); else failedPairs.add(key);
+        if (ok || (info && info.localOnly)) failedPairs.delete(key); else failedPairs.add(key);
         if (baseOnRowDone) baseOnRowDone(jk, m, ok);
     };
 
