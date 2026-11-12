@@ -50,12 +50,12 @@
         // Pilihan hasil pemulihan (aplikasi baru dibuka): pertahankan hanya bila jendela sesinya masih
         // terbuka; kalau tidak, lepas sekarang. Sesudah itu diperlakukan seperti pilihan biasa.
         if (E.selected && E.selected.restored) {
-            if (list.some((s) => s.picId === cur.pic_id)) { E.selected.restored = false; }
+            if (list.some((s) => (s.pool || s.picId) === cur.pic_id)) { E.selected.restored = false; }
             else if (!P.state.run.active) { seenSel = { key: '', seen: false }; E.clear(); return; }
         }
         const key = cur.project + '|' + cur.entity_id + '|' + cur.pic_id;
         if (seenSel.key !== key) seenSel = { key, seen: false };
-        if (list.some((s) => s.picId === cur.pic_id)) seenSel.seen = true;
+        if (list.some((s) => (s.pool || s.picId) === cur.pic_id)) seenSel.seen = true;
         else if (seenSel.seen && !P.state.run.active) { seenSel = { key: '', seen: false }; E.clear(); }
     }
     async function pollSessions() {
@@ -77,7 +77,7 @@
             if (L.isManualLike(ent)) return P.manual.check(true);
             if (!ent.pic_id || ent.pic_id === 'unlinked') return P.info('This entity is not linked to a Coretax PIC yet.');
             try {
-                const st = await P.post('/api/session/status', { picId: ent.pic_id });
+                const st = await P.post('/api/session/status', { picId: ent.pic_id, entityId: ent.entity_id });
                 if (!st.open) P.info('No Coretax window is open for this entity yet. Click "Sign in to Coretax" first.');
                 else if (!st.loggedIn) P.info('The Coretax window is open but not signed in (still on the login page).');
                 else P.info('Signed in to Coretax as: ' + (st.identity || '(unreadable)'));
@@ -128,9 +128,11 @@
     S.renderContent = function (force) {
         const content = P.$('content'); if (!content) return;
         const run = P.state.run;
-        const want = run.active ? 'run' : 'page:' + P.state.page;
+        // "Start another command" (P.run.hidden): halaman fitur tampil lagi selagi proses entitas ini berjalan / antre.
+        const showRun = run.active && !P.run.isHidden(run);
+        const want = showRun ? 'run' : 'page:' + P.state.page;
         const fresh = document.createElement('div');
-        if (run.active) {
+        if (showRun) {
             const top = content.scrollTop;
             fresh.innerHTML = P.run.viewHtml(run);
             content.replaceChildren(fresh);
@@ -142,6 +144,14 @@
             content.scrollTop = 0;
         } else {
             P.pages.get(P.state.page).refresh();
+        }
+        // Penanda "proses entitas ini masih berjalan / antre - View progress" di atas halaman fitur.
+        let back = content.querySelector(':scope > .run-back');
+        const backHtml = showRun ? '' : P.run.backBannerHtml(run);
+        if (!backHtml) { if (back) back.remove(); }
+        else {
+            if (!back) { back = document.createElement('div'); back.className = 'run-back'; content.prepend(back); }
+            if (back.innerHTML !== backHtml) back.innerHTML = backHtml;
         }
         mode = want;
     };
@@ -159,10 +169,10 @@
         scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Settings"><div class="dialog-head"><h2>Settings</h2><button type="button" class="icon-btn" aria-label="Close" data-x="close">' + P.icon('x', 18) + '</button></div>'
             + '<div class="dialog-body"><div class="stack"><div class="eyebrow">Account</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Disconnect</button></div></div>'
             + '<div class="stack"><div class="eyebrow">App version</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div>'
-            + rollbackHtml(v) + healthSectionHtml() + profilesSectionHtml() + '</div>'
+            + rollbackHtml(v) + parallelSectionHtml() + healthSectionHtml() + profilesSectionHtml() + '</div>'
             + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Quit app</button><span class="grow"></span><button type="button" class="btn" data-x="close">Done</button></div></div>';
         document.body.appendChild(scrim);
-        loadHealth(false);
+        loadHealth(false); loadParallel();
         const onKey = (e) => { if (e.key === 'Escape') closeIt(); };
         const closeIt = () => { document.removeEventListener('keydown', onKey); scrim.remove(); };
         document.addEventListener('keydown', onKey);
@@ -181,6 +191,7 @@
                     if (!info.available) b.disabled = false;
                 } catch (err) { t.textContent = 'Failed to check for updates: ' + err.message; b.disabled = false; }
             }
+            else if (x === 'parallel') { b.disabled = true; await saveParallel(); b.disabled = false; }
             else if (x === 'health') { b.disabled = true; await loadHealth(true); b.disabled = false; }
             else if (x === 'prof-list') { b.disabled = true; await loadStaleProfiles(); b.disabled = false; }
             else if (x === 'prof-delete') { b.disabled = true; await deleteStaleProfiles(); b.disabled = false; }
@@ -205,6 +216,30 @@
             : 'open your old <b>coretax-agent.exe</b>' + (rb.legacyExe ? ' (it used to be at <code class="mono">' + esc(rb.legacyExe) + '</code>)' : '') + ', or download it again from <a href="' + esc(rb.v3ReleaseUrl) + '" target="_blank" rel="noopener">the v' + esc(rb.v3Version) + ' release</a>';
         return '<div class="stack" id="rollback"><div class="eyebrow">Back to version 3</div><div class="hint">To go back to v' + esc(rb.v3Version) + ': click <b>Quit app</b> below first (never run both at once), then ' + where
             + '. Version 3 keeps its own data; each PIC logs in to Coretax once more there, and you may have to sign in to Taxio Hub again. Opening Taxio Pilot later brings you back to this version.</div></div>';
+    }
+
+    // ---------- Sesi paralel (GET/POST /api/settings/parallel, lib/parallel-settings.js) ----------
+    function parallelSectionHtml() {
+        return '<div class="stack" id="parallel-section"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">Parallel sessions</div>'
+            + '<div class="row" style="gap:8px"><label class="hint" for="par-pic">Windows per PIC</label><input class="input sm" id="par-pic" type="number" min="1" max="5" style="width:64px">'
+            + '<label class="hint" for="par-total">Running at once</label><input class="input sm" id="par-total" type="number" min="1" max="12" style="width:64px">'
+            + '<button type="button" class="btn btn-sm" data-x="parallel">Save</button></div></div>'
+            + '<div class="hint" id="par-text">Each PIC can use several Coretax windows at once, each with its own Chrome profile, so different commands (or entities of the same PIC) run side by side. Commands that do not get a window wait in a queue and start by themselves.</div></div>';
+    }
+    async function loadParallel() {
+        try {
+            const r = await P.api('/api/settings/parallel');
+            const a = P.$('par-pic'), b = P.$('par-total');
+            if (a) a.value = r.perPic; if (b) b.value = r.total;
+        } catch (e) { /* bagian ini tetap bisa diisi manual */ }
+    }
+    async function saveParallel() {
+        const t = P.$('par-text');
+        try {
+            const r = await P.post('/api/settings/parallel', { perPic: Number((P.$('par-pic') || {}).value), total: Number((P.$('par-total') || {}).value) });
+            P.$('par-pic').value = r.perPic; P.$('par-total').value = r.total;
+            if (t) t.textContent = 'Saved: up to ' + r.perPic + ' window(s) per PIC, ' + r.total + ' running at once. Queued commands start as soon as a window is free.';
+        } catch (e) { if (t) t.textContent = 'Failed to save: ' + e.message; }
     }
 
     // ---------- Pemeriksaan sistem (GET /api/health, lib/doctor.js) ----------
@@ -288,6 +323,7 @@
         const app = P.$('app');
         app.addEventListener('click', (e) => {
             const nav = e.target.closest('[data-nav]'); if (nav) return S.go(nav.dataset.nav);
+            if (e.target.closest('[data-run-show]')) { P.run.hidden = null; return S.renderContent(true); }
             if (e.target.closest('#entity-chip')) return E.openPalette();
             const sr = e.target.closest('[data-sess-relogin]'); if (sr) return E.reloginSession(sr.dataset.sessRelogin, sr);
             const sm = e.target.closest('[data-sess]'); if (sm) return E.selectSession(sm.dataset.sess);

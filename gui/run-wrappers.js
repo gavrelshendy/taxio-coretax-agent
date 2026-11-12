@@ -13,13 +13,20 @@
  *     paling lama LINGER_MAX_MS; bila tidak pernah selesai, satu baris log lalu sesi dilepas paksa. Permintaan
  *     baru untuk sesi itu selama menunggu mendapat 409 "Sesi ini masih menjalankan ..." yang sudah ada.
  * runcontrol.finish(run) dipanggil dengan proses EKSPLISIT, karena pelepasan yang tertunda bisa berjalan di luar
- * konteks AsyncLocalStorage permintaan aslinya. */
+ * konteks AsyncLocalStorage permintaan aslinya.
+ *
+ * ANTREAN (2026-11-13, semua perintah bisa paralel - lib/runcontrol.js): proses yang belum mendapat jendela tidak lagi
+ * ditolak 409. runInBackground tetap membalas 202 SEGERA (+ queued: true, position) lalu menunggu gilirannya; Stop
+ * membatalkannya sebelum mulai. runForResult (cari / pratinjau / cek NIK - menjawab langsung) menunggu antrean paling
+ * lama limits.RESULT_QUEUE_MS (30 detik) lalu tetap menjawab 409 dengan pesan lama "Sesi ini masih menjalankan ...",
+ * supaya pemanggil MCP (batas panggilan 120 detik) tidak dibiarkan menggantung tanpa kabar. Perintah IDENTIK yang
+ * masih antre / berjalan tetap ditolak 409 langsung. Kerja yang ditinggalkan (lihat atas) tetap menahan jendelanya. */
 const { log } = require('../lib/log');
 const runcontrol = require('../lib/runcontrol');
 const runContext = require('../lib/run-context');
 const { sendJson } = require('./http-util');
 
-const limits = { LINGER_MAX_MS: 10 * 60 * 1000, STOP_POLL_MS: 500 };
+const limits = { LINGER_MAX_MS: 10 * 60 * 1000, STOP_POLL_MS: 500, RESULT_QUEUE_MS: 30 * 1000 };
 
 function runSessionKey() { const r = runcontrol.current(); return r ? r.key : null; }
 
@@ -43,20 +50,23 @@ function releaseRun(run) {
     });
 }
 
-/** Satu proses otomasi di latar: daftar di runcontrol (409 bila sesi itu sibuk), balas 202
- *  { started, session, ...extra } segera (proses bisa berjalan bermenit-menit dan melaporkan
- *  kemajuannya lewat /events), jalankan `work`, lalu SELALU lepaskan sesinya (releaseRun).
+/** Satu proses otomasi di latar: daftar di runcontrol (antre bila belum ada jendela bebas; 409 hanya untuk perintah
+ *  identik yang masih antre/berjalan), balas 202 { started, session, run, [queued, position], ...extra } segera (proses
+ *  bisa berjalan bermenit-menit dan melaporkan kemajuannya lewat /events), tunggu gilirannya, jalankan `work`, lalu
+ *  SELALU lepaskan sesinya (releaseRun). `session` selagi antre = "run:<id>" (berlaku untuk /api/run/status dan Stop).
  *  Galat: `quiet(e)` true = sudah dilaporkan sendiri; Stop pengguna -> log `stopMsg`; selainnya
  *  log `failPrefix + e.message`. `cleanup` berjalan sesudah pelepasan dimulai.
  *  Dipanggil dari dalam handler (alur async permintaan yang sama), karena runcontrol.start()
  *  mengikat proses ke konteks AsyncLocalStorage permintaan itu (runcontrol.isolate). */
 async function runInBackground(res, { label, session, extra, onStart }, work, { stopMsg, failPrefix, quiet, cleanup } = {}) {
-    let run;
-    try { run = runcontrol.start(label, session); }
+    let run, ready;
+    try { ({ run, ready } = runcontrol.enqueue(label, session)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     if (onStart) onStart();
-    sendJson(res, 202, Object.assign({ started: true, session: runSessionKey() }, extra));
+    const queued = run.state === 'queued' ? { queued: true, position: runcontrol.positionOf(run) } : {};
+    sendJson(res, 202, Object.assign({ started: true, session: run.key, run: run.id }, queued, extra));
     try {
+        await ready;
         await work();
     } catch (e) {
         if (quiet && quiet(e)) { /* sudah dilaporkan */ }
@@ -72,9 +82,22 @@ async function runInBackground(res, { label, session, extra, onStart }, work, { 
  *  200 dengan nilai `work()`, atau 400 { error: (errorPrefix || '') + pesan } + log `failPrefix + pesan`.
  *  Balasan keluar segera; sesi baru dilepas sesudah kerja yang ditinggalkan guarded() selesai. */
 async function runForResult(res, { label, session }, work, { failPrefix, errorPrefix }) {
-    let run;
-    try { run = runcontrol.start(label, session); }
+    let run, ready;
+    try { ({ run, ready } = runcontrol.enqueue(label, Object.assign({}, session, { maxWaitMs: limits.RESULT_QUEUE_MS }))); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
+    // Pemanggil memutus koneksi selagi antre: antreannya dibatalkan (tidak ada lagi yang menunggu hasilnya).
+    const onClose = () => { if (run.state === 'queued') runcontrol.stop('run:' + run.id); };
+    const watch = typeof res.on === 'function';
+    if (watch) res.on('close', onClose);
+    try { await ready; }
+    catch (e) {
+        if (watch) res.removeListener('close', onClose);
+        runcontrol.finish(run);
+        if (e && e.isStop) { log(failPrefix + 'dihentikan oleh pengguna.'); if (!res.headersSent) sendJson(res, 400, { error: (errorPrefix || '') + 'dihentikan oleh pengguna.' }); return; }
+        if (!res.headersSent) sendJson(res, 409, { error: e.message });
+        return;
+    }
+    if (watch) res.removeListener('close', onClose);
     try { return sendJson(res, 200, await work()); }
     catch (e) { log(failPrefix + e.message); if (!res.headersSent) sendJson(res, 400, { error: (errorPrefix || '') + e.message }); }
     finally { releaseRun(run); }
