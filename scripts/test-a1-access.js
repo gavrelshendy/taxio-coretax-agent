@@ -30,6 +30,7 @@ module.exports=async function(){
   console.log('PASS: A1 restricted HTTP 403; membership role; manual and forged project bypass; spoofed role; automation guard; no job started.');
  }finally{
   await new Promise(resolve=>server.close(resolve));
+  require('../lib/file-dialog').stop(); // proses PowerShell siaga dari createGuiServer()
   for(const id of Object.keys(state.getAll()))state.clear(id);for(const[id,value]of Object.entries(saved))state.set(id,value);
  }
 };

@@ -107,6 +107,16 @@ function isPrimaryRunning() {
     });
 }
 
+/** isPrimaryRunning(), retried for a few seconds - used after losing the listen() race, when the
+ *  winning instance may have bound the port a moment before it starts answering. */
+async function waitForPrimary() {
+    for (let i = 0; i < 5; i++) {
+        if (await isPrimaryRunning()) return true;
+        await new Promise((r) => setTimeout(r, 1000));
+    }
+    return false;
+}
+
 /** Asks an already-running PRIMARY instance to open/focus its own dashboard window, via the
  *  same `/api/tray/open` endpoint the tray icon's "Buka Dashboard" uses. This process (a fresh
  *  double-click launch that found the port already bound) has no idea whether a window is
@@ -152,6 +162,15 @@ async function main(deepLinkUrl) {
         await createGuiServer(GUI_PORT);
         log('Dashboard lokal aktif di http://127.0.0.1:' + GUI_PORT + '/');
     } catch (e) {
+        // Two near-simultaneous launches (double double-click, or two taxio-coretax:// clicks)
+        // can both pass the "is a primary running?" check before either binds the port; the
+        // loser lands here. If the winner is answering as this app, hand the request to it like
+        // any other second launch instead of showing an error popup.
+        if (e && e.code === 'EADDRINUSE' && await waitForPrimary()) {
+            const forwarded = deepLinkUrl ? await forwardDeepLinkToRunningInstance(deepLinkUrl) : await forwardOpenToRunningInstance();
+            log('Taxio Pilot ternyata sudah dijalankan bersamaan - ' + (forwarded ? 'permintaan diteruskan ke instance yang sudah berjalan.' : 'instance itu tidak menjawab penerusan.'));
+            process.exit(0);
+        }
         log('Gagal membuka server GUI di port ' + GUI_PORT + ': ' + e.message);
         showErrorPopup('Taxio Pilot gagal membuka dashboard lokal (port ' + GUI_PORT + ' mungkin dipakai aplikasi lain): ' + e.message);
         process.exit(1);
@@ -173,21 +192,21 @@ async function main(deepLinkUrl) {
     // before competing for network/CPU. onBeforeRestart reuses this same app's own /api/quit
     // (safe now - see lib/updater.js's header comment for why the update-installer process no
     // longer needs this process to avoid process.exit()).
-    const runUpdateCheck = () => updater.checkAndApply({
+    // Explicit user request 2026-08-13: if the startup check got deferred because an automation
+    // run was active (or GitHub was briefly unreachable), the "outdated" gate (gui/server.js's
+    // checks against updater.getOutdatedInfo()) would otherwise stay stuck reporting the version
+    // as behind forever, blocking new actions indefinitely even long after the run that caused
+    // the deferral finished - so the check repeats every 15 minutes. Since 2026-11-12 the
+    // schedule lives in lib/updater.js's startAutoUpdate(): first check after 4s, and a FAILED
+    // download (GitHub often answers 504 right after a release) is retried after 1, 2, 5 minutes
+    // before falling back to the 15-minute cadence, so the 426 gate doesn't lock users out for
+    // a whole interval.
+    updater.startAutoUpdate({
         isRunActive: () => runcontrol.anyActive(),
         onBeforeRestart: async () => {
             try { await fetch('http://127.0.0.1:' + GUI_PORT + '/api/quit', { method: 'POST' }); } catch (e) {}
         }
-    }).catch((e) => log('Cek update gagal: ' + e.message));
-    setTimeout(runUpdateCheck, 4000);
-    // Explicit user request 2026-08-13: if the startup check above got deferred because an
-    // automation run was active (or GitHub was briefly unreachable), the "outdated" gate
-    // (gui/server.js's checks against updater.getOutdatedInfo()) would otherwise stay stuck
-    // reporting the version as behind forever, blocking new actions indefinitely even long
-    // after the run that caused the deferral finished. Re-checking periodically (not just once)
-    // means a deferred update actually gets retried once idle, same as it would on a fresh
-    // restart - this only ever repeats the already-safe checkAndApply cycle, never anything new.
-    setInterval(runUpdateCheck, 15 * 60 * 1000);
+    }, { initialDelayMs: 4000 });
 }
 
 // Set only when this process IS the just-downloaded new exe, launched by updater.js's

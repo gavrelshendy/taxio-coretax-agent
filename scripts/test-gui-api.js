@@ -323,6 +323,13 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         assert.strictEqual(a.status, 403);
     });
 
+    await test('permintaan GET lintas-origin juga ditolak; same-origin diterima (Host/rebinding: scripts/test-server-security.js)', async () => {
+        assert.strictEqual((await call('GET', '/api/session', undefined, { Origin: 'http://situs-lain.example' })).status, 403);
+        assert.strictEqual((await call('GET', '/api/local-entities', undefined, { Origin: 'http://situs-lain.example' })).status, 403);
+        assert.strictEqual((await call('GET', '/api/session', undefined, { Origin: BASE })).status, 200);
+        assert.strictEqual((await POST('/api/run/stop', {}, { Origin: BASE })).status, 200);
+    });
+
     // ---- Restricted Editor ----
     await test('Restricted Editor: entitas lokal dan login manual diblokir, daftar Saya tanpa entitas lokal', async () => {
         await POST('/api/disconnect', { project: 'taxio_hub' });

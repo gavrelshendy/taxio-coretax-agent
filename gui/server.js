@@ -1,12 +1,16 @@
 /* Coretax Agent - local GUI server.
    Plain node:http (no Express - zero new runtime deps, avoids reintroducing any pkg-bundling
    risk). Bound to 127.0.0.1 only. Serves the static dashboard from gui/public/ and a small
-   hand-written JSON API. Route table is a literal object (no directory-scanning route
-   loader) so pkg's static analyzer can see every require() at build time.
+   hand-written JSON API. Route table (ROUTES, bottom of this file) is a literal object (no
+   directory-scanning route loader) so pkg's static analyzer can see every require() at build time.
 
    Supports being connected to BOTH Taxio (Grup) and Taxio.me at once (see lib/state.js) -
    every route that touches "the connection" takes an explicit `project` id rather than
-   assuming a single global one. */
+   assuming a single global one.
+
+   Menambah aksi Coretax baru: bungkus handler dengan action({...}) (versi usang, body, entitas,
+   Restricted - lihat di bawah) lalu jalankan kerjanya lewat runInBackground() (409/202, log
+   berhenti/gagal, runcontrol.finish). Kebijakan akses ada di gui/guards.js. */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -36,16 +40,20 @@ const deeplink = require('../lib/deeplink');
 const compliance = require('../lib/compliance');
 const tray = require('../lib/tray');
 const updater = require('../lib/updater');
+const fileDialog = require('../lib/file-dialog');
 const { closeWindow, ensureWindowOpenOrFocused } = require('./window');
+const { sendJson, readJsonBody, readLargeJsonBody, serveStatic } = require('./http-util');
+const {
+    requestOriginProblem, isProjectRestricted, anyRestricted, rejectIfRestricted,
+    isEbupotTypeAllowed, isMyBupotAllowed, isIndividualEntityBlocked, ABSOLUTELY_BLOCKED_MYBUPOT_TYPES,
+    rejectIfOutdated
+} = require('./guards');
 // Single source of truth for the version badge in gui/public/index.html - that used to be a
 // hardcoded <span>v1.8.1</span> that nobody remembered to bump across three straight releases
 // (1.9.0/1.9.1/1.9.2 all shipped correctly but kept showing v1.8.1 in the dashboard itself).
 // Reading it live here means every future version bump only ever has to happen in one place
 // (package.json) again.
 const pkg = require('../package.json');
-
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
 
 const PROJECTS_WITH_OWNER_COLUMN = {};
 
@@ -56,113 +64,75 @@ onLogLine((entry) => {
     if (logBacklog.length > LOG_BACKLOG_MAX) logBacklog.shift();
 });
 
-function sendJson(res, status, obj) {
-    const body = JSON.stringify(obj);
-    res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
-    res.end(body);
-}
-function readJsonBody(req) {
-    return new Promise((resolve, reject) => {
-        let data = '';
-        req.on('data', (c) => { data += c; if (data.length > 1e6) req.destroy(); });
-        req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
-        req.on('error', reject);
-    });
+// ---- Kerangka aksi ----
+
+/** Membungkus handler aksi dengan pemeriksaan yang SAMA untuk setiap route, berurutan:
+ *   1. versi usang -> 426 (kecuali `outdated: false`, hanya untuk route yang tidak menyentuh Coretax);
+ *   2. body JSON -> 400 bila tidak valid (`body: 'large'` = batas 20MB untuk file base64;
+ *      `body: 'lenient'` = body rusak dianggap kosong);
+ *   3. `entity` (bawaan: wajib) -> 400 'Entitas belum dipilih.' (`entity: false` bila opsional);
+ *   4. `restricted: '<pesan>'` -> 403 untuk pengguna Restricted Editor.
+ *  Lalu memanggil fn(req, res, body, ctx) dengan body yang selalu berupa objek. */
+function action(opts, fn) {
+    return async (req, res, ctx) => {
+        if (opts.outdated !== false && rejectIfOutdated(res)) return;
+        let body;
+        if (opts.body === 'lenient') {
+            try { body = await readJsonBody(req); } catch (e) { body = null; }
+        } else {
+            const large = opts.body === 'large';
+            try { body = await (large ? readLargeJsonBody(req) : readJsonBody(req)); }
+            catch (e) { return sendJson(res, 400, { error: (large && e.message) || 'Body tidak valid.' }); }
+        }
+        body = body || {};
+        if (opts.entity !== false && !(body.entity && body.entity.project)) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+        if (opts.restricted && rejectIfRestricted(res, opts.restricted)) return;
+        return fn(req, res, body, ctx);
+    };
 }
 
-// Local-only server (bound to 127.0.0.1, see createGuiServer below), but "local-only" is NOT
-// the same as "safe from the browser" - ANY webpage the user has open in ANY tab on this same
-// machine can have its JS fire a cross-origin fetch()/XHR at http://127.0.0.1:<port>/api/... too
-// (loopback isn't a trust boundary browsers enforce). Confirmed live during this audit: every
-// POST route here (including /api/quit) executed with a plain unauthenticated request - zero
-// Origin/Referer/token check existed anywhere. A "simple request" (Content-Type left as
-// text/plain, which skips the CORS preflight) reaches the handler and has its full side effect
-// even though the calling page can never read the JSON response back (blocked by the browser's
-// own CORS policy, since this server sends no Access-Control-Allow-Origin) - classic blind CSRF.
-// Fix: reject any state-changing request whose Origin header (when present - real cross-origin
-// browser requests always attach one; same-origin requests from THIS app's own dashboard window
-// also send it, matching exactly) isn't this same server's own origin. A non-browser caller could
-// still forge this header, but that requires code execution on the machine already - a
-// fundamentally different threat model than "visited the wrong webpage while this was running".
-function isForeignOrigin(req) {
-    const origin = req.headers.origin;
-    if (!origin) return false; // no Origin header = not a cross-origin browser request (curl, same-tab navigation, Playwright's own automation, etc - none of these are the CSRF threat this guards against)
-    return origin !== 'http://127.0.0.1:' + req.headers.host.split(':').pop() && origin !== 'http://' + req.headers.host;
+function runSessionKey() { const r = runcontrol.current(); return r ? r.key : null; }
+
+/** Satu proses otomasi di latar: daftar di runcontrol (409 bila sesi itu sibuk), balas 202
+ *  { started, session, ...extra } segera (proses bisa berjalan bermenit-menit dan melaporkan
+ *  kemajuannya lewat /events), jalankan `work`, lalu SELALU runcontrol.finish().
+ *  Galat: `quiet(e)` true = sudah dilaporkan sendiri; Stop pengguna -> log `stopMsg`; selainnya
+ *  log `failPrefix + e.message`. `cleanup` berjalan sesudah finish().
+ *  Dipanggil dari dalam handler (alur async permintaan yang sama), karena runcontrol.start()
+ *  mengikat proses ke konteks AsyncLocalStorage permintaan itu (runcontrol.isolate). */
+async function runInBackground(res, { label, session, extra, onStart }, work, { stopMsg, failPrefix, quiet, cleanup } = {}) {
+    try { runcontrol.start(label, session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    if (onStart) onStart();
+    sendJson(res, 202, Object.assign({ started: true, session: runSessionKey() }, extra));
+    try {
+        await work();
+    } catch (e) {
+        if (quiet && quiet(e)) { /* sudah dilaporkan */ }
+        else if (e && e.isStop) log(stopMsg || 'Proses dihentikan oleh pengguna.');
+        else log((failPrefix || 'Gagal: ') + (e && e.message));
+    } finally {
+        runcontrol.finish();
+        if (cleanup) await cleanup();
+    }
 }
 
-function isProjectRestricted(projectId) {
-    const s = state.get(projectId);
-    if (!s) return false;
-    const r1 = String(s.role || '').trim().toLowerCase().replace(/-/g, '_');
-    const r2 = String((s.membership && s.membership.role) || '').trim().toLowerCase().replace(/-/g, '_');
-    return r1.includes('restricted') || r2.includes('restricted');
+/** Seperti runInBackground, tetapi menunggu hasilnya (pratinjau / pencarian yang hanya membaca):
+ *  200 dengan nilai `work()`, atau 400 + log `failPrefix + pesan`. */
+async function runForResult(res, { label, session }, work, { failPrefix }) {
+    try { runcontrol.start(label, session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    try { return sendJson(res, 200, await work()); }
+    catch (e) { log(failPrefix + e.message); return sendJson(res, 400, { error: e.message }); }
+    finally { runcontrol.finish(); }
 }
 
-// Server-side enforcement of allowed_ebupot_sections - previously this value was only ever
-// read to build the admin's "Manage Members" config UI and passed through into the automation
-// opts for the in-page watchdog to (imperfectly) enforce; nothing ever rejected a restricted
-// editor's download REQUEST itself here, so a direct POST to these routes bypassed it entirely
-// regardless of what was configured. Fixed 2026-07-27.
-// Maps a bupotType/buktiTypeKey (used in download requests) to the matching config key (used
-// in the admin panel's per-restricted_editor checkboxes, see supabase.js ebupotOpts) - the two
-// naming schemes don't line up 1:1 (e.g. download-type 'bppu' vs config-key 'ebupotbpu'), so
-// this has to be explicit rather than a generic string transform.
-const EBUPOT_TYPE_TO_SECTION = { bp21: 'ebupotbp21', bppu: 'ebupotbpu', bpmp: 'ebupotbpmp', bp26: 'ebupotbp26', bpnr: 'ebupotbpnr' };
-// BPMP/BPA1, in both e-Bupot (entity-issued) and "Bukti Potong Saya" (PIC's own personal
-// received slips) - explicit user request 2026-08-10, absolute for restricted_editor and NOT
-// admin-configurable (unlike the other types below, which stay gated by allowed_ebupot_sections).
-const ABSOLUTELY_BLOCKED_EBUPOT_TYPES = ['bpmp', 'bpa1'];
-const ABSOLUTELY_BLOCKED_MYBUPOT_TYPES = ['bpmp', 'bpa1'];
-function isEbupotTypeAllowed(allowedSections, bupotType) {
-    if (ABSOLUTELY_BLOCKED_EBUPOT_TYPES.includes(bupotType)) return false;
-    if (!allowedSections) return true; // not configured yet - matches the admin panel's own "unset = all checked" default
-    const section = EBUPOT_TYPE_TO_SECTION[bupotType];
-    if (!section) return true; // no configurable section for this type (e.g. bpa2/bpatc) - nothing to gate against
-    return allowedSections.includes(section);
-}
-function isMyBupotAllowed(allowedSections) {
-    if (!allowedSections) return true;
-    return allowedSections.includes('my-withholding-slips');
-}
-// Explicit user request 2026-08-10 (real test: a restricted editor could still search for and
-// log into/download from a PIC's own personal Individual account). `entity.individual` is
-// already threaded through every handler below from Taxio Hub's own entity payload - this is
-// the actual execution point (Coretax Agent's own automation), so blocking here holds regardless
-// of what triggered the request (Taxio Hub's UI, a raw deep link, or this app's own picker) -
-// unlike a client-side-only check, which a deep link can simply bypass entirely.
-function isIndividualEntityBlocked(restricted, entity) {
-    return !!(restricted && entity && entity.individual);
-}
-
-// Explicit user request 2026-08-13: refuses to START any new automation action while a newer
-// release is confirmed available - the auto-update-on-startup check is the only thing that
-// otherwise keeps this build current, and if it ever gets deferred, fails, or someone's just
-// running an old copy they downloaded before a security fix shipped, nothing else would stop
-// them from continuing to use it indefinitely. Deliberately does NOT touch runcontrol at all -
-// an already-active run is never interrupted (updater.getOutdatedInfo() only ever reports
-// "outdated" from a positively-confirmed GitHub check, so a network hiccup can't trigger this).
-function rejectIfOutdated(res) {
-    const info = updater.getOutdatedInfo();
-    if (!info.outdated) return false;
-    sendJson(res, 426, { error: 'Taxio Pilot versi ' + (info.current || '') + ' sudah usang (v' + info.latestVersion + ' tersedia) - update otomatis akan berjalan begitu tidak ada proses aktif. Coba lagi sebentar lagi, atau klik "Cek Update" di Pengaturan.', outdated: true, latestVersion: info.latestVersion });
-    return true;
-}
-
-function serveStatic(req, res, pathname) {
-    let rel = pathname === '/' ? '/index.html' : pathname;
-    const filePath = path.join(PUBLIC_DIR, rel);
-    if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); res.end(); return; }
-    fs.readFile(filePath, (err, buf) => {
-        if (err) { res.writeHead(404); res.end('Not found'); return; }
-        const ext = path.extname(filePath);
-        res.writeHead(200, {
-            'Content-Type': MIME[ext] || 'application/octet-stream',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-        });
-        res.end(buf);
-    });
+/** Opsi run untuk automation/* dari resolveEntitySource: sesi manual polos vs login otomatis. */
+function runOptsFor(src, common, autoExtra) {
+    return src.kind === 'manual'
+        ? Object.assign({ manualPage: src.manualPage, entity: src.runEntity }, common)
+        : Object.assign({ client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId }, common,
+            { restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase }, autoExtra);
 }
 
 function sessionSummary() {
@@ -319,7 +289,7 @@ async function handleEntities(req, res, mode) {
 // (lib/local-auth-client.js menyamar sebagai klien Supabase di depan lib/entities.js). ----
 function guardLocalEntities(res) {
     if (!state.connectedProjectIds().length) { sendJson(res, 401, { error: 'Belum terhubung ke akun manapun.' }); return false; }
-    if (anyRestricted()) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai entitas lokal.' }); return false; }
+    if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai entitas lokal.')) return false;
     return true;
 }
 
@@ -358,12 +328,8 @@ async function handleLocalEntityDelete(req, res) {
  *  Hub; sekarang juga langsung dari aplikasi, dengan login otomatis (PIC tertaut, atau entitas
  *  lokal berkredensial) maupun sesi manual polos. Pemeriksaan "sudah dibayar" dan "kode aktif
  *  ganda" ada di runBillingPph25. */
-async function handleBillingPph25(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, masaInput, nominal, saveRoot } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleBillingPph25 = action({}, async (req, res, body) => {
+    const { entity, masaInput, nominal, saveRoot } = body;
     const mmYY = String(masaInput || '').trim();
     if (!/^(0[1-9]|1[0-2])\d{2}$/.test(mmYY)) return sendJson(res, 400, { error: 'Masa harus berformat MMYY, misalnya 0726.' });
     const amount = Number(String(nominal || '').replace(/[^\d]/g, ''));
@@ -371,23 +337,10 @@ async function handleBillingPph25(req, res) {
 
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
-    const runOpts = src.kind === 'manual'
-        ? { manualPage: src.manualPage, entity: src.runEntity, masaInput: mmYY, nominal: amount, saveRoot }
-        : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, masaInput: mmYY, nominal: amount, saveRoot,
-            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
-
-    try { runcontrol.start('PPh 25 Kode Billing · ' + mmYY + ' · ' + src.label, sessionOf(src)); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        await runBillingPph25(runOpts);
-    } catch (e) {
-        if (e && e.isStop) log('Proses dihentikan oleh pengguna.');
-        else log('Gagal membuat Kode Billing PPh 25: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
+    const runOpts = runOptsFor(src, { masaInput: mmYY, nominal: amount, saveRoot });
+    return runInBackground(res, { label: 'PPh 25 Kode Billing · ' + mmYY + ' · ' + src.label, session: sessionOf(src) },
+        () => runBillingPph25(runOpts), { failPrefix: 'Gagal membuat Kode Billing PPh 25: ' });
+});
 
 async function handleManualStatus(req, res) {
     try { return sendJson(res, 200, await chrome.getManualStatus()); }
@@ -426,7 +379,6 @@ async function handleSessionClose(req, res) {
 
 function sanitizeFolder(s) { return String(s || '').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 60) || 'Manual'; }
 
-function anyRestricted() { return state.connectedProjectIds().some(isProjectRestricted); }
 function currentUserId() {
     const id = state.connectedProjectIds()[0];
     return id ? state.get(id).user.id : null;
@@ -438,10 +390,7 @@ function currentUserId() {
  *  berkredensial (yang sekarang login otomatis, lihat resolveEntitySource). Mengembalikan
  *  { manualPage, runEntity }, atau null setelah membalas galat. */
 async function prepareManual(res) {
-    if (anyRestricted()) {
-        sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai login manual.' });
-        return null;
-    }
+    if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai login manual.')) return null;
     const manualPage = chrome.getManualPage();
     if (!manualPage) {
         sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Buka Coretax", login dulu, lalu coba lagi.' });
@@ -483,7 +432,7 @@ async function resolveEntitySource(res, entity) {
         return { kind: 'manual', manualPage: m.manualPage, runEntity: m.runEntity, label: m.label, tag: m.tag };
     }
     if (entity.project === 'local') {
-        if (anyRestricted()) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan memakai entitas lokal.' }); return null; }
+        if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai entitas lokal.')) return null;
         const uid = currentUserId();
         if (!entity.local_id || !entity.pic_id) { sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' }); return null; }
         const resolved = uid ? localEntities.resolveLogin(uid, entity.local_id, entity.pic_id) : null;
@@ -531,7 +480,6 @@ function sessionOf(src) {
     const tag = id.startsWith('local:') ? String((src.entity && src.entity.entity_name) || 'Lokal').split(/[\s,]+/)[0] : id;
     return { key: src.picId, tag: tag.slice(0, 16) };
 }
-function runSessionKey() { const r = runcontrol.current(); return r ? r.key : null; }
 
 /** Untuk fitur yang bekerja pada satu `page` (Pajak Masukan): membuka halaman Coretax untuk
  *  entitas ini lewat resolveEntitySource, lalu login otomatis (jika bukan sesi manual).
@@ -560,13 +508,9 @@ async function prepareEntityPage(res, entity) {
     };
 }
 
-async function handleDownloadEbupot(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode } = body || {};
-    const documentStatus = body && body.documentStatus ? body.documentStatus : 'issued';
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleDownloadEbupot = action({}, async (req, res, body) => {
+    const { entity, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode } = body;
+    const documentStatus = body.documentStatus ? body.documentStatus : 'issued';
     if (!bupotType || !masaInput) return sendJson(res, 400, { error: 'Jenis bupot & masa wajib diisi.' });
     if (!['issued', 'not_issued'].includes(documentStatus)) return sendJson(res, 400, { error: 'Status dokumen e-Bupot tidak valid.' });
 
@@ -575,35 +519,16 @@ async function handleDownloadEbupot(req, res) {
     if (src.kind === 'auto' && src.restricted && !isEbupotTypeAllowed(src.allowedEbupotSections, bupotType)) {
         return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis e-Bupot ini.' });
     }
-    const runOpts = src.kind === 'manual'
-        ? { manualPage: src.manualPage, entity: src.runEntity, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode }
-        : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode,
-            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
-
+    const runOpts = runOptsFor(src, { bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode });
     // One automation run per session (Chrome window): two runs in the same window would fight
     // over it, but different sessions run side by side (lib/runcontrol.js).
-    try { runcontrol.start('e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + src.label, sessionOf(src)); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    // Fire-and-forget: the run streams its own progress over /events. Respond immediately so
-    // the GUI isn't blocked on a request that can legitimately take many minutes.
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        await runEbupotDownload(runOpts);
-    } catch (e) {
-        if (e && e.isStop) log('Proses dihentikan oleh pengguna.');
-        else log('Gagal download e-Bupot: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
+    return runInBackground(res, { label: 'e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + src.label, session: sessionOf(src) },
+        () => runEbupotDownload(runOpts), { failPrefix: 'Gagal download e-Bupot: ' });
+});
 
-async function handleDownloadMyBupot(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    let { buktiTypeKeys } = body || {};
-    const { entity, masaInput, saveRoot, pageSize, outputMode } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleDownloadMyBupot = action({}, async (req, res, body) => {
+    let { buktiTypeKeys } = body;
+    const { entity, masaInput, saveRoot, pageSize, outputMode } = body;
     if (!Array.isArray(buktiTypeKeys) || !buktiTypeKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis bukti potong & masa wajib diisi.' });
 
     const src = await resolveEntitySource(res, entity);
@@ -626,38 +551,24 @@ async function handleDownloadMyBupot(req, res) {
             return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis Bukti Potong Saya yang dipilih.' });
         }
     }
-    const runOpts = src.kind === 'manual'
-        ? { manualPage: src.manualPage, entity: src.runEntity, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode }
-        : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode,
-            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase };
+    const runOpts = runOptsFor(src, { buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode });
+    return runInBackground(res, { label: 'My Bukti Potong · ' + src.label, session: sessionOf(src) },
+        () => runMyBuktiPotongDownload(runOpts), { failPrefix: 'Gagal download Bukti Potong Saya: ' });
+});
 
-    try { runcontrol.start('My Bukti Potong · ' + src.label, sessionOf(src)); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        await runMyBuktiPotongDownload(runOpts);
-    } catch (e) {
-        if (e && e.isStop) log('Proses dihentikan oleh pengguna.');
-        else log('Gagal download Bukti Potong Saya: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
-
-async function handleDownloadSpt(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    if((body?.a1Year !== undefined || body?.jenisPajakKeys?.includes('pph21')) && require('../lib/spt-access').isRestricted())return sendJson(res,403,{error:'Seluruh unduhan SPT PPh 21 diblokir untuk pengguna Restricted.'});
-    if(body?.a1Year !== undefined){
+// Entitas dicek SESUDAH blokir PPh 21 / Mode A1 untuk Restricted (urutan lama dipertahankan).
+const handleDownloadSpt = action({ entity: false }, async (req, res, body) => {
+    if ((body.a1Year !== undefined || (Array.isArray(body.jenisPajakKeys) && body.jenisPajakKeys.includes('pph21')))
+        && rejectIfRestricted(res, 'Seluruh unduhan SPT PPh 21 diblokir untuk pengguna Restricted.')) return;
+    if (body.a1Year !== undefined) {
         // Use trusted session roles, never a role supplied in the request body.
         // Check every active connection so selecting a manual/other project cannot bypass this.
-        if(state.connectedProjectIds().some(isProjectRestricted))return sendJson(res,403,{error:'Mode A1 tidak tersedia untuk pengguna Restricted.'});
-        if(!/^20\d{2}$/.test(String(body.a1Year))||Number(body.a1Year)<2025)return sendJson(res,400,{error:'Tahun Mode A1 harus mulai 2025.'});
-        const yy=String(body.a1Year).slice(2);
-        body={...body,jenisPajakKeys:['pph21'],masaInput:'01'+yy+'-12'+yy,includeLampiran:true,includeBpe:true,includeInduk:true,lampiranMode:'full',lampiranFormat:'pdf',outputLayout:'combined',checkPph25:false};
+        if (rejectIfRestricted(res, 'Mode A1 tidak tersedia untuk pengguna Restricted.')) return;
+        if (!/^20\d{2}$/.test(String(body.a1Year)) || Number(body.a1Year) < 2025) return sendJson(res, 400, { error: 'Tahun Mode A1 harus mulai 2025.' });
+        const yy = String(body.a1Year).slice(2);
+        body = { ...body, jenisPajakKeys: ['pph21'], masaInput: '01' + yy + '-12' + yy, includeLampiran: true, includeBpe: true, includeInduk: true, lampiranMode: 'full', lampiranFormat: 'pdf', outputLayout: 'combined', checkPph25: false };
     }
-    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle } = body || {};
+    const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle } = body;
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (!Array.isArray(jenisPajakKeys) || !jenisPajakKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis pajak & masa wajib diisi.' });
 
@@ -676,80 +587,36 @@ async function handleDownloadSpt(req, res) {
     // Entitas dengan >1 PIC (Taxio Hub tertaut, atau Badan lokal dengan beberapa PIC): SPT cuma
     // bisa digenerate sesuai penandatangan aslinya, jadi runSptDownload dikasih tahu PIC lain
     // yang bisa dicoba otomatis bila baris di bawah PIC terpilih gagal.
+    const common = { jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle };
     const runOpts = src.kind === 'manual'
-        ? { manualPage: src.manualPage, entity: src.runEntity, jenisPajakKeys, masaInput, saveRoot, checkPph25,
-            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle,
-            onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) }
-        : { client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId, jenisPajakKeys, masaInput, saveRoot, checkPph25,
-            includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle,
-            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase, fallbackPicIds: src.fallbackPicIds,
-            onRowDone: (jenisKey, mmYY, ok) => { runcontrol.recordRowDone(jenisKey, ok); markHub(jenisKey, mmYY, ok); } };
-
-    runOpts.a1Year=body.a1Year;runOpts.a1Fresh=!!body.a1Fresh;runOpts.a1Source=body.a1Source||undefined;
-    try { runcontrol.start('SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label, sessionOf(src)); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    runcontrol.setJenisRequested(jenisPajakKeys);
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        await runSptDownload(runOpts);
-    } catch (e) {
-        if (e && e.isStop) log('Proses dihentikan oleh pengguna.');
-        else log('Gagal download SPT: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
-
-/** Reads a JSON body with a larger cap than readJsonBody's 1MB - the Dividen import posts the
- *  whole .xlsx as base64, which (with 514-city + 122-form reference sheets) can run a few hundred
- *  KB; 20MB is a comfortable ceiling that still guards against runaway uploads. */
-function readLargeJsonBody(req, maxBytes) {
-    return new Promise((resolve, reject) => {
-        let data = ''; const cap = maxBytes || 20 * 1024 * 1024;
-        req.on('data', (c) => { data += c; if (data.length > cap) { req.destroy(); reject(new Error('File terlalu besar.')); } });
-        req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
-        req.on('error', reject);
-    });
-}
+        ? runOptsFor(src, Object.assign(common, { onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) }))
+        : runOptsFor(src, common, { fallbackPicIds: src.fallbackPicIds, onRowDone: (jenisKey, mmYY, ok) => { runcontrol.recordRowDone(jenisKey, ok); markHub(jenisKey, mmYY, ok); } });
+    runOpts.a1Year = body.a1Year; runOpts.a1Fresh = !!body.a1Fresh; runOpts.a1Source = body.a1Source || undefined;
+    return runInBackground(res, { label: 'SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label, session: sessionOf(src), onStart: () => runcontrol.setJenisRequested(jenisPajakKeys) },
+        () => runSptDownload(runOpts), { failPrefix: 'Gagal download SPT: ' });
+});
 
 /** Pajak Masukan - unduh Excel. Berjalan pada halaman Coretax milik entitas (login otomatis lewat
  *  PIC tertaut, sama seperti SPT) atau pada sesi login manual. Bukan tiruan tombol "Ekspor ke
  *  Excel" Coretax sendiri (terbukti murni client-side) - generate sendiri dari /inputinvoice/list. */
-async function handleDownloadPajakMasukan(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, masaInput, saveRoot } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleDownloadPajakMasukan = action({}, async (req, res, body) => {
+    const { entity, masaInput, saveRoot } = body;
     if (!masaInput) return sendJson(res, 400, { error: 'Masa wajib diisi.' });
-
     let masaList;
     try { masaList = masaLib.parseMasaListInput(masaInput); } catch (e) { return sendJson(res, 400, { error: e.message }); }
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-
-    try { runcontrol.start('Download Pajak Masukan · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
+    return runInBackground(res, { label: 'Download Pajak Masukan · ' + target.label, session: target.session }, async () => {
         const page = await target.open();
         await pajakMasukan.runDownloadExcel({ page, masaList, saveRoot, entityFolder: target.folder, emit: (m) => log(m) });
-    } catch (e) {
-        log('Gagal download Pajak Masukan: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
+    }, { stopMsg: 'Download Pajak Masukan dihentikan oleh pengguna.', failPrefix: 'Gagal download Pajak Masukan: ' });
+});
 
 /** e-Faktur - unduh delapan jenis dokumen (Pajak Masukan/Keluaran, Retur, Dokumen Lain, Retur Dokumen Lain).
  *  Excel diambil langsung dari daftar Coretax; CSV resmi dibuat oleh Coretax sendiri (ekspor massal). */
-async function handleDownloadEfaktur(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, masaInput, types, excel, csv, saveRoot } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleDownloadEfaktur = action({}, async (req, res, body) => {
+    const { entity, masaInput, types, excel, csv, saveRoot } = body;
     if (!masaInput) return sendJson(res, 400, { error: 'Masa wajib diisi.' });
     const known = new Set(efaktur.DOC_TYPES.map((t) => t.key));
     const typeKeys = Array.isArray(types) ? [...new Set(types.map(String))] : [];
@@ -760,49 +627,29 @@ async function handleDownloadEfaktur(req, res) {
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-
-    try { runcontrol.start('e-Faktur download · ' + typeKeys.length + ' type(s) · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
+    return runInBackground(res, { label: 'e-Faktur download · ' + typeKeys.length + ' type(s) · ' + target.label, session: target.session }, async () => {
         const page = await target.open();
         await efaktur.runDownloadEfaktur({ page, types: typeKeys, masaList, excel: excel !== false, csv: !!csv, saveRoot, entityFolder: target.folder, entityName: target.label, emit: (m) => log(m) });
-    } catch (e) {
-        log('Gagal download e-Faktur: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
+    }, { stopMsg: 'Download e-Faktur dihentikan oleh pengguna.', failPrefix: 'Gagal download e-Faktur: ' });
+});
 
 /** Pajak Masukan - pengkreditan per baris Excel. Entitas+PIC (login otomatis) atau sesi manual. */
-async function handleImportPajakMasukan(req, res) {
-    let body;
-    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { entity, fileBase64, targetMasaInput } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleImportPajakMasukan = action({ body: 'large' }, async (req, res, body) => {
+    const { entity, fileBase64, targetMasaInput } = body;
     if (!fileBase64) return sendJson(res, 400, { error: 'File template belum dipilih.' });
     if (targetMasaInput && !/^(0[1-9]|1[0-2])\d{2}$/.test(String(targetMasaInput).trim())) {
         return sendJson(res, 400, { error: 'Masa Pengkreditan harus berformat MMYY, misalnya 0726.' });
     }
-
     let fileBuffer;
     try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-
-    try { runcontrol.start('Faktur Masukan crediting' + (targetMasaInput ? ' · period ' + String(targetMasaInput).trim() : '') + ' · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
+    return runInBackground(res, { label: 'Faktur Masukan crediting' + (targetMasaInput ? ' · period ' + String(targetMasaInput).trim() : '') + ' · ' + target.label, session: target.session }, async () => {
         const page = await target.open();
         await pajakMasukan.runImportFromExcel({ page, fileBuffer, targetMasaInput: targetMasaInput ? String(targetMasaInput).trim() : '', dryRun: false, emit: (m) => log(m) });
-    } catch (e) {
-        log('Gagal impor Pajak Masukan: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
+    }, { stopMsg: 'Impor Pajak Masukan dihentikan oleh pengguna.', failPrefix: 'Gagal impor Pajak Masukan: ' });
+});
 
 /** Halaman Coretax untuk Dividen. Tanpa entitas (atau sesi manual): jendela login manual seperti dulu.
  *  Entitas dengan kredensial tersimpan (Taxio Hub / lokal): jendela PIC-nya, login otomatis.
@@ -810,6 +657,8 @@ async function handleImportPajakMasukan(req, res) {
  *  dipakai apa adanya (login ulang akan memindahkannya dari kasus). */
 async function prepareDividenPage(res, entity, needCase) {
     if (!entity || !entity.project || entity.project === 'manual') {
+        // Sesi manual: aturan yang sama dengan prepareManual (Restricted Editor tidak boleh login manual).
+        if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai login manual.')) return null;
         const manualPage = chrome.getManualPage();
         if (!manualPage) { sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu' + (needCase ? ', lalu buka kasus e-Reporting.' : '.') }); return null; }
         const who = await manualIdentity();
@@ -833,10 +682,8 @@ async function prepareDividenPage(res, entity, needCase) {
 
 /** Mode A1 "Hasil sebelumnya": status per masa dari folder / Excel Mode A1 lama (lib/a1-source.js), sebelum
  *  proses dimulai - mana yang datanya sudah ada (Excel lama / cache) dan apakah PDF-nya ada. Hanya membaca disk. */
-async function handleA1Inspect(req, res) {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, year, source, saveRoot } = body || {};
+const handleA1Inspect = action({ outdated: false, entity: false }, async (req, res, body) => {
+    const { entity, year, source, saveRoot } = body;
     if (!entity || !entity.entity_id) return sendJson(res, 400, { error: 'Pilih entitas dulu.' });
     if (!/^20\d{2}$/.test(String(year))) return sendJson(res, 400, { error: 'Tahun tidak valid.' });
     try {
@@ -845,14 +692,12 @@ async function handleA1Inspect(req, res) {
         if (out && out.excel) require('../lib/a1-autorefresh').watch(out.excel);
         return sendJson(res, 200, { ...out, a1Dir: p.outDir, taxServer: p.taxServer });
     } catch (e) { return sendJson(res, 400, { error: e.message }); }
-}
+});
 
 /** XML impor BPA1 dari sheet Draft SPT Desember rekap (lib/a1-desember.js). Hanya membuat file, di folder pilihan (outDir)
  *  atau di sebelah rekap: "<kode> <tahun> - BPA1 Desember (impor).xml"; tidak membuka Coretax. */
-async function handleBpa1Xml(req, res) {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { filePath, year, outDir } = body || {};
+const handleBpa1Xml = action({ outdated: false, entity: false }, async (req, res, body) => {
+    const { filePath, year, outDir } = body;
     if (!filePath || !/\.xlsx$/i.test(filePath)) return sendJson(res, 400, { error: 'Pilih Excel rekap (.xlsx) dulu.' });
     if (outDir && !fs.existsSync(outDir)) return sendJson(res, 400, { error: 'Folder tujuan tidak ditemukan: ' + outDir });
     if (!/^20\d{2}$/.test(String(year || ''))) return sendJson(res, 400, { error: 'Tahun pajak tidak valid.' });
@@ -869,17 +714,12 @@ async function handleBpa1Xml(req, res) {
     } catch (e) {
         return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.code === 'EBUSY' ? 'Excel rekap sedang dibuka - tutup dulu.' : e.message });
     }
-}
+});
 
 /** Pembetulan NIK BPMP (bagian halaman Mode A1): isian NIK Baru / Nama Baru Excel Mode A1 -> Coretax lewat API
  *  (automation/bpmp-amend.js). submit=false hanya menguji; submit=true mengirim lalu memeriksa ulang. */
-async function handleBpmpAmend(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { entity, fileBase64, filePath, year, submit, saveRoot, sweepOnly, allowSimilar, confirmCancel } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
-    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.' });
+const handleBpmpAmend = action({ body: 'large', restricted: 'Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+    const { entity, fileBase64, filePath, year, submit, saveRoot, sweepOnly, allowSimilar, confirmCancel } = body;
     const amend = require('../automation/bpmp-amend');
     if (sweepOnly) return handleBpmpSweep(res, amend, entity, String(year || ''), saveRoot);
     if (!fileBase64 && !filePath) return sendJson(res, 400, { error: 'Excel rekap belum dipilih.' });
@@ -896,90 +736,80 @@ async function handleBpmpAmend(req, res) {
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('BPMP NIK correction' + (submit ? '' : ' (test)') + ' · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    let page = null, outDir = null, npwp = null, results = [], checks = null, sweepRes = null, cancelled = [];
-    try {
-        parsed.skipped.forEach((s) => log('LEWATI ' + s));
-        const done = [...parsed.previous.keys()].filter((old) => parsed.previous.get(old).some((p) => /^DIBETULKAN/.test(p.status)));
-        if (done.length) log('Riwayat di sheet Pembetulan: ' + done.length + ' NIK pernah dibetulkan - yang masih tersisa di Coretax saja yang diproses.');
-        log('Pembetulan NIK BPMP ' + taxYear + ': ' + parsed.targets.length + ' NIK Baru di Excel · mode ' + (submit ? 'KIRIM ke Coretax' : 'UJI (tanpa simpan)') + '.');
-        page = await target.open();
-        outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
-        npwp = entity.project === 'manual' ? null : entity.npwp;
-        if (parsed.targets.length) results = await amend.run({ context: page.context(), npwp, targets: parsed.targets, year: taxYear, submit: !!submit, outDir, allowSimilar: !!allowSimilar, previous: parsed.previous, exclude: parsed.exclude, emit: (m) => log(m) });
-        if (parsed.cancels.length) {
-            if (!submit) for (const c of parsed.cancels) log('AKAN DIBATALKAN ' + c.number + ' masa ' + c.masa + ' · ' + c.nik + ' ' + c.name + ' (Tindakan = Batalkan; dibatalkan saat Kirim, sesudah dikonfirmasi).');
-            else {
-                cancelled = await amend.cancelSlips({ context: page.context(), npwp, year: taxYear, cancels: parsed.cancels, confirmed, emit: (m) => log(m) });
-                log('Pembatalan: ' + cancelled.filter((x) => x.ok).length + ' dibatalkan' + (cancelled.some((x) => !x.ok) ? ', ' + cancelled.filter((x) => !x.ok).length + ' gagal (batalkan manual)' : '') + '.');
+    // Galat ditangani di dalam (penyisiran dan laporan tetap berjalan sesudah berhenti di tengah).
+    return runInBackground(res, { label: 'BPMP NIK correction' + (submit ? '' : ' (test)') + ' · ' + target.label, session: target.session }, async () => {
+        let page = null, outDir = null, npwp = null, results = [], checks = null, sweepRes = null, cancelled = [];
+        try {
+            parsed.skipped.forEach((s) => log('LEWATI ' + s));
+            const done = [...parsed.previous.keys()].filter((old) => parsed.previous.get(old).some((p) => /^DIBETULKAN/.test(p.status)));
+            if (done.length) log('Riwayat di sheet Pembetulan: ' + done.length + ' NIK pernah dibetulkan - yang masih tersisa di Coretax saja yang diproses.');
+            log('Pembetulan NIK BPMP ' + taxYear + ': ' + parsed.targets.length + ' NIK Baru di Excel · mode ' + (submit ? 'KIRIM ke Coretax' : 'UJI (tanpa simpan)') + '.');
+            page = await target.open();
+            outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
+            npwp = entity.project === 'manual' ? null : entity.npwp;
+            if (parsed.targets.length) results = await amend.run({ context: page.context(), npwp, targets: parsed.targets, year: taxYear, submit: !!submit, outDir, allowSimilar: !!allowSimilar, previous: parsed.previous, exclude: parsed.exclude, emit: (m) => log(m) });
+            if (parsed.cancels.length) {
+                if (!submit) for (const c of parsed.cancels) log('AKAN DIBATALKAN ' + c.number + ' masa ' + c.masa + ' · ' + c.nik + ' ' + c.name + ' (Tindakan = Batalkan; dibatalkan saat Kirim, sesudah dikonfirmasi).');
+                else {
+                    cancelled = await amend.cancelSlips({ context: page.context(), npwp, year: taxYear, cancels: parsed.cancels, confirmed, emit: (m) => log(m) });
+                    log('Pembatalan: ' + cancelled.filter((x) => x.ok).length + ' dibatalkan' + (cancelled.some((x) => !x.ok) ? ', ' + cancelled.filter((x) => !x.ok).length + ' gagal (batalkan manual)' : '') + '.');
+                }
             }
+            const count = (re) => results.filter((r) => re.test(r.status)).length;
+            log('Selesai: ' + results.length + ' bukti potong · ' + (submit ? count(/^DIBETULKAN/) + ' dibetulkan' : count(/^SIAP/) + ' siap dikirim') + ', ' + count(/^NAMA MIRIP/) + ' nama mirip, ' + count(/^BEDA/) + ' beda nama (tidak dikirim). Cadangan + hasil di ' + outDir);
+            if (submit && count(/^DIBETULKAN/)) {
+                const { ok, bad, details } = await amend.check({ context: page.context(), npwp, dirs: [outDir], emit: (m) => log(m) });
+                checks = details;
+                log('Pemeriksaan ulang: ' + ok + ' benar, ' + bad + ' bermasalah.');
+                const periods = [...new Set(results.filter((r) => /^DIBETULKAN/.test(r.status)).map((r) => r.period.slice(0, 2)))].sort();
+                log('Langkah berikutnya: buat pembetulan SPT Masa PPh 21 masa ' + periods.join(', ') + '/' + taxYear + '.');
+            }
+        } catch (e) {
+            if (e && e.results) results = e.results;
+            if (e && e.isStop) { log('Pembetulan NIK BPMP dihentikan oleh pengguna.'); page = null; }
+            else log('Pembetulan NIK BPMP berhenti: ' + e.message);
         }
-        const count = (re) => results.filter((r) => re.test(r.status)).length;
-        log('Selesai: ' + results.length + ' bukti potong · ' + (submit ? count(/^DIBETULKAN/) + ' dibetulkan' : count(/^SIAP/) + ' siap dikirim') + ', ' + count(/^NAMA MIRIP/) + ' nama mirip, ' + count(/^BEDA/) + ' beda nama (tidak dikirim). Cadangan + hasil di ' + outDir);
-        if (submit && count(/^DIBETULKAN/)) {
-            const { ok, bad, details } = await amend.check({ context: page.context(), npwp, dirs: [outDir], emit: (m) => log(m) });
-            checks = details;
-            log('Pemeriksaan ulang: ' + ok + ' benar, ' + bad + ' bermasalah.');
-            const periods = [...new Set(results.filter((r) => /^DIBETULKAN/.test(r.status)).map((r) => r.period.slice(0, 2)))].sort();
-            log('Langkah berikutnya: buat pembetulan SPT Masa PPh 21 masa ' + periods.join(', ') + '/' + taxYear + '.');
-        }
-    } catch (e) {
-        if (e && e.results) results = e.results;
-        if (e && e.isStop) { log('Pembetulan NIK BPMP dihentikan oleh pengguna.'); page = null; }
-        else log('Pembetulan NIK BPMP berhenti: ' + e.message);
-    }
-    // Juga setelah berhenti di tengah: penyisiran menunjukkan apa yang masih tersisa.
-    try { if (submit && page) sweepRes = await amend.sweep({ context: page.context(), npwp, year: taxYear, outDir, emit: (m) => log(m) }); }
-    catch (e) { log('Penyisiran NIK gagal: ' + e.message); }
-    // Laporan + riwayat ke Excel rekap yang sama (fileBase64 tanpa path: ke file baru di folder hasil).
-    try {
-        if (submit && (results.length || sweepRes || cancelled.length)) {
-            const out = await require('../lib/bpmp-report').writeReport({ file: filePath && /\.xlsx$/i.test(filePath) ? filePath : null,
-                newFile: path.join(outDir || os.tmpdir(), 'Hasil Pembetulan NIK BPMP ' + taxYear + '.xlsx'), year: taxYear, results, checks, sweep: sweepRes, cancelled });
-            require('../lib/a1-autorefresh').own(out.file);
-            log('Laporan ditulis ke ' + out.file + ' (sheet Pembetulan dan Ringkasan).' + (out.locked ? ' Excel rekap sedang terbuka, jadi disimpan sebagai file terpisah - tutup Excel lalu salin sheet-nya, atau pilih file ini di proses berikutnya.' : ''));
-        }
-    } catch (e) { log('Laporan ke Excel gagal: ' + e.message); }
-    finally { runcontrol.finish(); }
-}
+        // Juga setelah berhenti di tengah: penyisiran menunjukkan apa yang masih tersisa.
+        try { if (submit && page) sweepRes = await amend.sweep({ context: page.context(), npwp, year: taxYear, outDir, emit: (m) => log(m) }); }
+        catch (e) { log('Penyisiran NIK gagal: ' + e.message); }
+        // Laporan + riwayat ke Excel rekap yang sama (fileBase64 tanpa path: ke file baru di folder hasil).
+        try {
+            if (submit && (results.length || sweepRes || cancelled.length)) {
+                const out = await require('../lib/bpmp-report').writeReport({ file: filePath && /\.xlsx$/i.test(filePath) ? filePath : null,
+                    newFile: path.join(outDir || os.tmpdir(), 'Hasil Pembetulan NIK BPMP ' + taxYear + '.xlsx'), year: taxYear, results, checks, sweep: sweepRes, cancelled });
+                require('../lib/a1-autorefresh').own(out.file);
+                log('Laporan ditulis ke ' + out.file + ' (sheet Pembetulan dan Ringkasan).' + (out.locked ? ' Excel rekap sedang terbuka, jadi disimpan sebagai file terpisah - tutup Excel lalu salin sheet-nya, atau pilih file ini di proses berikutnya.' : ''));
+            }
+        } catch (e) { log('Laporan ke Excel gagal: ' + e.message); }
+    });
+});
 
 /** Pratinjau isian Pembetulan tanpa membuka Coretax: banyaknya NIK Baru (sheet NIK / per bukti potong) dan daftar bukti potong
  *  bertindakan Batalkan - GUI menampilkannya untuk dikonfirmasi sebelum Kirim. */
-async function handleBpmpAmendPreview(req, res) {
-    let body;
-    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { fileBase64, filePath } = body || {};
+const handleBpmpAmendPreview = action({ outdated: false, body: 'large', entity: false }, async (req, res, body) => {
+    const { fileBase64, filePath } = body;
     try {
         const p = await require('../automation/bpmp-amend').readTargets(fileBase64 ? Buffer.from(fileBase64, 'base64') : fs.readFileSync(filePath));
         return sendJson(res, 200, { byNik: p.targets.filter((t) => !t.number).length, perSlip: p.targets.filter((t) => t.number).length, cancels: p.cancels, skipped: p.skipped, year: p.year });
     } catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.message }); }
-}
+});
 /** Perbarui rekap: susun ulang Excel rekap di tempat (lib/a1-import.js convertA1Workbook) tanpa membuka Coretax - sheet NIK dan
  *  Draft SPT Desember mengikuti isian terbaru (mis. NIK salah per bukti potong mendapat barisnya sendiri), isian ikut. */
-async function handleA1Refresh(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const file = String((body && body.filePath) || '');
+const handleA1Refresh = action({ body: 'large', entity: false }, async (req, res, body) => {
+    const file = String(body.filePath || '');
     if (!/\.xlsx$/i.test(file) || !fs.existsSync(file)) return sendJson(res, 400, { error: 'Pilih Excel rekap (.xlsx) yang ada di disk - "Use latest rekap" atau pilih file dari folder.' });
     try { fs.closeSync(fs.openSync(file, 'r+')); } catch (e) { return sendJson(res, 409, { error: 'Excel rekap sedang terbuka - tutup dulu di Excel, lalu klik Perbarui rekap lagi.' }); }
     // Di sesi entitas yang dipilih (kunci PIC + tag entitas, sama dengan sessionOf): log ber-tag [kode] dan tampil di
     // "This session"; Pembetulan ke Coretax di sesi yang sama menunggu sampai rekap selesai disusun.
-    const ent = body && body.entity;
+    const ent = body.entity;
     const session = !ent ? undefined : ent.project === 'manual' ? { ...MANUAL_SESSION, tag: String(ent.entity_id || 'Manual').slice(0, 16) }
         : ent.pic_id ? { key: ent.pic_id, tag: String(String(ent.entity_id || '').startsWith('local:') ? String(ent.entity_name || 'Lokal').split(/[\s,]+/)[0] : ent.entity_id || '').slice(0, 16) } : undefined;
-    try { runcontrol.start('Refresh rekap · ' + path.basename(file), session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
+    return runInBackground(res, { label: 'Refresh rekap · ' + path.basename(file), session }, async () => {
         log('Perbarui rekap (tanpa Coretax): ' + file);
         const result = await require('../lib/a1-autorefresh').refreshInPlace(file, (m) => log(m));
         log('Selesai · bukti potong perlu pembetulan: ' + result.draftRows + '.');
-    } catch (e) { log('Perbarui rekap gagal: ' + e.message); }
-    finally { runcontrol.finish(); }
-}
+    }, { stopMsg: 'Perbarui rekap dihentikan oleh pengguna.', failPrefix: 'Perbarui rekap gagal: ' });
+});
 /** Upload Format Impor Coretax (lib/coretax-import.js): baca file (Excel template impor DJP atau XML) dari base64 / path. */
 async function readImportFile(body) {
     const { fileBase64, filePath, fileName } = body || {};
@@ -990,9 +820,7 @@ async function readImportFile(body) {
     return { buf, name };
 }
 /** Pratinjau: jenis, jumlah bukti potong, masa - tanpa membuka Coretax. */
-async function handleImportInspect(req, res) {
-    let body;
-    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
+const handleImportInspect = action({ outdated: false, body: 'large', entity: false }, async (req, res, body) => {
     try {
         const { buf, name } = await readImportFile(body);
         const npwp = body.entity && body.entity.project !== 'manual' ? body.entity.npwp : '';
@@ -1000,15 +828,10 @@ async function handleImportInspect(req, res) {
         const months = p.rows ? [...new Set(p.rows.map((r) => (r.TaxPeriodMonth || r.TaxPeriodMonthEnd || '') + '/' + (r.TaxPeriodYear || '')))] : [];
         return sendJson(res, 200, { type: p.type, label: p.label, count: p.count, tin: p.tin, source: p.source, sheet: p.sheet || null, periods: months, problems: p.problems });
     } catch (e) { return sendJson(res, 400, { error: e.message }); }
-}
+});
 /** Unggah ke Belum Terbit e-Bupot entitas (tidak menerbitkan); hasil dari XML monitoring Coretax. */
-async function handleImportUpload(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { entity } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
-    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Upload impor e-Bupot tidak tersedia untuk pengguna Restricted.' });
+const handleImportUpload = action({ body: 'large', restricted: 'Upload impor e-Bupot tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+    const { entity } = body;
     const imp = require('../lib/coretax-import');
     let prepared, name;
     try { const f = await readImportFile(body); name = f.name; prepared = await imp.prepare(f.buf, f.name, entity.project === 'manual' ? '' : entity.npwp); }
@@ -1016,10 +839,7 @@ async function handleImportUpload(req, res) {
     if (prepared.problems.length) return sendJson(res, 400, { error: 'Periksa file dulu: ' + prepared.problems.slice(0, 5).join('; ') + (prepared.problems.length > 5 ? ' (dan ' + (prepared.problems.length - 5) + ' lagi)' : '') });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('Upload ' + prepared.label + ' to Belum Terbit · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey(), type: prepared.type, count: prepared.count });
-    try {
+    return runInBackground(res, { label: 'Upload ' + prepared.label + ' to Belum Terbit · ' + target.label, session: target.session, extra: { type: prepared.type, count: prepared.count } }, async () => {
         const page = await target.open();
         const base = String(name).replace(/\.(xlsx|xml)$/i, '').replace(/[^\w .()-]/g, '').slice(0, 60) || prepared.label;
         const r = await imp.upload(page, prepared, { fileName: base + ' - Pilot ' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12) + '.xml', emit: (m) => log(m) });
@@ -1044,33 +864,22 @@ async function handleImportUpload(req, res) {
             for (const e of r.errors.slice(0, 30)) log('  baris ' + (e.Line ?? '?') + (e.FieldName ? ' · ' + e.FieldName : '') + ': ' + e.Message);
             if (r.errors.length > 30) log('  ... dan ' + (r.errors.length - 30) + ' kesalahan lain (lihat Monitoring > XML di Coretax).');
         }
-    } catch (e) {
-        if (e && e.isStop) log('Upload dihentikan oleh pengguna.'); else log('Upload ' + prepared.label + ' gagal: ' + e.message);
-    } finally { runcontrol.finish(); }
-}
+    }, { stopMsg: 'Upload dihentikan oleh pengguna.', failPrefix: 'Upload ' + prepared.label + ' gagal: ' });
+});
 /** Buat Konsep SPT Masa (PPh 21/26 atau Unifikasi) - tanpa lapor / tanda tangan. */
-async function handleCreateKonsep(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, taxType, period } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleCreateKonsep = action({}, async (req, res, body) => {
+    const { entity, taxType, period } = body;
     if (!['ICT_WIT', 'ICT_WT'].includes(taxType)) return sendJson(res, 400, { error: 'Jenis SPT: ICT_WIT (PPh 21/26) atau ICT_WT (Unifikasi).' });
-    if (taxType === 'ICT_WIT' && state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.' });
+    if (taxType === 'ICT_WIT' && rejectIfRestricted(res, 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.')) return;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('Create Konsep SPT ' + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
+    return runInBackground(res, { label: 'Create Konsep SPT ' + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, session: target.session }, async () => {
         const page = await target.open();
         const r = await require('../lib/coretax-import').createKonsep(page, { taxType, period, emit: (m) => log(m) });
         log(r.ok ? 'SELESAI: Konsep SPT ' + r.returnSheetType + ' masa ' + r.period + ' (' + r.model + ') dibuat - buka Konsep SPT di Coretax untuk Posting, periksa, lalu lapor manual.'
             : 'GAGAL: Konsep SPT masa ' + r.period + ' tidak dibuat - ' + r.message);
-    } catch (e) {
-        if (e && e.isStop) log('Konsep SPT dihentikan oleh pengguna.'); else log('Konsep SPT gagal: ' + e.message);
-    } finally { runcontrol.finish(); }
-}
+    }, { stopMsg: 'Konsep SPT dihentikan oleh pengguna.', failPrefix: 'Konsep SPT gagal: ' });
+});
 
 /** Folder laporan e-Bupot per entitas: folder file impor terakhir, selain itu Downloads\CoretaxAgent\<kode>\e-Bupot. */
 const ebupotReportDirs = new Map();
@@ -1087,173 +896,133 @@ async function writeEbupotPeriodReport(page, target, type, mmyy, note) {
 /** e-Bupot type code -> label (mp -> BPMP). */
 const typeLabel = (t) => ((require('../lib/coretax-import').TYPES[t] || {}).label || String(t || '').toUpperCase());
 
+const ISSUE_RESTRICTED = 'Terbitkan e-Bupot tidak tersedia untuk pengguna Restricted.';
 /** Pratinjau terbitkan (lib/coretax-issue.js): daftar Belum Terbit + total + kode konfirmasi. Tidak mengubah apa pun. */
-async function handleIssuePreview(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, type, period } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
-    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Terbitkan e-Bupot tidak tersedia untuk pengguna Restricted.' });
+const handleIssuePreview = action({ restricted: ISSUE_RESTRICTED }, async (req, res, body) => {
+    const { entity, type, period } = body;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('Issue preview ' + typeLabel(type) + ' ' + period + ' · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    try {
+    return runForResult(res, { label: 'Issue preview ' + typeLabel(type) + ' ' + period + ' · ' + target.label, session: target.session }, async () => {
         const page = await target.open();
         const p = await require('../lib/coretax-issue').preview(page, { type, period });
         log('Pratinjau terbitkan ' + p.label + ' masa ' + p.period + ': ' + p.count + ' bukti potong Belum Terbit, bruto ' + p.totalGross.toLocaleString('id-ID') + ', PPh ' + p.totalTax.toLocaleString('id-ID')
             + (p.needsSign ? ' · perlu tanda tangan (passphrase PIC)' : ' · tanpa tanda tangan') + (p.token ? ' · kode konfirmasi ' + p.token : '') + (p.skipped.length ? ' · ' + p.skipped.length + ' dilewati' : '') + '.');
         const { rows, ...out } = p;
-        return sendJson(res, 200, out);
-    } catch (e) { log('Pratinjau terbitkan gagal: ' + e.message); return sendJson(res, 400, { error: e.message }); }
-    finally { runcontrol.finish(); }
-}
+        return out;
+    }, { failPrefix: 'Pratinjau terbitkan gagal: ' });
+});
 /** Terbitkan Belum Terbit satu jenis & masa - hanya dengan kode konfirmasi dari pratinjau (daftar harus belum berubah). */
-async function handleIssueEbupot(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, type, period, token } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleIssueEbupot = action({ restricted: ISSUE_RESTRICTED }, async (req, res, body) => {
+    const { entity, type, period, token } = body;
     if (!token) return sendJson(res, 400, { error: 'Kode konfirmasi pratinjau wajib - jalankan pratinjau terbitkan dulu.' });
-    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Terbitkan e-Bupot tidak tersedia untuk pengguna Restricted.' });
     const iss = require('../lib/coretax-issue');
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     if (iss.NEEDS_SIGN.has(type) && !target.signer) return sendJson(res, 400, { error: 'Jenis ini perlu tanda tangan; sesi manual tidak menyimpan passphrase PIC - pakai entitas dengan login otomatis.' });
-    try { runcontrol.start((iss.NEEDS_SIGN.has(type) ? 'Issue & sign ' : 'Issue ') + typeLabel(type) + ' ' + period + ' · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
+    return runInBackground(res, { label: (iss.NEEDS_SIGN.has(type) ? 'Issue & sign ' : 'Issue ') + typeLabel(type) + ' ' + period + ' · ' + target.label, session: target.session }, async () => {
         const signer = iss.NEEDS_SIGN.has(type) ? await target.signer() : null;
         const page = await target.open();
         const r = await iss.issue(page, { type, period, token, signer, emit: (m) => log(m) });
         try { log('Laporan: ' + await writeEbupotPeriodReport(page, target, type, period, 'sesudah ' + (r.signed ? 'issue & sign ' : 'issue ') + r.label + ' (' + r.issued + ' bukti potong)')); }
         catch (e) { log('Laporan Excel gagal ditulis: ' + e.message); }
         log('SELESAI: ' + r.issued + ' ' + r.label + ' masa ' + r.period + ' diterbitkan' + (r.signed ? ' (ditandatangani)' : '') + (r.pending ? ', ' + r.pending + ' masih diproses Coretax - cek Telah Terbit sebentar lagi' : '') + '. Lapor SPT tetap manual.');
-    } catch (e) {
-        if (e && e.isStop) log('Terbitkan dihentikan oleh pengguna.'); else log('GAGAL terbitkan: ' + e.message);
-    } finally { runcontrol.finish(); }
-}
+    }, { stopMsg: 'Terbitkan dihentikan oleh pengguna.', failPrefix: 'GAGAL terbitkan: ' });
+});
 
 /** Posting (opsional) dan unduh Konsep SPT (lib/konsep-download.js): lampiran lewat alat unduh SPT, Induk dibuat ulang. */
-async function handleKonsepDownload(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity, taxType, period, post } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleKonsepDownload = action({}, async (req, res, body) => {
+    const { entity, taxType, period, post } = body;
     if (!['ICT_WIT', 'ICT_WT'].includes(taxType)) return sendJson(res, 400, { error: 'Jenis SPT: ICT_WIT (PPh 21/26) atau ICT_WT (Unifikasi).' });
-    if (taxType === 'ICT_WIT' && state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.' });
+    if (taxType === 'ICT_WIT' && rejectIfRestricted(res, 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.')) return;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start((post ? 'Posting & download Konsep SPT ' : 'Download Konsep SPT ') + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
+    return runInBackground(res, { label: (post ? 'Posting & download Konsep SPT ' : 'Download Konsep SPT ') + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, session: target.session }, async () => {
         const page = await target.open();
         const outDir = path.join(body.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder || 'Manual', 'Konsep SPT');
         const r = await require('../lib/konsep-download').downloadKonsep(page, { taxType, period, post: !!post, outDir, entityName: target.label, entityCode: target.folder, entityNpwp: target.npwp || entity.npwp, emit: (m) => log(m) });
         if (r.totals) log('Konsep ' + r.period + ': PPh 21 dipotong ' + Number(r.totals.pph21 || 0).toLocaleString('id-ID') + ' (L-IA bruto ' + Number(r.totals.l1aGross || 0).toLocaleString('id-ID') + ', L-III bruto ' + Number(r.totals.l3Gross || 0).toLocaleString('id-ID') + ').');
         log('SELESAI: Konsep SPT ' + r.period + ' (' + r.model + ', posting ' + r.posting + ') diunduh: ' + r.pdf + (r.excel ? ' dan ' + r.excel : '') + '. Periksa, lalu tanda tangan & lapor manual di Coretax.');
-    } catch (e) {
-        if (e && e.isStop) log('Konsep SPT dihentikan oleh pengguna.'); else log('GAGAL: Konsep SPT - ' + e.message);
-    } finally { runcontrol.finish(); await require('../lib/html-to-pdf').closeRenderer().catch(() => {}); }
-}
+    }, { stopMsg: 'Konsep SPT dihentikan oleh pengguna.', failPrefix: 'GAGAL: Konsep SPT - ', cleanup: () => require('../lib/html-to-pdf').closeRenderer().catch(() => {}) });
+});
 
 /** BPMP Telah Terbit: cari, ubah isian (PTKP / bruto / tarif / posisi), batalkan - lib/ebupot-edit.js. Cari dan pratinjau
  *  menjawab langsung (hanya membaca); kirim dan batal berjalan di latar dan hanya dengan kode konfirmasi pratinjau. */
-async function handleEbupotEdit(req, res, kind) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
-    if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Ubah / batal BPMP tidak tersedia untuk pengguna Restricted.' });
-    if ((kind === 'amend' || kind === 'cancel') && !body.token) return sendJson(res, 400, { error: 'Kode konfirmasi pratinjau wajib - jalankan pratinjau dulu.' });
-    if (body.filePath && !fs.existsSync(String(body.filePath))) return sendJson(res, 400, { error: 'File revisi tidak ditemukan: ' + body.filePath });
-    const ed = require('../lib/ebupot-edit');
-    const type = String(body.type || 'mp');
-    if (!ed.SPEC[type]) return sendJson(res, 400, { error: 'Jenis tidak dikenal: ' + type + ' (' + Object.keys(ed.SPEC).join(', ') + ').' });
-    const target = await prepareEntityPage(res, entity);
-    if (!target) return;
-    const needsSigner = (kind === 'amend' || kind === 'cancel') && ed.SPEC[type].sign;
-    if (needsSigner && !target.signer) return sendJson(res, 400, { error: ed.SPEC[type].label + ' perlu tanda tangan; sesi manual tidak menyimpan passphrase PIC - pakai entitas dengan login otomatis.' });
-    const npwp = entity.project === 'manual' ? null : entity.npwp;
-    const input = { npwp, type, issued: body.issued !== false, period: body.period, nik: body.nik, name: body.name, numbers: body.numbers, detail: !!body.detail, changes: body.changes, filePath: body.filePath, token: body.token };
-    const L = ed.SPEC[type].label;
-    const title = { find: 'Find ' + L, 'amend-preview': L + ' amend preview', amend: L + ' amend', 'cancel-preview': L + ' cancel preview', cancel: L + ' cancel' }[kind];
-    try { runcontrol.start(title + ' · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    if (kind === 'find' || kind === 'amend-preview' || kind === 'cancel-preview') {
-        try {
-            const page = await target.open();
-            if (kind === 'find') { const r = await ed.find(page, input); log('Cari ' + L + ' ' + r.state + ' ' + r.period + ': ' + r.total + ' bukti potong.'); return sendJson(res, 200, r); }
-            if (kind === 'cancel-preview') { const r = await ed.previewCancel(page, input); log('Pratinjau batal ' + L + ' ' + r.period + ': ' + r.slips.length + ' bukti potong, PPh ' + r.totals.tax.toLocaleString('id-ID') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.'); return sendJson(res, 200, r); }
-            const r = await ed.previewAmend(page, input);
-            log('Pratinjau pembetulan ' + L + ': ' + r.items.length + ' bukti potong, PPh ' + r.totals.taxBefore.toLocaleString('id-ID') + ' -> ' + r.totals.taxAfter.toLocaleString('id-ID') + (r.notes.length ? ', ' + r.notes.length + ' dilewati' : '') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.');
-            return sendJson(res, 200, r);
-        } catch (e) { log(title + ' gagal: ' + e.message); return sendJson(res, 400, { error: e.message }); }
-        finally { runcontrol.finish(); }
-    }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        const signer = needsSigner ? await target.signer() : null;
-        const page = await target.open();
-        if (kind === 'cancel') {
-            const r = await ed.cancel(page, { ...input, signer, emit: (m) => log(m) });
-            const ok = r.done.filter((x) => x.ok).length;
-            log('SELESAI: ' + ok + ' ' + L + ' dibatalkan' + (r.done.length > ok ? ', 1 gagal (proses berhenti) - batalkan manual di e-Bupot' : '') + '.' + (r.reported ? ' Ada yang sudah dilaporkan di SPT - SPT Masa perlu dibetulkan.' : ''));
-        } else {
-            const outDir = path.join(body.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder || 'Manual', 'Pembetulan ' + L, new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
-            log('Pembetulan ' + L + (ed.SPEC[type].sign ? ' (ditandatangani passphrase PIC)' : '') + ' - cadangan di ' + outDir);
-            const r = await ed.amend(page, { ...input, signer, outDir, emit: (m) => log(m) });
-            const spt = ['bpu', 'bpnr'].includes(type) ? 'SPT Masa PPh Unifikasi' : 'SPT Masa PPh 21/26';
-            log('SELESAI: ' + r.results.filter((x) => x.status === 'DIBETULKAN').length + ' ' + L + ' dibetulkan.' + (r.periodsReported.length ? ' Sudah dilaporkan di SPT masa ' + r.periodsReported.join(', ') + ' - buat pembetulan ' + spt + '.' : ' Posting ulang Konsep SPT sebelum lapor.'));
+function ebupotEdit(kind) {
+    return action({ restricted: 'Ubah / batal BPMP tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+        const { entity } = body;
+        if ((kind === 'amend' || kind === 'cancel') && !body.token) return sendJson(res, 400, { error: 'Kode konfirmasi pratinjau wajib - jalankan pratinjau dulu.' });
+        if (body.filePath && !fs.existsSync(String(body.filePath))) return sendJson(res, 400, { error: 'File revisi tidak ditemukan: ' + body.filePath });
+        const ed = require('../lib/ebupot-edit');
+        const type = String(body.type || 'mp');
+        if (!ed.SPEC[type]) return sendJson(res, 400, { error: 'Jenis tidak dikenal: ' + type + ' (' + Object.keys(ed.SPEC).join(', ') + ').' });
+        const target = await prepareEntityPage(res, entity);
+        if (!target) return;
+        const needsSigner = (kind === 'amend' || kind === 'cancel') && ed.SPEC[type].sign;
+        if (needsSigner && !target.signer) return sendJson(res, 400, { error: ed.SPEC[type].label + ' perlu tanda tangan; sesi manual tidak menyimpan passphrase PIC - pakai entitas dengan login otomatis.' });
+        const npwp = entity.project === 'manual' ? null : entity.npwp;
+        const input = { npwp, type, issued: body.issued !== false, period: body.period, nik: body.nik, name: body.name, numbers: body.numbers, detail: !!body.detail, changes: body.changes, filePath: body.filePath, token: body.token };
+        const L = ed.SPEC[type].label;
+        const title = { find: 'Find ' + L, 'amend-preview': L + ' amend preview', amend: L + ' amend', 'cancel-preview': L + ' cancel preview', cancel: L + ' cancel' }[kind];
+        const run = { label: title + ' · ' + target.label, session: target.session };
+        if (kind === 'find' || kind === 'amend-preview' || kind === 'cancel-preview') {
+            return runForResult(res, run, async () => {
+                const page = await target.open();
+                if (kind === 'find') { const r = await ed.find(page, input); log('Cari ' + L + ' ' + r.state + ' ' + r.period + ': ' + r.total + ' bukti potong.'); return r; }
+                if (kind === 'cancel-preview') { const r = await ed.previewCancel(page, input); log('Pratinjau batal ' + L + ' ' + r.period + ': ' + r.slips.length + ' bukti potong, PPh ' + r.totals.tax.toLocaleString('id-ID') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.'); return r; }
+                const r = await ed.previewAmend(page, input);
+                log('Pratinjau pembetulan ' + L + ': ' + r.items.length + ' bukti potong, PPh ' + r.totals.taxBefore.toLocaleString('id-ID') + ' -> ' + r.totals.taxAfter.toLocaleString('id-ID') + (r.notes.length ? ', ' + r.notes.length + ' dilewati' : '') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.');
+                return r;
+            }, { failPrefix: title + ' gagal: ' });
         }
-    } catch (e) {
-        if (e && e.isStop) log(title + ' dihentikan oleh pengguna.'); else log('GAGAL: ' + title + ' - ' + e.message);
-    } finally { runcontrol.finish(); }
+        return runInBackground(res, run, async () => {
+            const signer = needsSigner ? await target.signer() : null;
+            const page = await target.open();
+            if (kind === 'cancel') {
+                const r = await ed.cancel(page, { ...input, signer, emit: (m) => log(m) });
+                const ok = r.done.filter((x) => x.ok).length;
+                log('SELESAI: ' + ok + ' ' + L + ' dibatalkan' + (r.done.length > ok ? ', 1 gagal (proses berhenti) - batalkan manual di e-Bupot' : '') + '.' + (r.reported ? ' Ada yang sudah dilaporkan di SPT - SPT Masa perlu dibetulkan.' : ''));
+            } else {
+                const outDir = path.join(body.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder || 'Manual', 'Pembetulan ' + L, new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
+                log('Pembetulan ' + L + (ed.SPEC[type].sign ? ' (ditandatangani passphrase PIC)' : '') + ' - cadangan di ' + outDir);
+                const r = await ed.amend(page, { ...input, signer, outDir, emit: (m) => log(m) });
+                const spt = ['bpu', 'bpnr'].includes(type) ? 'SPT Masa PPh Unifikasi' : 'SPT Masa PPh 21/26';
+                log('SELESAI: ' + r.results.filter((x) => x.status === 'DIBETULKAN').length + ' ' + L + ' dibetulkan.' + (r.periodsReported.length ? ' Sudah dilaporkan di SPT masa ' + r.periodsReported.join(', ') + ' - buat pembetulan ' + spt + '.' : ' Posting ulang Konsep SPT sebelum lapor.'));
+            }
+        }, { stopMsg: title + ' dihentikan oleh pengguna.', failPrefix: 'GAGAL: ' + title + ' - ' });
+    });
 }
 
 /** Rekam API Coretax (lib/coretax-recorder.js) selama `minutes` menit (atau sampai Stop) di jendela PIC entitas: pengguna
- *  mengerjakan aksinya sendiri di Coretax; hasilnya (tanpa token / passphrase) menjadi dasar otomasi jenis baru. */
-async function handleCoretaxRecord(req, res) {
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+ *  mengerjakan aksinya sendiri di Coretax; hasilnya (tanpa token / passphrase) menjadi dasar otomasi jenis baru.
+ *  Tidak untuk Restricted Editor: rekaman berisi lalu lintas API Coretax entitas apa adanya. */
+const handleCoretaxRecord = action({ restricted: 'Rekam API Coretax tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+    const { entity } = body;
     const minutes = Math.min(30, Math.max(1, Number(body.minutes) || 10));
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('Record Coretax API · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
     const file = path.join(os.homedir(), 'Downloads', 'CoretaxAgent', target.folder || 'Manual', 'Rekaman API', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + (body.note ? ' ' + String(body.note).replace(/[\\/:*?"<>|]/g, ' ').slice(0, 40) : '') + '.json');
-    sendJson(res, 202, { started: true, session: runSessionKey(), file });
-    let rec = null;
-    try {
-        const page = await target.open();
-        rec = require('../lib/coretax-recorder').start(page.context(), file, (m) => log(m));
-        log('MEREKAM ' + minutes + ' menit: kerjakan aksinya di jendela Coretax ini (mis. Ubah / Batal satu bukti potong), lalu klik Stop. Passphrase dan token tidak disimpan.');
-        const until = Date.now() + minutes * 60000;
-        while (Date.now() < until) { const run = runcontrol.current(); if (run && run.stopRequested) break; await new Promise((r) => setTimeout(r, 1000)); }
-    } catch (e) { log('Rekam gagal: ' + e.message); }
-    finally {
-        if (rec) { const r = await rec.stop(); log('SELESAI: ' + r.count + ' permintaan terekam -> ' + r.file); }
-        runcontrol.finish();
-    }
-}
+    // Galat ditangani di dalam: rekaman yang sudah berjalan selalu dihentikan dan disimpan dulu.
+    return runInBackground(res, { label: 'Record Coretax API · ' + target.label, session: target.session, extra: { file } }, async () => {
+        let rec = null;
+        try {
+            const page = await target.open();
+            rec = require('../lib/coretax-recorder').start(page.context(), file, (m) => log(m));
+            log('MEREKAM ' + minutes + ' menit: kerjakan aksinya di jendela Coretax ini (mis. Ubah / Batal satu bukti potong), lalu klik Stop. Passphrase dan token tidak disimpan.');
+            const until = Date.now() + minutes * 60000;
+            while (Date.now() < until) { const run = runcontrol.current(); if (run && run.stopRequested) break; await new Promise((r) => setTimeout(r, 1000)); }
+        } catch (e) { log('Rekam gagal: ' + e.message); }
+        finally {
+            if (rec) { const r = await rec.stop(); log('SELESAI: ' + r.count + ' permintaan terekam -> ' + r.file); }
+        }
+    }, { failPrefix: 'Rekam gagal: ' });
+});
 
 /** Penyisiran saja (tanpa Excel, tanpa mengubah apa pun): masih ada NIK bermasalah di BPMP Telah Terbit tahun ini? */
 async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
     if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Pilih tahun pajak dulu.' });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    try { runcontrol.start('BPMP NIK check ' + taxYear + ' · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
+    return runInBackground(res, { label: 'BPMP NIK check ' + taxYear + ' · ' + target.label, session: target.session }, async () => {
         const page = await target.open();
         const outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP');
         const sweepRes = await amend.sweep({ context: page.context(), npwp: entity.project === 'manual' ? null : entity.npwp, year: taxYear, outDir, emit: (m) => log(m) });
@@ -1268,106 +1037,53 @@ async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
                 catch (e) { log('Cek e-Bupot vs SPT gagal: ' + e.message); }
             }
         }
-    } catch (e) {
-        if (e && e.isStop) log('Penyisiran NIK dihentikan oleh pengguna.');
-        else log('Penyisiran NIK gagal: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
+    }, { stopMsg: 'Penyisiran NIK dihentikan oleh pengguna.', failPrefix: 'Penyisiran NIK gagal: ' });
 }
 
-async function handleImportDividen(req, res) {
-    let body;
-    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { fileBase64, entity } = body || {};
+const handleImportDividen = action({ body: 'large', entity: false }, async (req, res, body) => {
+    const { fileBase64, entity } = body;
     if (!fileBase64) return sendJson(res, 400, { error: 'File template belum dipilih.' });
-
     let fileBuffer;
     try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
 
     const target = await prepareDividenPage(res, entity, true);
     if (!target) return;
-    try { runcontrol.start('Dividend import · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        await runDividenImport({ manualPage: await target.open(), fileBuffer });
-    } catch (e) {
-        if (e && e.validation) { /* already logged the per-row problems */ }
-        else if (e && e.isStop) log('Impor dihentikan oleh pengguna.');
-        else log('Gagal impor Dividen: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
+    return runInBackground(res, { label: 'Dividend import · ' + target.label, session: target.session },
+        async () => runDividenImport({ manualPage: await target.open(), fileBuffer }),
+        { quiet: (e) => e && e.validation /* masalah per baris sudah dicatat */, stopMsg: 'Impor dihentikan oleh pengguna.', failPrefix: 'Gagal impor Dividen: ' });
+});
 
-async function handleCheckDividen(req, res) {
-    let body;
-    try { body = await readLargeJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message || 'Body tidak valid.' }); }
-    const { fileBase64, entity } = body || {};
+const handleCheckDividen = action({ body: 'large', entity: false }, async (req, res, body) => {
+    const { fileBase64, entity } = body;
     if (!fileBase64) return sendJson(res, 400, { error: 'File pembanding belum dipilih.' });
-
     let fileBuffer;
     try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
 
     const target = await prepareDividenPage(res, entity, true);
     if (!target) return;
-    try { runcontrol.start('Dividend check · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        await runDividenCheck({ manualPage: await target.open(), fileBuffer });
-    } catch (e) {
-        if (e && e.isStop) log('Cek Hasil dihentikan oleh pengguna.');
-        else log('Gagal Cek Hasil: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
+    return runInBackground(res, { label: 'Dividend check · ' + target.label, session: target.session },
+        async () => runDividenCheck({ manualPage: await target.open(), fileBuffer }),
+        { stopMsg: 'Cek Hasil dihentikan oleh pengguna.', failPrefix: 'Gagal Cek Hasil: ' });
+});
 
-async function handleCreateDividenCase(req, res) {
-    let body = null;
-    try { body = await readJsonBody(req); } catch (e) { body = null; }
-    const target = await prepareDividenPage(res, body && body.entity, false);
+const handleCreateDividenCase = action({ body: 'lenient', entity: false }, async (req, res, body) => {
+    const target = await prepareDividenPage(res, body.entity, false);
     if (!target) return;
+    return runInBackground(res, { label: 'Create dividend case · ' + target.label, session: target.session },
+        async () => openNewCase(await target.open()),
+        { stopMsg: 'Pembuatan kasus baru dihentikan oleh pengguna.', failPrefix: 'Gagal membuat kasus baru: ' });
+});
 
-    try { runcontrol.start('Create dividend case · ' + target.label, target.session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        await openNewCase(await target.open());
-    } catch (e) {
-        log('Gagal membuat kasus baru: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
-
-async function handleLoginEntity(req, res) {
-    if (rejectIfOutdated(res)) return;
-    let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    const { entity } = body || {};
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+const handleLoginEntity = action({}, async (req, res, body) => {
+    const { entity } = body;
     if (entity.project === 'manual') return sendJson(res, 400, { error: 'Sesi manual sudah login sendiri - tombol ini khusus entitas dengan login otomatis.' });
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
-
-    try { runcontrol.start('Coretax login · ' + src.label, sessionOf(src)); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    sendJson(res, 202, { started: true, session: runSessionKey() });
-    try {
-        await runLoginOnly({
-            client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
-            restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase
-        });
-    } catch (e) {
-        if (e && e.isStop) log('Login dibatalkan oleh pengguna.');
-        else log('Gagal login: ' + e.message);
-    } finally {
-        runcontrol.finish();
-    }
-}
+    return runInBackground(res, { label: 'Coretax login · ' + src.label, session: sessionOf(src) }, () => runLoginOnly({
+        client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
+        restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase
+    }), { stopMsg: 'Login dibatalkan oleh pengguna.', failPrefix: 'Gagal login: ' });
+});
 
 /** Receives a taxio-coretax:// URL forwarded from a SECOND process launch (see main.js's
  *  forwardDeepLinkToRunningInstance) - this instance already owns the dashboard window, so it
@@ -1384,33 +1100,22 @@ async function handleDeepLink(req, res) {
     // forwardDeepLinkToRunningInstance). Previously that ran the automation with no window ever
     // shown, so the user had no way to see what it was doing. Bring the dashboard up so the log
     // is visible, same as a cold start via the same link already does (main.js calls openWindow
-    // unconditionally there). `req.headers.host` is this same server's own host:port - no need
-    // to hardcode GUI_PORT here. Goes through the serializing queue (not a raw isWindowOpen/
-    // openWindow check) - see ensureWindowOpenOrFocused()'s header comment for why: rapid
-    // back-to-back clicks from Taxio each hitting this handler concurrently used to race past
-    // the check and each spawn their own window.
+    // unconditionally there). `req.headers.host` is this same server's own host:port (validated
+    // by the Host check in createGuiServer) - no need to hardcode GUI_PORT here. Goes through the
+    // serializing queue (not a raw isWindowOpen/openWindow check) - see ensureWindowOpenOrFocused()'s
+    // header comment for why: rapid back-to-back clicks from Taxio each hitting this handler
+    // concurrently used to race past the check and each spawn their own window.
     await ensureWindowOpenOrFocused('http://' + req.headers.host + '/');
     deeplink.dispatch(body.url).catch((e) => log('Deep link gagal: ' + e.message));
 }
 
 async function handleOpenCoretaxManual(req, res) {
     if (rejectIfOutdated(res)) return;
-    const connectedIds = state.connectedProjectIds();
-    if (!connectedIds.length) return sendJson(res, 401, { error: 'Harus terhubung ke setidaknya satu akun Taxio/Taxio.me sebelum membuka Coretax manual.' });
-    
-    let restricted = false;
-    for (const id of connectedIds) {
-        if (isProjectRestricted(id)) {
-            restricted = true;
-            break;
-        }
-    }
-
-    if (restricted) {
+    if (!state.connectedProjectIds().length) return sendJson(res, 401, { error: 'Harus terhubung ke setidaknya satu akun Taxio/Taxio.me sebelum membuka Coretax manual.' });
+    if (anyRestricted()) {
         log('Akses Coretax Manual ditolak untuk akun Restricted Editor.');
         return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan menggunakan Login Coretax Manual. Silakan pilih entitas dan klik tombol Login pada entitas tersebut.' });
     }
-
     sendJson(res, 202, { started: true, session: runSessionKey() });
     chrome.openCoretaxManual(false, null).catch((e) => log('Gagal membuka Coretax manual: ' + e.message));
 }
@@ -1480,8 +1185,6 @@ function handleEvents(req, res) {
     req.on('close', () => { clearInterval(keepAlive); unsubscribe(); });
 }
 
-const fileDialog = require('../lib/file-dialog');
-
 async function handlePickFile(req, res) {
     let body = {};
     try { body = await readJsonBody(req); } catch (e) { }
@@ -1510,94 +1213,130 @@ async function handlePickFolder(req, res) {
     return sendJson(res, 200, { folderPath });
 }
 
+/** Tombol kontrol proses (Jeda, Lanjut, ...) untuk sesi `?session=`; membalas status sesi itu. */
+const runControl = (fn) => (req, res, { sess }) => { fn(sess); return sendJson(res, 200, runcontrol.status(sess)); };
+
+async function handleRunPageSize(req, res, { sess }) {
+    let b;
+    try { b = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const n = Number(b && b.size);
+    if ([10, 25, 50, 100].includes(n)) runcontrol.setPageSizeOverride(n, sess);
+    return sendJson(res, 200, runcontrol.status(sess));
+}
+
+// Tabel route: 'METODE /path' -> handler(req, res, { url, sess }). Selain yang tercantum: berkas
+// statis dashboard (gui/public).
+const ROUTES = {
+    'GET /events': handleEvents,
+    'GET /api/session': (req, res) => sendJson(res, 200, sessionSummary()),
+    'GET /api/version': (req, res) => sendJson(res, 200, Object.assign({ version: pkg.version }, updater.getOutdatedInfo())),
+    // MCP (mcp/taxio-pilot-mcp.js) membaca log Pilot yang SEDANG berjalan - exe bisa dijalankan dari folder lain.
+    'GET /api/log-file': (req, res) => sendJson(res, 200, { path: LOG_FILE }),
+    'POST /api/connect': handleConnect,
+    'POST /api/disconnect': handleDisconnect,
+    'GET /api/entities': (req, res, { url }) => handleEntities(req, res, url.searchParams.get('mode')),
+    'POST /api/signup': handleSignup,
+    'POST /api/registration/check': handleRegistrationCheck,
+    'POST /api/registration/initial': handleRegistrationInitial,
+    'GET /api/local-entities': handleLocalEntities,
+    'POST /api/local-entities/save': handleLocalEntitySave,
+    'POST /api/local-entities/delete': handleLocalEntityDelete,
+    'POST /api/actions/billing-pph25': handleBillingPph25,
+    'POST /api/actions/download-ebupot': handleDownloadEbupot,
+    'POST /api/actions/download-mybupot': handleDownloadMyBupot,
+    'POST /api/actions/download-spt': handleDownloadSpt,
+    'POST /api/actions/import-pajak-masukan': handleImportPajakMasukan,
+    'POST /api/actions/download-pajak-masukan': handleDownloadPajakMasukan,
+    'POST /api/actions/download-efaktur': handleDownloadEfaktur,
+    'POST /api/actions/import-dividen': handleImportDividen,
+    'POST /api/actions/bpmp-amend': handleBpmpAmend,
+    'POST /api/import/inspect': handleImportInspect,
+    'POST /api/actions/import-coretax': handleImportUpload,
+    'POST /api/actions/create-konsep': handleCreateKonsep,
+    'POST /api/actions/konsep-download': handleKonsepDownload,
+    'POST /api/ebupot/issue-preview': handleIssuePreview,
+    'POST /api/ebupot/find': ebupotEdit('find'),
+    'POST /api/ebupot/amend-preview': ebupotEdit('amend-preview'),
+    'POST /api/ebupot/cancel-preview': ebupotEdit('cancel-preview'),
+    'POST /api/actions/ebupot-amend': ebupotEdit('amend'),
+    'POST /api/actions/ebupot-cancel': ebupotEdit('cancel'),
+    'POST /api/actions/coretax-record': handleCoretaxRecord,
+    'POST /api/actions/issue-ebupot': handleIssueEbupot,
+    'POST /api/a1/inspect': handleA1Inspect,
+    'POST /api/bpmp-amend/preview': handleBpmpAmendPreview,
+    'POST /api/actions/a1-refresh': handleA1Refresh,
+    'POST /api/a1/bpa1-xml': handleBpa1Xml,
+    'POST /api/actions/check-dividen': handleCheckDividen,
+    'POST /api/actions/create-dividen-case': handleCreateDividenCase,
+    'POST /api/actions/login-entity': handleLoginEntity,
+    'GET /api/login/status': (req, res) => sendJson(res, 200, loginStatus.get() || { at: 0 }),
+    'POST /api/actions/pick-file': handlePickFile,
+    'POST /api/actions/pick-folder': handlePickFolder,
+    'POST /api/actions/open-coretax': handleOpenCoretaxManual,
+    'POST /api/deeplink': handleDeepLink,
+    'GET /api/manual/status': handleManualStatus,
+    'POST /api/session/status': handleSessionStatus,
+    'GET /api/sessions/list': handleSessionsList,
+    'POST /api/sessions/front': handleSessionFront,
+    'POST /api/sessions/close': handleSessionClose,
+    'GET /api/run/status': (req, res, { sess }) => sendJson(res, 200, runcontrol.status(sess)),
+    'POST /api/run/pause': runControl((s) => runcontrol.pause(s)),
+    'POST /api/run/resume': runControl((s) => runcontrol.resume(s)),
+    'POST /api/run/skip': runControl((s) => runcontrol.skip(s)),
+    'POST /api/run/retry': runControl((s) => runcontrol.retry(s)),
+    'POST /api/run/back': runControl((s) => runcontrol.back(s)),
+    'POST /api/run/stop': runControl((s) => runcontrol.stop(s)),
+    'POST /api/run/pagesize': handleRunPageSize,
+    'POST /api/quit': handleQuit,
+    'POST /api/check-update': handleCheckUpdate,
+    'POST /api/tray/open': handleTrayOpen,
+    'POST /api/log/clear': handleClearLog,
+    'POST /api/notices/ack': (req, res, { url }) => { ackNotice(url.searchParams.get('id') || 'all'); return sendJson(res, 200, { ok: true }); }
+};
+
+// Penolakan asal permintaan dicatat paling sering sekali per 5 detik: halaman jahat yang terus
+// mengulang tidak boleh membanjiri log.
+let lastSecurityLog = 0;
+function logRejected(req, pathname, problem) {
+    const now = Date.now();
+    if (now - lastSecurityLog < 5000) return;
+    lastSecurityLog = now;
+    log('[SECURITY] Permintaan ' + req.method + ' ' + String(pathname).slice(0, 200) + ' ditolak - ' + problem);
+}
+
+function serverError(res, e) {
+    log('GUI server error: ' + (e && e.message));
+    if (!res.headersSent) { try { sendJson(res, 500, { error: e && e.message }); } catch (e2) { /* koneksi sudah putus */ } }
+    else { try { res.end(); } catch (e2) { /* abaikan */ } }
+}
+
 function createGuiServer(port) {
     fileDialog.warm();
     const server = http.createServer((req, res) => runcontrol.isolate(() => route(req, res)));
+    let boundPort = null; // diisi begitu listen() berhasil (port 0 = dipilih OS)
     function route(req, res) {
-        const url = new URL(req.url, 'http://127.0.0.1');
-        const { pathname } = url;
-        const sess = url.searchParams.get('session') || null;
         try {
-            if (req.method === 'POST' && isForeignOrigin(req)) {
-                log('[SECURITY] Permintaan POST ' + pathname + ' ditolak - Origin asing: ' + req.headers.origin);
+            const url = new URL(req.url, 'http://127.0.0.1');
+            const { pathname } = url;
+            // SETIAP permintaan (API, /events, berkas statis): Host harus dashboard ini sendiri
+            // (anti DNS rebinding) dan Origin, bila ada, harus origin dashboard ini (anti CSRF).
+            // Lihat gui/guards.js. Port = port yang benar-benar di-bind (tes memakai port lain / 0).
+            const problem = requestOriginProblem(req, boundPort);
+            if (problem) {
+                logRejected(req, pathname, problem);
                 return sendJson(res, 403, { error: 'Ditolak: permintaan lintas-origin tidak diizinkan.' });
             }
-            if (pathname === '/events' && req.method === 'GET') return handleEvents(req, res);
-            if (pathname === '/api/session' && req.method === 'GET') return sendJson(res, 200, sessionSummary());
-            if (pathname === '/api/version' && req.method === 'GET') return sendJson(res, 200, Object.assign({ version: pkg.version }, updater.getOutdatedInfo()));
-            // MCP (mcp/taxio-pilot-mcp.js) membaca log Pilot yang SEDANG berjalan - exe bisa dijalankan dari folder lain.
-            if (pathname === '/api/log-file' && req.method === 'GET') return sendJson(res, 200, { path: LOG_FILE });
-            if (pathname === '/api/connect' && req.method === 'POST') return handleConnect(req, res);
-            if (pathname === '/api/disconnect' && req.method === 'POST') return handleDisconnect(req, res);
-            if (pathname === '/api/entities' && req.method === 'GET') return handleEntities(req, res, url.searchParams.get('mode'));
-            if (pathname === '/api/signup' && req.method === 'POST') return handleSignup(req, res);
-            if (pathname === '/api/registration/check' && req.method === 'POST') return handleRegistrationCheck(req, res);
-            if (pathname === '/api/registration/initial' && req.method === 'POST') return handleRegistrationInitial(req, res);
-            if (pathname === '/api/local-entities' && req.method === 'GET') return handleLocalEntities(req, res);
-            if (pathname === '/api/local-entities/save' && req.method === 'POST') return handleLocalEntitySave(req, res);
-            if (pathname === '/api/local-entities/delete' && req.method === 'POST') return handleLocalEntityDelete(req, res);
-            if (pathname === '/api/actions/billing-pph25' && req.method === 'POST') return handleBillingPph25(req, res);
-            if (pathname === '/api/actions/download-ebupot' && req.method === 'POST') return handleDownloadEbupot(req, res);
-            if (pathname === '/api/actions/download-mybupot' && req.method === 'POST') return handleDownloadMyBupot(req, res);
-            if (pathname === '/api/actions/download-spt' && req.method === 'POST') return handleDownloadSpt(req, res);
-            if (pathname === '/api/actions/import-pajak-masukan' && req.method === 'POST') return handleImportPajakMasukan(req, res);
-            if (pathname === '/api/actions/download-pajak-masukan' && req.method === 'POST') return handleDownloadPajakMasukan(req, res);
-            if (pathname === '/api/actions/download-efaktur' && req.method === 'POST') return handleDownloadEfaktur(req, res);
-            if (pathname === '/api/actions/import-dividen' && req.method === 'POST') return handleImportDividen(req, res);
-            if (pathname === '/api/actions/bpmp-amend' && req.method === 'POST') return handleBpmpAmend(req, res);
-            if (pathname === '/api/import/inspect' && req.method === 'POST') return handleImportInspect(req, res);
-            if (pathname === '/api/actions/import-coretax' && req.method === 'POST') return handleImportUpload(req, res);
-            if (pathname === '/api/actions/create-konsep' && req.method === 'POST') return handleCreateKonsep(req, res);
-            if (pathname === '/api/actions/konsep-download' && req.method === 'POST') return handleKonsepDownload(req, res);
-            if (pathname === '/api/ebupot/issue-preview' && req.method === 'POST') return handleIssuePreview(req, res);
-            if (pathname === '/api/ebupot/find' && req.method === 'POST') return handleEbupotEdit(req, res, 'find');
-            if (pathname === '/api/ebupot/amend-preview' && req.method === 'POST') return handleEbupotEdit(req, res, 'amend-preview');
-            if (pathname === '/api/ebupot/cancel-preview' && req.method === 'POST') return handleEbupotEdit(req, res, 'cancel-preview');
-            if (pathname === '/api/actions/ebupot-amend' && req.method === 'POST') return handleEbupotEdit(req, res, 'amend');
-            if (pathname === '/api/actions/ebupot-cancel' && req.method === 'POST') return handleEbupotEdit(req, res, 'cancel');
-            if (pathname === '/api/actions/coretax-record' && req.method === 'POST') return handleCoretaxRecord(req, res);
-            if (pathname === '/api/actions/issue-ebupot' && req.method === 'POST') return handleIssueEbupot(req, res);
-            if (pathname === '/api/a1/inspect' && req.method === 'POST') return handleA1Inspect(req, res);
-            if (pathname === '/api/bpmp-amend/preview' && req.method === 'POST') return handleBpmpAmendPreview(req, res);
-            if (pathname === '/api/actions/a1-refresh' && req.method === 'POST') return handleA1Refresh(req, res);
-            if (pathname === '/api/a1/bpa1-xml' && req.method === 'POST') return handleBpa1Xml(req, res);
-            if (pathname === '/api/actions/check-dividen' && req.method === 'POST') return handleCheckDividen(req, res);
-            if (pathname === '/api/actions/create-dividen-case' && req.method === 'POST') return handleCreateDividenCase(req, res);
-            if (pathname === '/api/actions/login-entity' && req.method === 'POST') return handleLoginEntity(req, res);
-            if (pathname === '/api/login/status' && req.method === 'GET') return sendJson(res, 200, loginStatus.get() || { at: 0 });
-            if (pathname === '/api/actions/pick-file' && req.method === 'POST') return handlePickFile(req, res);
-            if (pathname === '/api/actions/pick-folder' && req.method === 'POST') return handlePickFolder(req, res);
-            if (pathname === '/api/actions/open-coretax' && req.method === 'POST') return handleOpenCoretaxManual(req, res);
-            if (pathname === '/api/deeplink' && req.method === 'POST') return handleDeepLink(req, res);
-            if (pathname === '/api/manual/status' && req.method === 'GET') return handleManualStatus(req, res);
-            if (pathname === '/api/session/status' && req.method === 'POST') return handleSessionStatus(req, res);
-            if (pathname === '/api/sessions/list' && req.method === 'GET') return handleSessionsList(req, res);
-            if (pathname === '/api/sessions/front' && req.method === 'POST') return handleSessionFront(req, res);
-            if (pathname === '/api/sessions/close' && req.method === 'POST') return handleSessionClose(req, res);
-            if (pathname === '/api/run/status' && req.method === 'GET') return sendJson(res, 200, runcontrol.status(sess));
-            if (pathname === '/api/run/pause' && req.method === 'POST') { runcontrol.pause(sess); return sendJson(res, 200, runcontrol.status(sess)); }
-            if (pathname === '/api/run/resume' && req.method === 'POST') { runcontrol.resume(sess); return sendJson(res, 200, runcontrol.status(sess)); }
-            if (pathname === '/api/run/skip' && req.method === 'POST') { runcontrol.skip(sess); return sendJson(res, 200, runcontrol.status(sess)); }
-            if (pathname === '/api/run/retry' && req.method === 'POST') { runcontrol.retry(sess); return sendJson(res, 200, runcontrol.status(sess)); }
-            if (pathname === '/api/run/back' && req.method === 'POST') { runcontrol.back(sess); return sendJson(res, 200, runcontrol.status(sess)); }
-            if (pathname === '/api/run/stop' && req.method === 'POST') { runcontrol.stop(sess); return sendJson(res, 200, runcontrol.status(sess)); }
-            if (pathname === '/api/run/pagesize' && req.method === 'POST') {
-                return readJsonBody(req).then((b) => { const n = Number(b && b.size); if ([10, 25, 50, 100].includes(n)) runcontrol.setPageSizeOverride(n, sess); return sendJson(res, 200, runcontrol.status(sess)); }).catch(() => sendJson(res, 400, { error: 'Body tidak valid.' }));
-            }
-            if (pathname === '/api/quit' && req.method === 'POST') return handleQuit(req, res);
-            if (pathname === '/api/check-update' && req.method === 'POST') return handleCheckUpdate(req, res);
-            if (pathname === '/api/tray/open' && req.method === 'POST') return handleTrayOpen(req, res);
-            if (pathname === '/api/log/clear' && req.method === 'POST') return handleClearLog(req, res);
-            if (pathname === '/api/notices/ack' && req.method === 'POST') { ackNotice(url.searchParams.get('id') || 'all'); return sendJson(res, 200, { ok: true }); }
-            return serveStatic(req, res, pathname);
+            const key = req.method + ' ' + pathname;
+            if (!Object.prototype.hasOwnProperty.call(ROUTES, key)) return serveStatic(req, res, pathname);
+            const out = ROUTES[key](req, res, { url, sess: url.searchParams.get('session') || null });
+            if (out && typeof out.catch === 'function') out.catch((e) => serverError(res, e));
         } catch (e) {
-            log('GUI server error: ' + e.message);
-            sendJson(res, 500, { error: e.message });
+            serverError(res, e);
         }
     }
     return new Promise((resolve, reject) => {
         server.once('error', reject);
-        server.listen(port, '127.0.0.1', () => resolve(server));
+        server.listen(port, '127.0.0.1', () => { boundPort = server.address().port; resolve(server); });
     });
 }
 
