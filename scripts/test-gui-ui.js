@@ -144,7 +144,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         const titles = await page.locator('.nav-title').allInnerTexts();
         assert.deepStrictEqual(titles, ['DOWNLOAD', 'AUTOMATION']);
         const items = await page.locator('.nav-item[data-nav]').allInnerTexts();
-        assert.deepStrictEqual(items.map((t) => t.trim()), ['SPT', 'e-Bupot', 'Bukti Potong Saya', 'e-Faktur', 'Annual PPh 21 Recap', 'Realisasi Investasi', 'Credit Faktur Masukan', 'PPh 25 Kode Billing', 'e-Bupot Upload & Issue'], 'urutan & nama menu sidebar');
+        assert.deepStrictEqual(items.map((t) => t.trim()), ['SPT', 'e-Bupot', 'Bukti Potong Saya', 'e-Faktur', 'Annual PPh 21 Recap', 'e-Reporting', 'Credit Faktur Masukan', 'PPh 25 Kode Billing', 'e-Bupot Upload & Issue'], 'urutan & nama menu sidebar');
         assert.ok((await text('#open-settings')).includes('Settings'));
         assert.ok(items.join('|').includes('PPh 25 Kode Billing'));
         const billing = page.locator('.nav-item[data-nav="billing"]');
@@ -158,7 +158,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('tanpa entitas: formulir tetap tampil dengan banner pilih entitas, tombol mulai nonaktif', async () => {
         const main = await text('.col-main');
         assert.ok(main.includes('No entity selected'));
-        assert.ok(/Tax Type/i.test(main) && /Masa Pajak/i.test(main), 'formulir SPT tetap tampil');
+        assert.ok(/Jenis Pajak/i.test(main) && /Masa Pajak/i.test(main), 'formulir SPT tetap tampil');
         assert.ok(await page.locator('.col-main [data-act="open-palette"]').isVisible());
         assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
         assert.ok((await text('#rail')).includes('Select an entity first'));

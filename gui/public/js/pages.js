@@ -18,7 +18,7 @@
         ] },
         { title: 'AUTOMATION', items: [
             { id: 'a1', label: 'Annual PPh 21 Recap', icon: 'cal', crumb: 'Automation · download, recap & NIK Pembetulan', hideForRestricted: true },
-            { id: 'dividen', label: 'Realisasi Investasi', full: 'Laporan Realisasi Investasi (Dividen)', icon: 'coins', crumb: 'Automation · e-Reporting AS.39-01' },
+            { id: 'dividen', label: 'e-Reporting', full: 'Laporan Realisasi Investasi (Dividen)', icon: 'coins', crumb: 'Automation · e-Reporting AS.39-01' },
             { id: 'kredit', label: 'Credit Faktur Masukan', icon: 'badge', crumb: 'Automation' },
             { id: 'billing', label: 'PPh 25 Kode Billing', icon: 'bank', crumb: 'Automation' },
             { id: 'impor', label: 'e-Bupot Upload & Issue', full: 'e-Bupot Upload, Issue & Sign', icon: 'upload', crumb: 'Automation · upload to Belum Terbit, issue & sign, Konsep SPT', hideForRestricted: true }
@@ -211,7 +211,7 @@
                     + (st.fmt !== 'excel' ? '<div class="field"><span class="label">PDF content</span>' + P.seg('isi', [{ value: 'print', label: 'Compact' }, { value: 'full', label: 'Full' }, { value: 'confidential', label: 'Confidential', disabled: !onlyPph21, title: 'PPh 21/26 only' }], st.isi) + '</div>'
                         + '<div class="field"><span class="label">PDF layout</span>' + P.seg('sus', [{ value: 'combined', label: 'Combined' }, { value: 'separate', label: 'Separate' }], st.sus) + '</div>' : '')
                     + '<div class="full hint">' + (st.fmt === 'excel' ? 'The Excel contains all data. One sheet per Lampiran, which may hold several tables.' : ({ print: 'Compact: the PDF shows the first 50 rows of each table and states how many rows are not shown. Totals always cover all data.', full: 'Full: the PDF shows every row of each table, max. 1,000 rows (±26 pages). Larger tables (e.g. L3 tax credits) show rows 1–1,000; all rows are in the "… lengkap" sheet of the Lampiran Excel, which is downloaded automatically. Totals always cover all data.', confidential: 'Confidential mode removes recipient details. Only available when PPh 21/26 alone is selected.' }[st.isi])) + '</div></div>' : '';
-            return P.card(1, 'Tax Type', '<span>Multiple Masa Pajak allowed · annual: pick one</span>',
+            return P.card(1, 'Jenis Pajak', '<span>Multiple Masa Pajak allowed · annual: pick one</span>',
                 '<div class="stack"><div class="eyebrow">SPT Masa</div>' + tiles(SPT_MONTHLY, 'c3') + '</div><div class="stack"><div class="eyebrow">SPT Tahunan</div>' + tiles(SPT_ANNUAL, 'c2') + '</div>')
                 + P.card(2, annual ? 'Tahun Pajak' : 'Masa Pajak', annual ? 'One year = one full download (Jan–Dec)' : '', pp.html())
                 + P.card(3, 'Documents to Download', '<span>BPE and Induk = original Coretax PDF</span>',
@@ -234,8 +234,8 @@
             const combos = st.jenis.size * pp.count();
             const docs = [st.bpe && 'BPE', st.induk && 'Induk', st.lampiran && 'Lampiran (' + ({ pdf: 'PDF', excel: 'Excel', both: 'PDF + Excel' }[st.fmt]) + ')'].filter(Boolean);
             let blocked = '';
-            if (!st.jenis.size) blocked = 'Select a tax type'; else if (!pp.count()) blocked = annual ? 'Select a Tahun Pajak' : 'Select a Masa Pajak'; else if (!docs.length) blocked = 'Select at least one document';
-            return railCard({ big: combos, unit: 'download combinations', sub: st.jenis.size + ' tax type(s) × ' + pp.count() + ' ' + pp.unit(),
+            if (!st.jenis.size) blocked = 'Select a Jenis Pajak'; else if (!pp.count()) blocked = annual ? 'Select a Tahun Pajak' : 'Select a Masa Pajak'; else if (!docs.length) blocked = 'Select at least one document';
+            return railCard({ big: combos, unit: 'download combinations', sub: st.jenis.size + ' Jenis Pajak × ' + pp.count() + ' ' + pp.unit(),
                 rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Documents', docs.length ? esc(docs.join(' · ')) : '<span class="muted">Not selected</span>', docs.length ? '' : 'dim']],
                 ready: readiness(ent), blocked, notes: [['shield', 'var(--green)', 'Only downloads from Coretax. No SPT is submitted to DJP.']] });
         },
@@ -303,7 +303,7 @@
     // =========================================================
     // Bukti Potong Saya (yang diterima)
     // =========================================================
-    const MYBUPOT = [['bppu', 'BPPU', 'BPPU', false], ['bpnr', 'BPNR', 'BPNR', false], ['bp26', 'BP26', 'BP26', false], ['bpatc', 'DOK', 'Equivalent Documents', false],
+    const MYBUPOT = [['bppu', 'BPPU', 'BPPU', false], ['bpnr', 'BPNR', 'BPNR', false], ['bp26', 'BP26', 'BP26', false], ['bpatc', 'DOK', 'Dokumen yang Dipersamakan', false],
         ['bpmp', 'BPMP', 'BPMP', true], ['bp21', 'BP21', 'BP21', true], ['bpa1', 'A1', 'BPA1', true], ['bpa2', 'A2', 'BPA2', true]];
     const bpsaya = createPage({
         id: 'bpsaya', batch: true,
