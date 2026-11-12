@@ -7,7 +7,8 @@
   "bin": "main.js",
   "scripts": {
     "start": "node main.js",
-    "build": "node scripts/build-exe.js --out-path dist"
+    "build": "node scripts/build-exe.js --out-path dist",
+    "test": "node scripts/run-tests.js"
   },
   "pkg": {
     "scripts": [
