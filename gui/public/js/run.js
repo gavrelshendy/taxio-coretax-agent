@@ -69,7 +69,7 @@
         const key = R.sessionKey();
         while (R.queue.length) {
             const next = R.queue.shift();
-            P.emit('log-local', 'Bupot: starting ' + next.bupotType.toUpperCase() + (R.queue.length ? ' (' + R.queue.length + ' more type(s) to follow)' : '') + '…');
+            P.emit('log-local', 'e-Bupot: starting ' + next.bupotType.toUpperCase() + (R.queue.length ? ' (' + R.queue.length + ' more type(s) to follow)' : '') + '…');
             try {
                 const r = await P.post('/api/actions/download-ebupot', next);
                 R.poll();
@@ -106,8 +106,8 @@
     function tallyHtml(st) {
         const req = st.jenisRequested || [];
         if (!req.length) return '';
-        const names = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN', badan: 'Corporate PPh', spt_op: 'Individual PPh' };
-        return '<div class="stack" style="gap:8px"><div class="eyebrow">Results per tax type</div><div class="tally">' + req.map((k) => {
+        const names = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN', badan: 'PPh Badan', spt_op: 'PPh Orang Pribadi' };
+        return '<div class="stack" style="gap:8px"><div class="eyebrow">Results per Jenis Pajak</div><div class="tally">' + req.map((k) => {
             const t = (st.jenisTally || {})[k] || { ok: 0, fail: 0 };
             const cls = t.ok > 0 ? 'ok' : t.fail > 0 ? 'fail' : (st.active ? '' : 'empty');
             return '<span class="' + cls + '">' + P.icon(t.ok > 0 ? 'check' : t.fail > 0 ? 'x' : (st.active ? 'loader' : 'warn'), 13, !t.ok && !t.fail && st.active ? 'spin' : '', 2.4) + P.esc(names[k] || k) + (t.ok || t.fail ? ' · ' + t.ok + ' ok' + (t.fail ? ', ' + t.fail + ' failed' : '') : (st.active ? '' : ' · no data')) + '</span>';
@@ -121,7 +121,7 @@
         const prog = L.planProgress(st.plan);
         const held = st.paused && st.holdReason;
         const cur = prog && st.plan.index >= 0 ? st.plan.items[st.plan.index] : null;
-        const left = '<section class="card"><div class="queue-head"><h2>' + (prog ? (String(st.label || '').indexOf('Bupot') !== -1 || String(st.label || '').indexOf('Bukti') !== -1 ? 'Download' : 'Period') + ' queue' : 'Process running') + '</h2>'
+        const left = '<section class="card"><div class="queue-head"><h2>' + (prog ? (String(st.label || '').indexOf('Bupot') !== -1 || String(st.label || '').indexOf('Bukti') !== -1 ? 'Download' : 'Masa Pajak') + ' queue' : 'Process running') + '</h2>'
             + (prog ? '<span class="hint">' + prog.finished + ' done' + (prog.hold ? ' · ' + prog.hold + ' need a decision' : '') + ' · ' + (prog.wait + prog.run) + ' waiting</span>' : '') + '</div>'
             + (held ? holdBanner(st) : (st.paused ? '<div class="banner info"><span class="ico">' + P.icon('pause', 20) + '</span><div class="body"><b>Process paused</b><span>Press Resume to continue.</span></div></div>' : ''))
             + (prog ? pillsHtml(st.plan) : '<div class="hint" style="font-size:13.5px">This process is not split by period. Follow its progress in the activity log below.</div>')
