@@ -107,7 +107,7 @@
         const req = st.jenisRequested || [];
         if (!req.length) return '';
         const names = { pph21: 'PPh 21/26', unifikasi: 'PPh Unifikasi', ppn: 'PPN', badan: 'PPh Badan', spt_op: 'PPh Orang Pribadi' };
-        return '<div class="stack" style="gap:8px"><div class="eyebrow">Results per tax type</div><div class="tally">' + req.map((k) => {
+        return '<div class="stack" style="gap:8px"><div class="eyebrow">Results per Jenis Pajak</div><div class="tally">' + req.map((k) => {
             const t = (st.jenisTally || {})[k] || { ok: 0, fail: 0 };
             const cls = t.ok > 0 ? 'ok' : t.fail > 0 ? 'fail' : (st.active ? '' : 'empty');
             return '<span class="' + cls + '">' + P.icon(t.ok > 0 ? 'check' : t.fail > 0 ? 'x' : (st.active ? 'loader' : 'warn'), 13, !t.ok && !t.fail && st.active ? 'spin' : '', 2.4) + P.esc(names[k] || k) + (t.ok || t.fail ? ' · ' + t.ok + ' ok' + (t.fail ? ', ' + t.fail + ' failed' : '') : (st.active ? '' : ' · no data')) + '</span>';
