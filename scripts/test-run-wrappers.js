@@ -38,6 +38,10 @@ const call = (fn) => runcontrol.isolate(fn); // every HTTP request runs in its o
 
 (async () => {
     W.limits.STOP_POLL_MS = 20;
+    // Satu jendela per PIC di tes ini (sejak beberapa jendela per PIC, permintaan kedua untuk PIC yang sama mendapat
+    // jendela "pic-1~2"): yang dites tetap jendela yang ditahan kerja yang ditinggalkan. Antrean hasil 409 sesudah 60 ms.
+    require('../lib/parallel-settings')._reset({ perPic: 1, total: 6 });
+    W.limits.RESULT_QUEUE_MS = 60;
 
     await test('timeout: 400 with the v3.0.45 message at once; session stays busy (409) until the work settles', async () => {
         const w = slowWork();

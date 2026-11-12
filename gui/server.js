@@ -70,9 +70,19 @@ const PROJECTS_WITH_OWNER_COLUMN = {};
 
 const LOG_BACKLOG_MAX = 200;
 const logBacklog = [];
+// Log per proses (GET /api/run/log, MCP read_log dengan kunci): satu entitas / satu PIC bisa menjalankan beberapa
+// proses sekaligus, dan saringan tag "[KODE]" di berkas log tidak bisa membedakannya.
+const RUN_LOG_MAX = 400, RUN_LOG_RUNS = 50;
+const runLogs = new Map(); // id proses -> baris
 onLogLine((entry) => {
     logBacklog.push(entry);
     if (logBacklog.length > LOG_BACKLOG_MAX) logBacklog.shift();
+    if (entry.run) {
+        let list = runLogs.get(entry.run);
+        if (!list) { list = []; runLogs.set(entry.run, list); while (runLogs.size > RUN_LOG_RUNS) runLogs.delete(runLogs.keys().next().value); }
+        list.push(entry.line);
+        if (list.length > RUN_LOG_MAX) list.shift();
+    }
 });
 
 // ---- Kerangka aksi ----
@@ -342,7 +352,7 @@ const handleBillingPph25 = action({}, async (req, res, body) => {
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
     const runOpts = runOptsFor(src, { masaInput: mmYY, nominal: amount, saveRoot });
-    return runInBackground(res, { label: 'PPh 25 Kode Billing · ' + mmYY + ' · ' + src.label, session: sessionOf(src) },
+    return runInBackground(res, { label: 'PPh 25 Kode Billing · ' + mmYY + ' · ' + src.label, session: withRules(sessionOf(src), 'billing-pph25', { mmYY, amount }, 'billing') },
         () => runBillingPph25(runOpts), { failPrefix: 'Gagal membuat Kode Billing PPh 25: ' });
 });
 
@@ -358,7 +368,9 @@ async function handleSessionStatus(req, res) {
     let body; try { body = await readJsonBody(req); } catch (e) { body = {}; }
     const picId = body && body.picId;
     if (!picId || picId === 'unlinked') return sendJson(res, 200, { open: false, loggedIn: false, identity: '' });
-    try { return sendJson(res, 200, await chrome.getEntityStatus(picId)); }
+    // PIC dengan beberapa jendela: `entityId` memilih jendela yang terakhir login sebagai entitas itu.
+    const win = (body.entityId && loginStatus.windowFor(picId, String(body.entityId))) || picId;
+    try { return sendJson(res, 200, Object.assign(await chrome.getEntityStatus(win), { window: win })); }
     catch (e) { return sendJson(res, 200, { open: false, loggedIn: false, identity: '' }); }
 }
 
@@ -480,13 +492,39 @@ async function resolveEntitySource(res, entity) {
  *  (atau sesi manual), sesi berbeda boleh berjalan bersamaan. Kuncinya sama dengan picId di
  *  /api/sessions/list, jadi tab sesi di dashboard bisa mencocokkan prosesnya. */
 const MANUAL_SESSION = { key: 'manual', tag: 'Manual' };
+/* Sejak semua perintah bisa paralel (lib/runcontrol.js): `key` = POOL (PIC / 'manual') - runcontrol memilih jendela
+ * PIC itu ("<pic>", "<pic>~2", ...) atau mengantrekan prosesnya; `entity` = entitas proses (memilih jendela yang sudah
+ * mengimpersonate entitas itu, saringan log / status "entitas ini" di dashboard). */
 function sessionOf(src) {
-    if (!src || src.kind === 'manual') return src && src.tag ? { ...MANUAL_SESSION, tag: src.tag } : MANUAL_SESSION;
+    if (!src || src.kind === 'manual') {
+        const base = src && src.tag ? { ...MANUAL_SESSION, tag: src.tag } : { ...MANUAL_SESSION };
+        if (src && src.runEntity) base.entity = String(src.runEntity.entity_id || '');
+        return base;
+    }
     const id = String((src.entity && src.entity.entity_id) || '');
     // Entitas lokal ber-id internal ("local:<uuid>"): labelnya pakai kata pertama namanya.
     const tag = id.startsWith('local:') ? String((src.entity && src.entity.entity_name) || 'Lokal').split(/[\s,]+/)[0] : id;
-    return { key: src.picId, tag: tag.slice(0, 16) };
+    return { key: src.picId, tag: tag.slice(0, 16), entity: id };
 }
+
+/* Keamanan keluaran (perintah paralel): setiap aksi Coretax mendaftar dengan
+ *   sig  = fitur + entitas + parameter  -> perintah IDENTIK selagi yang pertama masih antre/berjalan DITOLAK 409
+ *          (hasilnya sama: berkas yang sama, atau perubahan Coretax yang sama - mis. dua kali buat konsep / batal);
+ *   lock = entitas + kelompok fitur     -> fitur yang sama untuk entitas yang sama dengan parameter lain ANTRE di
+ *          belakang yang pertama (folder hasil / manifest / Excel rekap yang sama), fitur lain tetap paralel.
+ * Entitasnya entitas (bukan PIC), jadi entitas yang sama lewat dua PIC tetap terlindungi. `lock` null = tanpa kunci
+ * (hanya membaca). Penulis Excel bersama dikunci per berkas di lib/file-lock.js. */
+function stableJson(v) {
+    if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => JSON.stringify(k) + ':' + stableJson(v[k])).join(',') + '}';
+    return JSON.stringify(v === undefined ? null : v);
+}
+function withRules(session, feature, params, lock) {
+    const ent = String((session && session.entity) || '');
+    return Object.assign({}, session, { feature, sig: feature + '|' + ent + '|' + stableJson(params || {}), lock: lock === null ? '' : ent + '|' + (lock || feature) });
+}
+/** Sidik isi berkas untuk `sig` (dua unggahan berkas yang sama = perintah identik). */
+const fileSig = (buf) => (buf ? require('crypto').createHash('sha1').update(buf).digest('hex').slice(0, 16) : '');
 
 /** Untuk fitur yang bekerja pada satu `page` (Pajak Masukan): membuka halaman Coretax untuk
  *  entitas ini lewat resolveEntitySource, lalu login otomatis (jika bukan sesi manual).
@@ -497,7 +535,7 @@ async function prepareEntityPage(res, entity) {
     if (!src) return null;
     if (src.kind === 'manual') {
         return {
-            label: src.label, folder: src.runEntity.entity_id, session: sessionOf(src),
+            label: src.label, folder: src.runEntity.entity_id, session: sessionOf(src), entityId: src.runEntity.entity_id,
             open: async () => {
                 if (chrome.isLoggedOut(src.manualPage)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
                 return src.manualPage;
@@ -529,7 +567,9 @@ const handleDownloadEbupot = action({}, async (req, res, body) => {
     const runOpts = runOptsFor(src, { bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode });
     // One automation run per session (Chrome window): two runs in the same window would fight
     // over it, but different sessions run side by side (lib/runcontrol.js).
-    return runInBackground(res, { label: 'e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + src.label, session: sessionOf(src) },
+    // Jenis & status yang sama untuk entitas yang sama = folder hasil yang sama (antre); jenis lain paralel.
+    return runInBackground(res, { label: 'e-Bupot ' + bupotType.toUpperCase() + ' · ' + (documentStatus === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit') + ' · ' + src.label,
+        session: withRules(sessionOf(src), 'download-ebupot', { bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode }, 'ebupot:' + bupotType + ':' + documentStatus) },
         () => runEbupotDownload(runOpts), { failPrefix: 'Gagal download e-Bupot: ' });
 });
 
@@ -559,7 +599,7 @@ const handleDownloadMyBupot = action({}, async (req, res, body) => {
         }
     }
     const runOpts = runOptsFor(src, { buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode });
-    return runInBackground(res, { label: 'My Bukti Potong · ' + src.label, session: sessionOf(src) },
+    return runInBackground(res, { label: 'My Bukti Potong · ' + src.label, session: withRules(sessionOf(src), 'download-mybupot', { buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode }, 'mybupot') },
         () => runMyBuktiPotongDownload(runOpts), { failPrefix: 'Gagal download Bukti Potong Saya: ' });
 });
 
@@ -599,7 +639,9 @@ const handleDownloadSpt = action({ entity: false }, async (req, res, body) => {
         ? runOptsFor(src, Object.assign(common, { onRowDone: (jenisKey, mmYY, ok) => runcontrol.recordRowDone(jenisKey, ok) }))
         : runOptsFor(src, common, { fallbackPicIds: src.fallbackPicIds, onRowDone: (jenisKey, mmYY, ok) => { runcontrol.recordRowDone(jenisKey, ok); markHub(jenisKey, mmYY, ok); } });
     runOpts.a1Year = body.a1Year; runOpts.a1Fresh = !!body.a1Fresh; runOpts.a1Source = body.a1Source || undefined;
-    return runInBackground(res, { label: 'SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label, session: sessionOf(src), onStart: () => runcontrol.setJenisRequested(jenisPajakKeys) },
+    // Satu unduhan SPT per entitas sekaligus (folder SPT, cache dan Excel rekap Mode A1 bersama); yang lain antre.
+    const sptSession = withRules(sessionOf(src), 'download-spt', { jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran: !!includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle, a1Year: body.a1Year, a1Fresh: !!body.a1Fresh, a1Source: body.a1Source }, 'spt');
+    return runInBackground(res, { label: 'SPT ' + jenisPajakKeys.join('+') + ' · ' + src.label, session: sptSession, onStart: () => runcontrol.setJenisRequested(jenisPajakKeys) },
         () => runSptDownload(runOpts), { failPrefix: 'Gagal download SPT: ' });
 });
 
@@ -614,7 +656,7 @@ const handleDownloadPajakMasukan = action({}, async (req, res, body) => {
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runInBackground(res, { label: 'Download Pajak Masukan · ' + target.label, session: target.session }, async () => {
+    return runInBackground(res, { label: 'Download Pajak Masukan · ' + target.label, session: withRules(target.session, 'download-pajak-masukan', { masaInput, saveRoot }) }, async () => {
         const page = await target.open();
         await pajakMasukan.runDownloadExcel({ page, masaList, saveRoot, entityFolder: target.folder, emit: (m) => log(m) });
     }, { stopMsg: 'Download Pajak Masukan dihentikan oleh pengguna.', failPrefix: 'Gagal download Pajak Masukan: ' });
@@ -634,7 +676,7 @@ const handleDownloadEfaktur = action({}, async (req, res, body) => {
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runInBackground(res, { label: 'e-Faktur download · ' + typeKeys.length + ' type(s) · ' + target.label, session: target.session }, async () => {
+    return runInBackground(res, { label: 'e-Faktur download · ' + typeKeys.length + ' type(s) · ' + target.label, session: withRules(target.session, 'download-efaktur', { masaInput, typeKeys, excel: excel !== false, csv: !!csv, saveRoot }) }, async () => {
         const page = await target.open();
         await efaktur.runDownloadEfaktur({ page, types: typeKeys, masaList, excel: excel !== false, csv: !!csv, saveRoot, entityFolder: target.folder, entityName: target.label, emit: (m) => log(m) });
     }, { stopMsg: 'Download e-Faktur dihentikan oleh pengguna.', failPrefix: 'Gagal download e-Faktur: ' });
@@ -652,7 +694,8 @@ const handleImportPajakMasukan = action({ body: 'large' }, async (req, res, body
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runInBackground(res, { label: 'Faktur Masukan crediting' + (targetMasaInput ? ' · period ' + String(targetMasaInput).trim() : '') + ' · ' + target.label, session: target.session }, async () => {
+    return runInBackground(res, { label: 'Faktur Masukan crediting' + (targetMasaInput ? ' · period ' + String(targetMasaInput).trim() : '') + ' · ' + target.label,
+        session: withRules(target.session, 'import-pajak-masukan', { file: fileSig(fileBuffer), targetMasaInput: targetMasaInput ? String(targetMasaInput).trim() : '' }) }, async () => {
         const page = await target.open();
         await pajakMasukan.runImportFromExcel({ page, fileBuffer, targetMasaInput: targetMasaInput ? String(targetMasaInput).trim() : '', dryRun: false, emit: (m) => log(m) });
     }, { stopMsg: 'Impor Pajak Masukan dihentikan oleh pengguna.', failPrefix: 'Gagal impor Pajak Masukan: ' });
@@ -662,6 +705,7 @@ const handleImportPajakMasukan = action({ body: 'large' }, async (req, res, body
  *  Entitas dengan kredensial tersimpan (Taxio Hub / lokal): jendela PIC-nya, login otomatis.
  *  `needCase`: impor/cek butuh kasus e-Reporting yang SUDAH terbuka di jendela itu, jadi halaman itu
  *  dipakai apa adanya (login ulang akan memindahkannya dari kasus). */
+const CASE_URL = /(?:case-routing|case-overview|form-render)\/[0-9a-f-]{36}/i;
 async function prepareDividenPage(res, entity, needCase) {
     if (!entity || !entity.project || entity.project === 'manual') {
         // Sesi manual: aturan yang sama dengan prepareManual (Restricted Editor tidak boleh login manual).
@@ -669,16 +713,22 @@ async function prepareDividenPage(res, entity, needCase) {
         const manualPage = chrome.getManualPage();
         if (!manualPage) { sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu' + (needCase ? ', lalu buka kasus e-Reporting.' : '.') }); return null; }
         const who = await manualIdentity();
-        return { label: who.label, session: { ...MANUAL_SESSION, tag: who.tag }, open: async () => manualPage };
+        return { label: who.label, session: { ...MANUAL_SESSION, tag: who.tag, entity: who.runEntity.entity_id }, open: async () => manualPage };
     }
     const target = await prepareEntityPage(res, entity);
     if (!target) return null;
     if (!needCase) return target;
+    // PIC dengan beberapa jendela: kasus terbuka di jendela yang terakhir login sebagai entitas ini - proses ini HARUS
+    // berjalan di jendela itu (menunggu bila jendela itu sedang dipakai). Tidak ada: jendela mana pun, lalu open() menolak.
+    const caseWindow = loginStatus.windowFor(target.picId, target.entityId);
+    const casePage = caseWindow ? chrome.getLiveEntityPage(caseWindow) : null;
+    const session = casePage && CASE_URL.test(casePage.url()) ? { ...target.session, window: caseWindow } : target.session;
     return {
         ...target,
+        session,
         open: async () => {
-            const live = chrome.getLiveEntityPage(target.picId), who = loginStatus.get();
-            const onCase = live && /(?:case-routing|case-overview|form-render)\/[0-9a-f-]{36}/i.test(live.url());
+            const live = chrome.getLiveEntityPage(target.picId), who = loginStatus.get(runcontrol.windowKeyFor(target.picId));
+            const onCase = live && CASE_URL.test(live.url());
             if (!onCase || !who || who.picId !== target.picId || who.entityId !== target.entityId) {
                 throw new Error('Belum ada kasus e-Reporting yang terbuka untuk ' + target.label + ' - klik "Buat Kasus Baru" dulu, atau buka kasusnya (Alur Kasus) di jendela Coretax entitas ini.');
             }
@@ -744,7 +794,7 @@ const handleBpmpAmend = action({ body: 'large', restricted: 'Pembetulan NIK BPMP
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     // Galat ditangani di dalam (penyisiran dan laporan tetap berjalan sesudah berhenti di tengah).
-    return runInBackground(res, { label: 'BPMP NIK correction' + (submit ? '' : ' (test)') + ' · ' + target.label, session: target.session }, async () => {
+    return runInBackground(res, { label: 'BPMP NIK correction' + (submit ? '' : ' (test)') + ' · ' + target.label, session: withRules(target.session, 'bpmp-amend', { file: fileBase64 ? fileSig(Buffer.from(fileBase64, 'base64')) : String(filePath || ''), year: taxYear, submit: !!submit, allowSimilar: !!allowSimilar, confirmed }, 'bpmp-amend') }, async () => {
         let page = null, outDir = null, npwp = null, results = [], checks = null, sweepRes = null, cancelled = [];
         try {
             parsed.skipped.forEach((s) => log('LEWATI ' + s));
@@ -806,11 +856,14 @@ const handleA1Refresh = action({ body: 'large', entity: false }, async (req, res
     const file = String(body.filePath || '');
     if (!/\.xlsx$/i.test(file) || !fs.existsSync(file)) return sendJson(res, 400, { error: 'Pilih Excel rekap (.xlsx) yang ada di disk - "Use latest rekap" atau pilih file dari folder.' });
     try { fs.closeSync(fs.openSync(file, 'r+')); } catch (e) { return sendJson(res, 409, { error: 'Excel rekap sedang terbuka - tutup dulu di Excel, lalu klik Perbarui rekap lagi.' }); }
-    // Di sesi entitas yang dipilih (kunci PIC + tag entitas, sama dengan sessionOf): log ber-tag [kode] dan tampil di
-    // "This session"; Pembetulan ke Coretax di sesi yang sama menunggu sampai rekap selesai disusun.
+    // Di sesi entitas yang dipilih (pool PIC + entitas, sama dengan sessionOf): log ber-tag [kode] dan tampil di
+    // "This entity"; laporan Pembetulan ke rekap yang sama menunggu sampai rekap selesai disusun (kunci berkas).
     const ent = body.entity;
-    const session = !ent ? undefined : ent.project === 'manual' ? { ...MANUAL_SESSION, tag: String(ent.entity_id || 'Manual').slice(0, 16) }
-        : ent.pic_id ? { key: ent.pic_id, tag: String(String(ent.entity_id || '').startsWith('local:') ? String(ent.entity_name || 'Lokal').split(/[\s,]+/)[0] : ent.entity_id || '').slice(0, 16) } : undefined;
+    // Tanpa jendela Coretax (windowed: false): tidak menunggu / memakai jendela; berkas rekapnya dikunci per berkas
+    // (lib/file-lock.js) terhadap Pembetulan / Unduh setahun yang menulis berkas yang sama.
+    const base = !ent ? {} : ent.project === 'manual' ? { ...MANUAL_SESSION, tag: String(ent.entity_id || 'Manual').slice(0, 16), entity: String(ent.entity_id || '') }
+        : ent.pic_id ? { key: ent.pic_id, tag: String(String(ent.entity_id || '').startsWith('local:') ? String(ent.entity_name || 'Lokal').split(/[\s,]+/)[0] : ent.entity_id || '').slice(0, 16), entity: String(ent.entity_id || '') } : {};
+    const session = Object.assign(base, { windowed: false, feature: 'a1-refresh', sig: 'a1-refresh|' + path.resolve(file).toLowerCase() });
     return runInBackground(res, { label: 'Refresh rekap · ' + path.basename(file), session }, async () => {
         log('Perbarui rekap (tanpa Coretax): ' + file);
         const result = await require('../lib/a1-autorefresh').refreshInPlace(file, (m) => log(m));
@@ -846,7 +899,7 @@ const handleImportUpload = action({ body: 'large', restricted: 'Upload impor e-B
     if (prepared.problems.length) return sendJson(res, 400, { error: 'Periksa file dulu: ' + prepared.problems.slice(0, 5).join('; ') + (prepared.problems.length > 5 ? ' (dan ' + (prepared.problems.length - 5) + ' lagi)' : '') });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runInBackground(res, { label: 'Upload ' + prepared.label + ' to Belum Terbit · ' + target.label, session: target.session, extra: { type: prepared.type, count: prepared.count } }, async () => {
+    return runInBackground(res, { label: 'Upload ' + prepared.label + ' to Belum Terbit · ' + target.label, session: withRules(target.session, 'import-coretax', { file: fileSig(prepared.xml ? Buffer.from(String(prepared.xml)) : Buffer.from(JSON.stringify(prepared.rows || []))), type: prepared.type }, 'ebupot-upload'), extra: { type: prepared.type, count: prepared.count } }, async () => {
         const page = await target.open();
         const tins = prepared.rows ? prepared.rows.map((x) => x.CounterpartTin) : [...String(prepared.xml).matchAll(/<CounterpartTin>\s*(\d+)\s*<\/CounterpartTin>/g)].map((m) => m[1]);
         const temp = tins.filter((t) => String(t) === '9990000000999000').length;
@@ -896,7 +949,7 @@ const handleCreateKonsep = action({}, async (req, res, body) => {
     if (taxType === 'ICT_WIT' && rejectIfRestricted(res, 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.')) return;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runInBackground(res, { label: 'Create Konsep SPT ' + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, session: target.session }, async () => {
+    return runInBackground(res, { label: 'Create Konsep SPT ' + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, session: withRules(target.session, 'create-konsep', { taxType, period }, 'konsep:' + taxType) }, async () => {
         const page = await target.open();
         const r = await require('../lib/coretax-import').createKonsep(page, { taxType, period, emit: (m) => log(m) });
         log(r.ok ? 'SELESAI: Konsep SPT ' + r.returnSheetType + ' masa ' + r.period + ' (' + r.model + ') dibuat - buka Konsep SPT di Coretax untuk Posting, periksa, lalu lapor manual.'
@@ -925,7 +978,7 @@ const handleIssuePreview = action({ restricted: ISSUE_RESTRICTED }, async (req, 
     const { entity, type, period } = body;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runForResult(res, { label: 'Issue preview ' + typeLabel(type) + ' ' + period + ' · ' + target.label, session: target.session }, async () => {
+    return runForResult(res, { label: 'Issue preview ' + typeLabel(type) + ' ' + period + ' · ' + target.label, session: withRules(target.session, 'issue-preview', { type, period }, null) }, async () => {
         const page = await target.open();
         const p = await require('../lib/coretax-issue').preview(page, { type, period });
         log('Pratinjau terbitkan ' + p.label + ' masa ' + p.period + ': ' + p.count + ' bukti potong Belum Terbit, bruto ' + p.totalGross.toLocaleString('id-ID') + ', PPh ' + p.totalTax.toLocaleString('id-ID')
@@ -942,7 +995,7 @@ const handleIssueEbupot = action({ restricted: ISSUE_RESTRICTED }, async (req, r
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     if (iss.NEEDS_SIGN.has(type) && !target.signer) return sendJson(res, 400, { error: 'Jenis ini perlu tanda tangan; sesi manual tidak menyimpan passphrase PIC - pakai entitas dengan login otomatis.' });
-    return runInBackground(res, { label: (iss.NEEDS_SIGN.has(type) ? 'Issue & sign ' : 'Issue ') + typeLabel(type) + ' ' + period + ' · ' + target.label, session: target.session }, async () => {
+    return runInBackground(res, { label: (iss.NEEDS_SIGN.has(type) ? 'Issue & sign ' : 'Issue ') + typeLabel(type) + ' ' + period + ' · ' + target.label, session: withRules(target.session, 'issue-ebupot', { type, period, token }, 'ebupot-issue:' + type) }, async () => {
         const signer = iss.NEEDS_SIGN.has(type) ? await target.signer() : null;
         const page = await target.open();
         const r = await iss.issue(page, { type, period, token, signer, emit: (m) => log(m) });
@@ -959,7 +1012,7 @@ const handleKonsepDownload = action({}, async (req, res, body) => {
     if (taxType === 'ICT_WIT' && rejectIfRestricted(res, 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.')) return;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runInBackground(res, { label: (post ? 'Posting & download Konsep SPT ' : 'Download Konsep SPT ') + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, session: target.session }, async () => {
+    return runInBackground(res, { label: (post ? 'Posting & download Konsep SPT ' : 'Download Konsep SPT ') + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, session: withRules(target.session, 'konsep-download', { taxType, period, post: !!post, saveRoot: body.saveRoot }, 'konsep:' + taxType) }, async () => {
         const page = await target.open();
         const outDir = path.join(body.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder || 'Manual', 'Konsep SPT');
         const r = await require('../lib/konsep-download').downloadKonsep(page, { taxType, period, post: !!post, outDir, entityName: target.label, entityCode: target.folder, entityNpwp: target.npwp || entity.npwp, emit: (m) => log(m) });
@@ -991,7 +1044,7 @@ const handleImportCheckNik = action({ body: 'large', restricted: 'Upload impor e
     if (!uniq.length || uniq.length > 30) return sendJson(res, 200, { checked: false, count: uniq.length, tempRows: temp, unknown: [], note: uniq.length ? 'Lebih dari 30 NIK / NPWP - tidak dicek (terlalu lama). NIK yang tidak dikenal Coretax akan diganti NIK sementara.' : 'Tidak ada NIK / NPWP 16 digit untuk dicek.' });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runForResult(res, { label: 'Check NIK before upload · ' + target.label, session: target.session }, async () => {
+    return runForResult(res, { label: 'Check NIK before upload · ' + target.label, session: withRules(target.session, 'import-check-nik', { ids: uniq }, null) }, async () => {
         const page = await guarded(target.open(), 180000);
         const r = await guarded(require('../lib/ebupot-edit').checkNik(page, { npwp: entity.project === 'manual' ? null : entity.npwp, ids: uniq }), 300000);
         const unknown = r.filter((x) => x.status === 'tidak ditemukan');
@@ -1004,7 +1057,7 @@ const handleCheckNik = action({ restricted: 'Cek NIK tidak tersedia untuk penggu
     const { entity, ids } = body;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runForResult(res, { label: 'Check NIK · ' + target.label, session: target.session }, async () => {
+    return runForResult(res, { label: 'Check NIK · ' + target.label, session: withRules(target.session, 'check-nik', { ids }, null) }, async () => {
         const page = await guarded(target.open(), 180000);
         const r = await guarded(require('../lib/ebupot-edit').checkNik(page, { npwp: entity.project === 'manual' ? null : entity.npwp, ids }), 240000);
         log('Cek NIK: ' + r.filter((x) => x.status === 'terdaftar').length + ' terdaftar, ' + r.filter((x) => x.status === 'tidak ditemukan').length + ' tidak ditemukan, ' + r.filter((x) => x.status === 'tidak bisa dicek').length + ' tidak bisa dicek.');
@@ -1037,7 +1090,9 @@ function ebupotEdit(kind) {
         const input = { npwp, type, issued: body.issued !== false, period: body.period, nik: body.nik, name: body.name, numbers: body.numbers, detail: !!body.detail, changes: body.changes, filePath: body.filePath, token: body.token };
         const L = ed.SPEC[type].label;
         const title = { find: 'Find ' + L, 'amend-preview': L + ' amend preview', amend: L + ' amend', 'cancel-preview': L + ' cancel preview', cancel: L + ' cancel' }[kind];
-        const run = { label: title + ' · ' + target.label, session: target.session };
+        // Cari / pratinjau hanya membaca (tanpa kunci); kirim / batal mengubah Coretax: satu per jenis per entitas.
+        const readOnly = kind === 'find' || kind === 'amend-preview' || kind === 'cancel-preview';
+        const run = { label: title + ' · ' + target.label, session: withRules(target.session, 'ebupot-' + kind, readOnly ? { type, issued: input.issued, period: input.period, nik: input.nik, name: input.name, numbers: input.numbers, detail: input.detail, changes: input.changes, filePath: input.filePath } : { type, token: input.token }, readOnly ? null : 'ebupot-edit:' + type) };
         if (kind === 'find' || kind === 'amend-preview' || kind === 'cancel-preview') {
             // Galat (termasuk batas waktu / Stop dari guarded): log '<title> gagal: <pesan>', 400 { error: '<title> <pesan>' }.
             return runForResult(res, run, async () => {
@@ -1080,7 +1135,7 @@ const handleCoretaxRecord = action({ restricted: 'Rekam API Coretax tidak tersed
     if (!target) return;
     const file = path.join(os.homedir(), 'Downloads', 'CoretaxAgent', target.folder || 'Manual', 'Rekaman API', new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + (body.note ? ' ' + String(body.note).replace(/[\\/:*?"<>|]/g, ' ').slice(0, 40) : '') + '.json');
     // Galat ditangani di dalam: rekaman yang sudah berjalan selalu dihentikan dan disimpan dulu.
-    return runInBackground(res, { label: 'Record Coretax API · ' + target.label, session: target.session, extra: { file } }, async () => {
+    return runInBackground(res, { label: 'Record Coretax API · ' + target.label, session: withRules(target.session, 'coretax-record', {}, null), extra: { file } }, async () => {
         let rec = null;
         try {
             const page = await target.open();
@@ -1100,7 +1155,7 @@ async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
     if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Pilih tahun pajak dulu.' });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    return runInBackground(res, { label: 'BPMP NIK check ' + taxYear + ' · ' + target.label, session: target.session }, async () => {
+    return runInBackground(res, { label: 'BPMP NIK check ' + taxYear + ' · ' + target.label, session: withRules(target.session, 'bpmp-sweep', { year: taxYear }, 'bpmp-amend') }, async () => {
         const page = await target.open();
         const outDir = path.join(saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder, 'Pembetulan NIK BPMP');
         const sweepRes = await amend.sweep({ context: page.context(), npwp: entity.project === 'manual' ? null : entity.npwp, year: taxYear, outDir, emit: (m) => log(m) });
@@ -1125,7 +1180,7 @@ const handleImportDividen = action({ body: 'large', entity: false }, async (req,
 
     const target = await prepareDividenPage(res, entity, true);
     if (!target) return;
-    return runInBackground(res, { label: 'Dividend import · ' + target.label, session: target.session },
+    return runInBackground(res, { label: 'Dividend import · ' + target.label, session: withRules(target.session, 'import-dividen', { file: fileSig(fileBuffer) }, 'dividen') },
         async () => runDividenImport({ manualPage: await target.open(), fileBuffer }),
         { quiet: (e) => e && e.validation /* masalah per baris sudah dicatat */, stopMsg: 'Impor dihentikan oleh pengguna.', failPrefix: 'Gagal impor Dividen: ' });
 });
@@ -1137,7 +1192,7 @@ const handleCheckDividen = action({ body: 'large', entity: false }, async (req, 
 
     const target = await prepareDividenPage(res, entity, true);
     if (!target) return;
-    return runInBackground(res, { label: 'Dividend check · ' + target.label, session: target.session },
+    return runInBackground(res, { label: 'Dividend check · ' + target.label, session: withRules(target.session, 'check-dividen', { file: fileSig(fileBuffer) }, 'dividen') },
         async () => runDividenCheck({ manualPage: await target.open(), fileBuffer }),
         { stopMsg: 'Cek Hasil dihentikan oleh pengguna.', failPrefix: 'Gagal Cek Hasil: ' });
 });
@@ -1145,7 +1200,7 @@ const handleCheckDividen = action({ body: 'large', entity: false }, async (req, 
 const handleCreateDividenCase = action({ body: 'lenient', entity: false }, async (req, res, body) => {
     const target = await prepareDividenPage(res, body.entity, false);
     if (!target) return;
-    return runInBackground(res, { label: 'Create dividend case · ' + target.label, session: target.session },
+    return runInBackground(res, { label: 'Create dividend case · ' + target.label, session: withRules(target.session, 'create-dividen-case', {}, 'dividen') },
         async () => openNewCase(await target.open()),
         { stopMsg: 'Pembuatan kasus baru dihentikan oleh pengguna.', failPrefix: 'Gagal membuat kasus baru: ' });
 });
@@ -1155,7 +1210,7 @@ const handleLoginEntity = action({}, async (req, res, body) => {
     if (entity.project === 'manual') return sendJson(res, 400, { error: 'Sesi manual sudah login sendiri - tombol ini khusus entitas dengan login otomatis.' });
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
-    return runInBackground(res, { label: 'Coretax login · ' + src.label, session: sessionOf(src) }, () => runLoginOnly({
+    return runInBackground(res, { label: 'Coretax login · ' + src.label, session: withRules(sessionOf(src), 'login', { pic: src.picId }, null) }, () => runLoginOnly({
         client: src.client, orgId: src.orgId, entity: src.entity, picId: src.picId,
         restricted: src.restricted, allowedEbupotSections: src.allowedEbupotSections, passphrase: src.passphrase
     }), { stopMsg: 'Login dibatalkan oleh pengguna.', failPrefix: 'Gagal login: ' });
@@ -1320,7 +1375,7 @@ const handleProfilesStale = action({ outdated: false, entity: false }, async (re
     const stale = hk.selectStale(all.profiles, { days, busy: await profileBusyCheck() });
     return sendJson(res, 200, {
         days, count: all.count, totalBytes: all.totalBytes, partial: all.partial,
-        profiles: stale.map((p) => ({ dir: p.dir, name: p.name, kind: p.kind, lastUsed: p.lastUsed, ageDays: p.ageDays, bytes: p.bytes, partial: p.partial, inUse: p.inUse }))
+        profiles: stale.map((p) => ({ dir: p.dir, name: p.name, kind: p.kind, window: p.window || 1, lastUsed: p.lastUsed, ageDays: p.ageDays, bytes: p.bytes, partial: p.partial, inUse: p.inUse }))
     });
 });
 const handleProfilesDelete = action({ outdated: false, entity: false }, async (req, res, body) => {
@@ -1413,6 +1468,30 @@ async function handlePickFolder(req, res) {
     return sendJson(res, 200, { folderPath });
 }
 
+/** Log satu proses: ?session = run:<id> / kunci jendela / pool, &lines (default 40, maks 400). */
+function handleRunLog(req, res, { sess, url }) {
+    const r = runcontrol.pick(sess, url.searchParams.get('entity') || undefined);
+    if (!r) return sendJson(res, 404, { error: 'Proses tidak ditemukan' + (sess ? ' untuk ' + sess : '') + '.' });
+    const n = Math.min(RUN_LOG_MAX, Math.max(1, Number(url.searchParams.get('lines')) || 40));
+    return sendJson(res, 200, { key: r.key, id: r.id, tag: r.tag, label: r.label, active: r.active, lines: (runLogs.get(r.id) || []).slice(-n) });
+}
+
+/** Pengaturan > Parallel sessions (lib/parallel-settings.js). */
+function parallelSettingsReply() {
+    const ps = require('../lib/parallel-settings');
+    return Object.assign(ps.get(), { defaults: ps.DEFAULTS, range: ps.RANGE });
+}
+async function handleParallelSettings(req, res) {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try {
+        const next = require('../lib/parallel-settings').set({ perPic: body && body.perPic, total: body && body.total });
+        log('Batas sesi paralel: ' + next.perPic + ' jendela per PIC, ' + next.total + ' jendela berjalan bersamaan.');
+        runcontrol.limitsChanged();
+        return sendJson(res, 200, parallelSettingsReply());
+    } catch (e) { return sendJson(res, 400, { error: e.message }); }
+}
+
 /** Tombol kontrol proses (Jeda, Lanjut, ...) untuk sesi `?session=`; membalas status sesi itu. */
 const runControl = (fn) => (req, res, { sess }) => { fn(sess); return sendJson(res, 200, runcontrol.status(sess)); };
 
@@ -1472,7 +1551,8 @@ const ROUTES = {
     'POST /api/actions/check-dividen': handleCheckDividen,
     'POST /api/actions/create-dividen-case': handleCreateDividenCase,
     'POST /api/actions/login-entity': handleLoginEntity,
-    'GET /api/login/status': (req, res) => sendJson(res, 200, loginStatus.get() || { at: 0 }),
+    // ?session=<kunci jendela>: catatan jendela itu; tanpa: catatan terbaru dari jendela mana pun (bentuk lama).
+    'GET /api/login/status': (req, res, { sess }) => sendJson(res, 200, (sess ? loginStatus.get(sess) : loginStatus.get()) || { at: 0 }),
     'POST /api/actions/pick-file': handlePickFile,
     'POST /api/actions/pick-folder': handlePickFolder,
     'POST /api/actions/open-coretax': handleOpenCoretaxManual,
@@ -1482,7 +1562,11 @@ const ROUTES = {
     'GET /api/sessions/list': handleSessionsList,
     'POST /api/sessions/front': handleSessionFront,
     'POST /api/sessions/close': handleSessionClose,
-    'GET /api/run/status': (req, res, { sess }) => sendJson(res, 200, runcontrol.status(sess)),
+    // ?session = kunci jendela / pool (PIC) / run:<id>; &entity = saring ke proses entitas itu (dashboard: "entitas ini").
+    'GET /api/run/status': (req, res, { sess, url }) => sendJson(res, 200, runcontrol.status(sess, url.searchParams.get('entity') || undefined)),
+    'GET /api/run/log': handleRunLog,
+    'GET /api/settings/parallel': (req, res) => sendJson(res, 200, parallelSettingsReply()),
+    'POST /api/settings/parallel': handleParallelSettings,
     'POST /api/run/pause': runControl((s) => runcontrol.pause(s)),
     'POST /api/run/resume': runControl((s) => runcontrol.resume(s)),
     'POST /api/run/skip': runControl((s) => runcontrol.skip(s)),

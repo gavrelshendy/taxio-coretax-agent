@@ -7,22 +7,25 @@
     const R = P.run = { queue: [], finished: null, dismissed: null };
 
     // ---------- Polling ----------
-    // Setiap sesi (jendela Chrome per PIC, atau sesi manual) punya prosesnya sendiri dan sesi
-    // berbeda bisa berjalan bersamaan (lib/runcontrol.js). Tampilan proses, tombol kontrol, dan
-    // tombol mulai mengikuti sesi entitas yang sedang dipilih; P.state.runs memuat semua sesi
-    // (untuk penanda sibuk di tab sesi).
+    // Setiap jendela Chrome (beberapa per PIC, atau sesi manual) punya prosesnya sendiri dan proses
+    // berbeda bisa berjalan bersamaan (lib/runcontrol.js), juga beberapa proses untuk PIC yang sama. Tampilan
+    // proses, tombol kontrol, dan tombol mulai mengikuti proses ENTITAS yang sedang dipilih (pool PIC + entitas);
+    // P.state.runs memuat semua proses (penanda sibuk di tab sesi, proses yang antre).
     let last = '';
     let wasActive = false;
     let lastLabel = '';
     let lastKey;
     R.sessionKey = () => L.sessionKeyOf(P.ent && P.ent.current ? P.ent.current() : null);
-    const statusUrl = (key) => '/api/run/status' + (key ? '?session=' + encodeURIComponent(key) : '');
+    /** Entitas terpilih (bukan untuk sesi manual - satu jendela, dan entitasnya dibaca dari jendela itu). */
+    R.entityId = () => { const e = P.ent && P.ent.current ? P.ent.current() : null; return e && !L.isManualLike(e) ? String(e.entity_id || '') : ''; };
+    const statusUrl = (key, entity) => '/api/run/status' + (key ? '?session=' + encodeURIComponent(key) + (entity ? '&entity=' + encodeURIComponent(entity) : '') : '');
+    const viewKey = () => R.sessionKey() + '|' + R.entityId();
     R.poll = async function () {
-        const key = R.sessionKey();
+        const key = R.sessionKey(), ent = R.entityId(), vk = viewKey();
         let st;
-        try { st = await P.api(statusUrl(key)); } catch (e) { return; }
-        if (key !== R.sessionKey()) return; // pilihan sesi berubah selagi menunggu - poll berikutnya yang benar
-        setStatus(st, key);
+        try { st = await P.api(statusUrl(key, ent)); } catch (e) { return; }
+        if (vk !== viewKey()) return; // pilihan entitas berubah selagi menunggu - poll berikutnya yang benar
+        setStatus(st, vk);
     };
     function setStatus(st, key) {
         st = st || { active: false };
@@ -48,17 +51,24 @@
     /** Proses sesi `key` sedang berjalan? (dari polling terakhir). */
     R.busy = (key) => !!key && (P.state.runs || []).some((r) => r.key === key && r.active);
     R.runOf = (key) => (P.state.runs || []).find((r) => r.key === key) || null;
+    /** Proses aktif (berjalan / antre) untuk entitas `flat` (pool PIC + entitas), atau null. */
+    R.entityRun = (flat) => {
+        const pool = L.sessionKeyOf(flat); if (!pool) return null;
+        return (P.state.runs || []).find((r) => r.active && (r.pool || r.key) === pool && (!r.entity || r.entity === String(flat.entity_id || ''))) || null;
+    };
 
     // ---------- Antrean e-Bupot (satu jenis per proses, berantai) ----------
     // Alur unduh e-Bupot dibangun per jenis dengan mesin run-control yang sudah teruji; di sini
     // beberapa jenis dijalankan berurutan, menunggu tiap proses selesai sebelum yang berikutnya.
-    /** Menunggu proses sesi `key` (bawaan: sesi terpilih saat dipanggil) selesai. */
-    function waitForRunToFinish(key) {
+    /** Menunggu proses `key` (kunci jendela / pool / "run:<id>"; bawaan: entitas terpilih saat dipanggil) selesai.
+     *  `entity`: saring ke proses entitas itu (pool PIC bisa menjalankan beberapa entitas sekaligus). */
+    function waitForRunToFinish(key, entity) {
         const k = key === undefined ? R.sessionKey() : key;
+        const ent = key === undefined ? R.entityId() : (entity || '');
         return new Promise((resolve) => {
             const check = async () => {
-                let st; try { st = await P.api(statusUrl(k)); } catch (e) { st = { active: false }; }
-                if (k === R.sessionKey()) setStatus(st, k); else P.state.runs = st.runs || P.state.runs;
+                let st; try { st = await P.api(statusUrl(k, /^run:/.test(String(k)) ? '' : ent)); } catch (e) { st = { active: false }; }
+                if (k + '|' + ent === viewKey()) setStatus(st, viewKey()); else P.state.runs = st.runs || P.state.runs;
                 if (st && st.active) setTimeout(check, 1200); else resolve();
             };
             setTimeout(check, 1200);
@@ -67,14 +77,14 @@
     R.waitIdle = waitForRunToFinish;
     R.runQueue = async function (items) {
         R.queue = items.slice();
-        const key = R.sessionKey();
+        const key = R.sessionKey(), ent = R.entityId();
         while (R.queue.length) {
             const next = R.queue.shift();
             P.emit('log-local', 'e-Bupot: starting ' + next.bupotType.toUpperCase() + (R.queue.length ? ' (' + R.queue.length + ' more type(s) to follow)' : '') + '…');
             try {
                 const r = await P.post('/api/actions/download-ebupot', next);
                 R.poll();
-                await waitForRunToFinish((r && r.session) || key);
+                await waitForRunToFinish(r && r.run ? 'run:' + r.run : ((r && r.session) || key), ent);
             } catch (e) {
                 alert('Failed to start ' + next.bupotType.toUpperCase() + ': ' + e.message);
                 R.queue = [];
@@ -83,15 +93,16 @@
     };
 
     // ---------- Aksi kontrol ----------
-    // Selalu ke proses sesi yang sedang ditampilkan, bukan "proses mana saja".
+    // Selalu ke proses yang sedang ditampilkan (lewat id prosesnya), bukan "proses mana saja" di jendela / PIC itu.
     async function control(act, body) {
-        const key = P.state.run && P.state.run.key;
-        try { setStatus(await P.post('/api/run/' + act + (key ? '?session=' + encodeURIComponent(key) : ''), body), R.sessionKey()); } catch (e) { alert('Failed: ' + e.message); }
+        const run = P.state.run || {};
+        const key = run.id ? 'run:' + run.id : run.key;
+        try { await P.post('/api/run/' + act + (key ? '?session=' + encodeURIComponent(key) : ''), body); R.poll(); } catch (e) { alert('Failed: ' + e.message); }
     }
     R.control = {
         pauseResume: () => control(P.state.run.paused ? 'resume' : 'pause'),
         skip: () => control('skip'), retry: () => control('retry'), back: () => control('back'),
-        stop: () => { if (confirm('Stop the process in this session? Other sessions keep running.')) { R.queue = []; if (P.batch) P.batch.cancel(); control('stop'); } },
+        stop: () => { if (confirm(P.state.run && P.state.run.queued ? 'Cancel this queued process? It has not started yet.' : 'Stop the process in this session? Other sessions keep running.')) { R.queue = []; if (P.batch) P.batch.cancel(); control('stop'); } },
         pageSize: (n) => control('pagesize', { size: n })
     };
 
@@ -118,7 +129,29 @@
         return '<div class="banner warn"><span class="ico">' + P.icon('warn', 20, '', 2) + '</span><div class="body"><b>Process on hold — your decision needed</b><span>' + P.esc(String(st.holdReason || 'The current combination has a problem').replace(/[.\s]+$/, '')) + '. Nothing is skipped automatically; or fix it yourself in the Coretax window, then press Resume.</span>'
             + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm" style="background:var(--ink);color:#fff;border-color:var(--ink)" data-run="retry">' + P.icon('retry', 15) + 'Retry</button><button type="button" class="btn btn-sm" data-run="skip">' + P.icon('skipF', 15) + 'Skip</button><button type="button" class="btn btn-sm" data-run="back">' + P.icon('skipB', 15) + 'Back</button></div></div></div>';
     }
+    /** Proses yang menunggu jendela bebas: posisi antrean + alasannya, hanya Stop (= batalkan). */
+    const WAIT_TEXT = {
+        lock: 'The same command for this entity is still running; this one starts right after it.',
+        total: 'All automation windows are in use (Parallel sessions limit in Settings). It starts as soon as one is free.',
+        busy: 'All Coretax windows of this PIC are in use (Parallel sessions limit in Settings). It starts as soon as one is free.'
+    };
+    function queuedHtml(st) {
+        return '<div class="cols"><div class="col-main"><section class="card"><div class="queue-head"><h2>Queued</h2><span class="hint">Position ' + (st.position || 1) + '</span></div>'
+            + '<div class="banner info"><span class="ico">' + P.icon('loader', 20) + '</span><div class="body"><b>' + P.esc(st.label || 'Process') + '</b><span>' + P.esc(WAIT_TEXT[st.waitReason] || WAIT_TEXT.busy) + '</span></div></div></section></div>'
+            + '<aside class="rail"><div class="card"><div class="eyebrow">Waiting</div><div class="hint" style="margin:8px 0 12px">Nothing has been done in Coretax yet. Other entities can still be started meanwhile.</div>'
+            + '<button type="button" class="btn btn-block" data-run-hide>' + P.icon('plus', 15) + 'Start another command</button>'
+            + '<button type="button" class="btn btn-danger btn-block" data-run="stop" style="margin-top:8px">' + P.icon('stop', 15) + 'Cancel queued process</button></div></aside></div>';
+    }
+    /** "Start another command": halaman fitur tampil lagi selagi proses entitas ini berjalan / antre (sampai proses
+     *  berikutnya); penanda kecil di atas halaman membawa kembali ke tampilan proses. */
+    R.hidden = null;
+    R.isHidden = (st) => !!(st && st.id && R.hidden === st.id);
+    R.backBannerHtml = function (st) {
+        if (!R.isHidden(st)) return '';
+        return '<div class="banner info" style="margin-bottom:16px"><span class="ico">' + P.icon(st.queued ? 'loader' : 'play', 20) + '</span><div class="body"><b>' + P.esc(st.label || 'Process') + (st.queued ? ' — queued' : ' — running') + '</b><span>You can start another command for this entity meanwhile; it gets its own Coretax window.</span></div><button type="button" class="btn btn-sm" data-run-show>View progress</button></div>';
+    };
     R.viewHtml = function (st) {
+        if (st.queued) return queuedHtml(st);
         const prog = L.planProgress(st.plan);
         const held = st.paused && st.holdReason;
         const cur = prog && st.plan.index >= 0 ? st.plan.items[st.plan.index] : null;
@@ -135,11 +168,13 @@
             + (st.coretaxAs ? '<div class="hint">Coretax login: ' + P.esc(st.coretaxAs) + '</div>' : '') + '</div>'
             + '<div class="divider"></div><div class="stack" style="gap:8px"><div class="eyebrow">Rows per page</div><div class="seg">' + sizes.map((n) => '<button type="button" data-run-size="' + n + '" aria-pressed="' + (st.currentPageSize === n) + '">' + n + '</button>').join('') + '</div></div>'
             + '<div class="ctl-grid"><button type="button" class="btn ' + (st.paused ? 'btn-primary' : '') + '" data-run="pause">' + P.icon(st.paused ? 'play' : 'pause', 16) + (st.paused ? 'Resume' : 'Pause') + '</button><button type="button" class="btn" data-run="back">' + P.icon('skipB', 16) + 'Back</button><button type="button" class="btn" data-run="retry">' + P.icon('retry', 16) + 'Retry</button><button type="button" class="btn" data-run="skip">' + P.icon('skipF', 16) + 'Skip</button></div>'
-            + '<button type="button" class="btn btn-danger btn-block" data-run="stop">' + P.icon('stop', 15) + 'Stop this session\'s process</button></div>';
+            + '<button type="button" class="btn btn-danger btn-block" data-run="stop">' + P.icon('stop', 15) + 'Stop this session\'s process</button>'
+            + '<button type="button" class="btn btn-block" data-run-hide style="margin-top:8px">' + P.icon('plus', 15) + 'Start another command</button></div>';
         return '<div class="cols"><div class="col-main">' + left + '</div><aside class="rail">' + rail + '</aside></div>';
     };
     R.bindView = function (root) {
         root.addEventListener('click', (e) => {
+            if (e.target.closest('[data-run-hide]')) { R.hidden = P.state.run && P.state.run.id; P.emit('run', P.state.run); return; }
             const b = e.target.closest('[data-run]');
             if (b) { const a = b.dataset.run; if (a === 'pause') R.control.pauseResume(); else R.control[a](); return; }
             const s = e.target.closest('[data-run-size]');
@@ -168,14 +203,22 @@
     // Beberapa sesi bisa menulis log bersamaan; tiap baris dari sebuah proses berlabel entitasnya
     // ("[HBI] ...") dan membawa kunci sesinya. "Sesi ini" menyaring ke sesi entitas terpilih
     // (baris umum tanpa sesi - mis. dari dashboard - tetap tampil).
+    // Beberapa proses bisa berjalan untuk satu PIC (beberapa jendela): "This entity" menyaring lewat pool PIC +
+    // entitas yang dibawa setiap baris (baris lama tanpa pool: lewat kunci sesinya).
     const D = P.dock = { open: false, count: 0, scope: P.store.get('logScope', 'all') === 'session' ? 'session' : 'all' };
     let lastMsg = 'Ready.';
-    const scopeLabel = () => (D.scope === 'session' ? 'This session' : 'All sessions');
-    const visible = (b) => D.scope !== 'session' || !b.session || b.session === R.sessionKey();
+    const scopeLabel = () => (D.scope === 'session' ? 'This entity' : 'All sessions');
+    const visible = (b) => {
+        if (D.scope !== 'session' || !b.session) return true;
+        const pool = R.sessionKey();
+        if (!b.pool) return b.session === pool;
+        const ent = R.entityId();
+        return b.pool === pool && (!ent || !b.entity || b.entity === ent);
+    };
     D.html = function () {
         return '<footer class="dock' + (D.open ? ' open' : '') + '" id="dock"><button type="button" class="dock-bar" id="dock-toggle" aria-expanded="' + D.open + '">'
             + P.icon('term', 16) + '<b>Activity log</b><span class="live"><i class="dot"></i>LIVE</span><span class="dock-last" id="dock-last">' + P.esc(lastMsg) + '</span>'
-            + '<span class="dock-tool" id="dock-scope" role="button" tabindex="0" title="Show the log of all sessions, or only the session of the selected entity" aria-pressed="' + (D.scope === 'session') + '">' + scopeLabel() + '</span>'
+            + '<span class="dock-tool" id="dock-scope" role="button" tabindex="0" title="Show the log of all sessions, or only the processes of the selected entity" aria-pressed="' + (D.scope === 'session') + '">' + scopeLabel() + '</span>'
             + '<span class="dock-tool" id="dock-clear" role="button" tabindex="0">Clear</span>' + P.icon(D.open ? 'down' : 'up', 18) + '</button><div class="log-view" id="log-view" role="log"></div></footer>';
     };
     function rerenderLog() {
@@ -207,9 +250,9 @@
         try { await P.post('/api/log/clear'); } catch (e) { /* diabaikan */ }
     }
     const buffered = [];
-    function addLine(rawLine, session) {
+    function addLine(rawLine, session, scope) {
         const { time, msg } = L.parseLogLine(rawLine);
-        const b = { time, msg, session: session || null };
+        const b = { time, msg, session: session || null, pool: (scope && scope.pool) || null, entity: (scope && scope.entity) || '' };
         buffered.push(b);
         if (buffered.length > 600) buffered.shift();
         if (!visible(b)) return;
@@ -246,7 +289,7 @@
                 if (entry.notice) { P.notice(entry.notice); return; }
                 // Kabar perubahan dari server (lib/ui-events.js): 'run' | 'login' | 'sessions' | 'session'.
                 if (entry.event) { if (!P.isHidden()) P.emit('server-event', entry.event); return; }
-                if (entry.line != null) addLine(entry.line, entry.session);
+                if (entry.line != null) addLine(entry.line, entry.session, entry);
             } catch (e) { /* baris rusak diabaikan */ }
         };
         es.onerror = () => { /* EventSource menyambung ulang sendiri */ };
