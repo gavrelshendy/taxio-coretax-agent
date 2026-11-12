@@ -12,8 +12,9 @@ const fakes = install();
 const { chromium } = require('playwright');
 const { createGuiServer } = require('../gui/server');
 
-const PORT = 52433;
-const BASE = 'http://127.0.0.1:' + PORT;
+// Port pilihan OS (0): dua checkout yang menjalankan tes bersamaan tidak bentrok (EADDRINUSE).
+let PORT = 0;
+let BASE = '';
 const SHOTS = process.env.PILOT_SHOTS || '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 
@@ -28,7 +29,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
 
 (async () => {
     // Token peluncuran: jendela dibuka di /?t=<token> seperti main.js; server menukarnya dengan cookie.
-    const server = await createGuiServer(PORT);
+    const server = await createGuiServer(0);
+    PORT = server.address().port;
+    BASE = 'http://127.0.0.1:' + PORT;
     // Chromium bawaan Playwright bila terpasang; kalau tidak (mis. "Executable doesn't exist"), pakai Google Chrome.
     let browser;
     try { browser = await chromium.launch({ headless: true }); }

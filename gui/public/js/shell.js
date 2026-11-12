@@ -159,7 +159,7 @@
         scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Settings"><div class="dialog-head"><h2>Settings</h2><button type="button" class="icon-btn" aria-label="Close" data-x="close">' + P.icon('x', 18) + '</button></div>'
             + '<div class="dialog-body"><div class="stack"><div class="eyebrow">Account</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Disconnect</button></div></div>'
             + '<div class="stack"><div class="eyebrow">App version</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div>'
-            + healthSectionHtml() + '</div>'
+            + rollbackHtml(v) + healthSectionHtml() + '</div>'
             + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Quit app</button><span class="grow"></span><button type="button" class="btn" data-x="close">Done</button></div></div>';
         document.body.appendChild(scrim);
         loadHealth(false);
@@ -191,6 +191,18 @@
                 b.disabled = false;
             }
         });
+    }
+
+    // ---------- Kembali ke versi 3 (README "Kembali ke versi 3") ----------
+    // Hanya petunjuk - tidak ada downgrade otomatis. Path exe lama dicatat saat serah-terima
+    // (lib/legacy-handover.js); selain itu tautan ke rilis v3 terakhir.
+    function rollbackHtml(v) {
+        const rb = v.rollback; if (!rb || !rb.v3Version) return '';
+        const where = rb.legacyExe && rb.legacyExeExists
+            ? 'open the old <b>coretax-agent.exe</b> at <code class="mono" id="rollback-exe">' + esc(rb.legacyExe) + '</code>'
+            : 'open your old <b>coretax-agent.exe</b>' + (rb.legacyExe ? ' (it used to be at <code class="mono">' + esc(rb.legacyExe) + '</code>)' : '') + ', or download it again from <a href="' + esc(rb.v3ReleaseUrl) + '" target="_blank" rel="noopener">the v' + esc(rb.v3Version) + ' release</a>';
+        return '<div class="stack" id="rollback"><div class="eyebrow">Back to version 3</div><div class="hint">To go back to v' + esc(rb.v3Version) + ': click <b>Quit app</b> below first (never run both at once), then ' + where
+            + '. Version 3 keeps its own data; each PIC logs in to Coretax once more there, and you may have to sign in to Taxio Hub again. Opening Taxio Pilot later brings you back to this version.</div></div>';
     }
 
     // ---------- Pemeriksaan sistem (GET /api/health, lib/doctor.js) ----------

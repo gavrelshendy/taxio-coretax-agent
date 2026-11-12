@@ -131,6 +131,11 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
         assert.strictEqual(byId(await run({}, null)).port.status, 'warn');
         const v = byId(await run({ versionInfo: () => ({ current: '3.0.44', outdated: true, latestVersion: '3.0.50' }) })).version;
         assert.strictEqual(v.status, 'warn'); assert.ok(/3\.0\.50/.test(v.detail));
+        // Gerbang dibuka (lib/updater.js): tetap peringatan, bukan "(terbaru)".
+        const f = byId(await run({ versionInfo: () => ({ current: '4.0.0', outdated: false, latestVersion: '4.0.1', reason: 'install-failed' }) })).version;
+        assert.strictEqual(f.status, 'warn'); assert.ok(/2x gagal/.test(f.detail) && /taxio-pilot-setup-4\.0\.1\.exe/.test(f.fix));
+        const g = byId(await run({ versionInfo: () => ({ current: '4.0.0', outdated: false, latestVersion: '4.0.1', reason: 'download-failed' }) })).version;
+        assert.strictEqual(g.status, 'warn'); assert.ok(/belum bisa diunduh/.test(g.detail));
     });
 
     await test('each check has its own timeout; a hanging / throwing check never breaks the others', async () => {

@@ -48,9 +48,40 @@ function fakeEngine() {
         assert.strictEqual(updater.getOutdatedInfo().outdated, false);
     });
 
+    await test('v4 channel: version 4.0.0, generic feed = package.json build.publish, never /releases/latest', () => {
+        const pkg = require('../package.json');
+        assert.strictEqual(pkg.version, '4.0.0');
+        assert.strictEqual(require('../package-lock.json').version, '4.0.0');
+        assert.strictEqual(require('../package-lock.json').packages[''].version, '4.0.0');
+        assert.deepStrictEqual(pkg.build.publish, [{ provider: 'generic', url: updater.FEED_URL }]);
+        assert.strictEqual(updater.FEED_URL, 'https://github.com/gavrelshendy/taxio-coretax-agent/releases/download/pilot-v4/');
+        assert.ok(!/latest/.test(updater.FEED_URL));
+        assert.strictEqual(updater.installerUrl('4.0.1'), updater.FEED_URL + 'taxio-pilot-setup-4.0.1.exe');
+        assert.strictEqual(updater.installerUrl('v4.0.1', 'http://127.0.0.1:9/feed'), 'http://127.0.0.1:9/feed/taxio-pilot-setup-4.0.1.exe');
+        assert.strictEqual(pkg.build.nsis.artifactName, 'taxio-pilot-setup-${version}.${ext}');
+    });
+
+    await test('progressLogger: one line per 20%, never repeats, sizes in MB', () => {
+        const lines = [];
+        const p = updater.progressLogger('4.0.1', (l) => lines.push(l));
+        const total = 135 * 1048576;
+        for (let pct = 0; pct <= 100; pct += 3) p({ percent: pct, transferred: total * pct / 100, total });
+        p({ percent: 100, transferred: total, total });
+        p({ percent: 100, transferred: total, total });
+        assert.deepStrictEqual(lines.map((l) => /: (\d+)%/.exec(l)[1]), ['20', '40', '60', '80', '100']);
+        assert.ok(/^Mengunduh update v4\.0\.1: 20% \(\d+ \/ 135 MB\)$/.test(lines[0]), lines[0]);
+    });
+
     const engine = fakeEngine();
     let quits = 0;
-    updater.configure({ engine, isRunActive: () => false, onBeforeRestart: async () => { quits++; engine.install(); } });
+    const notices = [];
+    const { createInstallGuard } = require('../lib/update-guard');
+    const guardStore = { data: null, read() { return this.data; }, write(o) { this.data = JSON.parse(JSON.stringify(o)); }, clear() { this.data = null; } };
+    updater.configure({
+        engine, isRunActive: () => false, onBeforeRestart: async () => { quits++; engine.install(); },
+        guard: createInstallGuard({ storage: guardStore, current: updater.currentVersion }),
+        notify: (msg, title, level) => notices.push({ msg, title, level })
+    });
 
     await test('newer release: downloaded, graceful quit hook runs and ends in install', async () => {
         engine.latest = '99.0.0';
@@ -130,7 +161,11 @@ function fakeEngine() {
         const seen = [];
         for (let i = 0; i < 5; i++) { await fire(); seen.push(live()[0].ms); }
         assert.deepStrictEqual(seen, [60000, 120000, 300000, 900000, 900000]);
-        assert.strictEqual(updater.getOutdatedInfo().outdated, true);
+        // Ladder (1, 2, 5 min) exhausted without a successful download: the gate is lifted, one notice.
+        const lifted = updater.getOutdatedInfo();
+        assert.deepStrictEqual([lifted.outdated, lifted.reason, lifted.latestVersion], [false, 'download-failed', '99.0.0']);
+        assert.strictEqual(notices.filter((n) => n.title === 'Update tertunda').length, 1);
+        assert.ok(notices.find((n) => n.title === 'Update tertunda').msg.includes(updater.installerUrl('99.0.0')));
 
         // A deferral is not a failure: regular cadence, ladder reset.
         runActive = true;
@@ -158,6 +193,83 @@ function fakeEngine() {
         updater.stopAutoUpdate();
         assert.strictEqual(live().length, 0);
         assert.strictEqual(updater._autoUpdateState(), null);
+
+        // Gate: still ON during the ladder, lifted once exhausted, back ON when a later download succeeds.
+        guardStore.data = null;
+        updater.startAutoUpdate({}, { initialDelayMs: 4000 });
+        engine.latest = '99.0.0'; engine.downloadFails = true;
+        const gate = [];
+        for (let i = 0; i < 4; i++) { await fire(); gate.push(updater.getOutdatedInfo().outdated); }
+        assert.deepStrictEqual(gate, [true, true, true, false]);
+        assert.strictEqual(notices.filter((n) => n.title === 'Update tertunda').length, 1, 'notice once per version');
+        engine.downloadFails = false;
+        const q = quits;
+        await fire();
+        assert.strictEqual(quits, q + 1, 'later attempt downloaded and went on to install');
+        assert.deepStrictEqual(updater.getOutdatedInfo(), { outdated: true, latestVersion: '99.0.0', current: updater.currentVersion() });
+        updater.stopAutoUpdate();
+        guardStore.data = null;
+    });
+
+    await test('previous install: success clears the record; failure logs + notice with the direct link', async () => {
+        guardStore.data = { target: updater.currentVersion(), attempts: 1 };
+        assert.strictEqual(updater.checkPreviousInstall().status, 'succeeded');
+        assert.strictEqual(guardStore.data, null);
+
+        notices.length = 0;
+        guardStore.data = { target: '99.0.0', attempts: 1, firstAt: 'x', lastAt: 'x' };
+        const r = updater.checkPreviousInstall();
+        assert.deepStrictEqual([r.status, r.blocked], ['failed', false]);
+        assert.strictEqual(notices.length, 1);
+        assert.ok(notices[0].msg.includes(updater.installerUrl('99.0.0')));
+        assert.ok(/sekali lagi/.test(notices[0].msg));
+        assert.strictEqual(notices[0].level, 'Warning');
+        // first failure: still auto-installed once more, and the gate stays on meanwhile
+        engine.latest = '99.0.0';
+        assert.strictEqual((await updater.checkAndApply({ isRunActive: () => true })).outcome, 'deferred');
+        assert.strictEqual(updater.getOutdatedInfo().outdated, true);
+        const log = fs.readFileSync(process.env.TAXIO_PILOT_LOG_FILE, 'utf8');
+        assert.ok(/Pemasangan update v99\.0\.0 GAGAL \(percobaan ke-1\)/.test(log));
+    });
+
+    await test('install failed twice: no auto install, no gate; manual check still tries; newer release is tried', async () => {
+        notices.length = 0;
+        guardStore.data = { target: '99.0.0', attempts: 2, firstAt: 'x', lastAt: 'x' };
+        const r = updater.checkPreviousInstall();
+        assert.deepStrictEqual([r.status, r.blocked], ['failed', true]);
+        assert.ok(/tidak akan dipasang otomatis lagi/.test(notices[0].msg));
+        engine.latest = '99.0.0';
+        const d0 = engine.calls.download, q0 = quits;
+        const a = await updater.checkAndApply();
+        assert.strictEqual(a.outcome, 'blocked');
+        assert.deepStrictEqual([engine.calls.download, quits], [d0, q0]);
+        const info = updater.getOutdatedInfo();
+        assert.deepStrictEqual([info.outdated, info.reason, info.latestVersion], [false, 'install-failed', '99.0.0']);
+        const { rejectIfOutdated } = require('../gui/guards');
+        assert.strictEqual(rejectIfOutdated({ writeHead() {}, end() {} }), false, 'no 426 for a version that cannot be installed');
+        // manual "Check for updates": one attempt
+        const m = await updater.checkAndApply({ manual: true });
+        assert.strictEqual(m.outcome, 'restarting');
+        assert.deepStrictEqual([engine.calls.download, quits], [d0 + 1, q0 + 1]);
+        assert.strictEqual(guardStore.data.attempts, 3);
+        // a newer release than the blocked one is installed normally
+        engine.latest = '99.0.1';
+        assert.strictEqual((await updater.checkAndApply()).outcome, 'restarting');
+        assert.deepStrictEqual([guardStore.data.target, guardStore.data.attempts], ['99.0.1', 1]);
+        guardStore.data = null;
+    });
+
+    await test('verifyOnly: downloads + verifies, never quits/installs, writes no install record', async () => {
+        updater.configure({ verifyOnly: true });
+        try {
+            engine.latest = '99.0.0';
+            const d0 = engine.calls.download, q0 = quits, i0 = engine.calls.install;
+            const r = await updater.checkAndApply();
+            assert.strictEqual(r.outcome, 'verified');
+            assert.deepStrictEqual([engine.calls.download, quits, engine.calls.install], [d0 + 1, q0, i0]);
+            assert.strictEqual(guardStore.data, null);
+            assert.ok(/UJI-UPDATE: v99\.0\.0 ditemukan, terunduh/.test(fs.readFileSync(process.env.TAXIO_PILOT_LOG_FILE, 'utf8')));
+        } finally { updater.configure({ verifyOnly: false }); }
     });
 
     await test('outdated gate: server refuses new actions with 426 while outdated', async () => {

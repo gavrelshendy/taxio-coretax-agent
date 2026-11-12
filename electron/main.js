@@ -10,11 +10,16 @@
  *
  * Mode (variabel lingkungan):
  *   (tanpa)                   aplikasi terpasang biasa: satu instance, protokol taxio-coretax://, serah-terima
- *                             dari exe pkg lama (lib/legacy-handover.js), update otomatis (electron-updater).
+ *                             dari exe pkg lama (lib/legacy-handover.js), update otomatis (electron-updater,
+ *                             provider generic pada kanal rilis tetap `pilot-v4` - lib/updater.js FEED_URL).
  *   TAXIO_PILOT_DATA_DIR=<d>  TERISOLASI: semua data di <d> (termasuk userData Electron = kunci satu-instance,
  *                             jadi tidak berebut dengan aplikasi yang terpasang); jendela + tray tetap muncul,
  *                             tetapi TIDAK mendaftarkan protokol, TIDAK menyentuh pintasan / registry, TIDAK
  *                             memeriksa update. Untuk uji build: pasangkan dengan TAXIO_PILOT_PORT=<port bukan 51733>.
+ *   TAXIO_PILOT_UPDATE_FEED=<url dasar>  (hanya bersama TAXIO_PILOT_DATA_DIR) updater AKTIF dengan feed ini
+ *                             menggantikan FEED_URL; dalam mode terisolasi selalu verifikasi-saja dan cache
+ *                             unduhannya di <d>\update-cache.
+ *   TAXIO_PILOT_UPDATE_VERIFY_ONLY=1  cek + unduh + verifikasi sha512, catat hasilnya, TIDAK keluar/memasang.
  *   TAXIO_PILOT_SMOKE=1       seperti terisolasi (wajib bersama TAXIO_PILOT_DATA_DIR), tanpa jendela dan tray.
  *   TAXIO_PILOT_DEBUG_WINDOW=1   mencatat did-finish-load + judul halaman dan menyimpan tangkapan jendela ke
  *                             <akar>\jendela-dashboard.png (verifikasi build).
@@ -40,6 +45,10 @@ const SMOKE = process.env.TAXIO_PILOT_SMOKE === '1';
 const ISOLATED = !!process.env.TAXIO_PILOT_DATA_DIR || SMOKE;
 const DEBUG_WINDOW = process.env.TAXIO_PILOT_DEBUG_WINDOW === '1';
 const SELFTEST_BROWSER = process.env.TAXIO_PILOT_SELFTEST_BROWSER === '1';
+// Uji updater tanpa memasang: feed pengganti HANYA dihormati dalam mode terisolasi (TAXIO_PILOT_DATA_DIR),
+// dan mode terisolasi selalu verifikasi-saja (tidak pernah keluar untuk memasang ke PC ini).
+const UPDATE_FEED = process.env.TAXIO_PILOT_DATA_DIR && process.env.TAXIO_PILOT_UPDATE_FEED ? process.env.TAXIO_PILOT_UPDATE_FEED : null;
+const VERIFY_ONLY = process.env.TAXIO_PILOT_UPDATE_VERIFY_ONLY === '1' || ISOLATED;
 const APP_ID = 'com.taxio.pilot';
 const PROTOCOL = 'taxio-coretax';
 const ICON = path.join(__dirname, '..', 'gui', 'public', 'assets', 'taxio-pilot.ico');
@@ -226,7 +235,8 @@ function main() {
             readProtocolCommand: () => handover.parseRegDefault(execFileSync('reg', ['query', 'HKCU\\Software\\Classes\\' + PROTOCOL + '\\shell\\open\\command', '/ve'], { encoding: 'utf8', windowsHide: true, timeout: 5000 })),
             listShortcutFiles: () => [].concat(listLnk(app.getPath('desktop'), 0), listLnk(path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'), 2)),
             readShortcut: (file) => eshell.readShortcutLink(file),
-            writeShortcut: (file, opts) => eshell.writeShortcutLink(file, 'update', opts)
+            writeShortcut: (file, opts) => eshell.writeShortcutLink(file, 'update', opts),
+            remember: (legacyExe) => handover.remember(legacyExe)
         });
     }
 
@@ -237,28 +247,69 @@ function main() {
         } catch (e) { log('Gagal mendaftarkan protokol ' + PROTOCOL + '://: ' + e.message); }
     }
 
+    /** electron-updater, provider GENERIC pada kanal rilis tetap `pilot-v4` (lib/updater.js FEED_URL, sama
+     *  dengan build.publish di package.json) - BUKAN /releases/latest milik exe pkg 3.0.x. */
     function startUpdater() {
         const updater = require('../lib/updater');
         const { autoUpdater } = require('electron-updater');
+        const feedUrl = UPDATE_FEED || updater.FEED_URL;
+        autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
         autoUpdater.autoDownload = false;
+        autoUpdater.autoInstallOnAppQuit = false; // hanya lewat lib/updater.js (catatan percobaan + jalur keluar biasa)
         autoUpdater.allowPrerelease = false;
-        autoUpdater.logger = { info: () => {}, debug: () => {}, warn: (m) => log('[update] ' + m), error: (m) => log('[update] ' + m) };
+        autoUpdater.allowDowngrade = false;
+        autoUpdater.disableWebInstaller = true;
+        // Aset kanal pilot-v4 DIGANTI tiap rilis: blockmap versi lama sudah tidak ada di server, jadi unduhan
+        // diferensial hanya akan gagal lalu jatuh ke unduhan penuh (dengan stack galat di log). Selalu penuh.
+        autoUpdater.disableDifferentialDownload = true;
+        if (ISOLATED) {
+            // Cache unduhan electron-updater (bawaan %LOCALAPPDATA%\coretax-agent-updater = updaterCacheDirName
+            // di app-update.yml, dipakai juga oleh aplikasi terpasang) dipindah ke bawah akar data uji.
+            const cacheBase = path.join(paths.root(), 'update-cache');
+            try { Object.defineProperty(autoUpdater.app, 'baseCachePath', { get: () => cacheBase, configurable: true }); }
+            catch (e) { log('[update] cache uji tidak bisa dipindah: ' + e.message); }
+        }
+        autoUpdater.logger = { info: () => {}, debug: () => {}, warn: (m) => log('[update] ' + String(m).split('\n')[0]), error: (m) => log('[update] ' + String(m).split('\n')[0]) };
         autoUpdater.on('error', () => { /* dilaporkan lewat promise check/download - lib/updater.js */ });
+        let onProgress = null;
+        autoUpdater.on('download-progress', (p) => { if (onProgress) onProgress(p); });
+        let checked = null;
         const engine = {
             check: async () => {
                 const r = await autoUpdater.checkForUpdates();
-                return r && r.updateInfo ? { version: r.updateInfo.version, notes: r.updateInfo.releaseNotes } : null;
+                if (!r || !r.updateInfo) return null;
+                checked = r.updateInfo;
+                const f = (r.updateInfo.files || [])[0];
+                return { version: r.updateInfo.version, notes: r.updateInfo.releaseNotes, size: f && f.size };
             },
-            download: async () => { await autoUpdater.downloadUpdate(); },
+            download: async () => {
+                onProgress = updater.progressLogger(checked ? checked.version : '?');
+                try { await autoUpdater.downloadUpdate(); } finally { onProgress = null; }
+            },
             install: () => { quitting = true; autoUpdater.quitAndInstall(true, true); }
         };
         updater.configure({
             engine,
+            feedUrl,
+            verifyOnly: VERIFY_ONLY,
             isRunActive: () => require('../lib/runcontrol').anyActive(),
             // Jalur keluar yang sama dengan "Keluar" (menutup jendela Chrome otomasi), lalu pasang + buka ulang.
             onBeforeRestart: () => require('../gui/server').gracefulQuit({ finalize: () => engine.install() })
         });
+        log('Update otomatis aktif: kanal ' + feedUrl + (VERIFY_ONLY ? ' (VERIFIKASI SAJA - tidak pernah memasang)' : '') + '.');
+        updater.checkPreviousInstall();
         updater.startAutoUpdate(null, { initialDelayMs: 4000 });
+    }
+
+    /** Port 51733 dipegang exe pkg versi 3 yang masih berjalan (versi 4 terpaksa memakai port lain): dua
+     *  versi berjalan bersamaan dan berebut deep link. Hanya GET tanpa token (probe versi 3 menjawab 200;
+     *  versi 4 lain menjawab 401 karena PROBE_HEADER) - tidak pernah POST. */
+    async function warnIfLegacyRunning() {
+        if (!core || !core.fellBack || core.preferredPort !== 51733) return;
+        const r = await require('../lib/runtime').probe(51733, null);
+        if (r.status !== 200 || r.pilot) return; // bukan versi 3 (versi 4 memasang header x-taxio-pilot)
+        log('Taxio Pilot versi 3 (coretax-agent.exe) masih berjalan di port 51733 - dua versi berjalan bersamaan.');
+        require('../lib/log').showPopup('Taxio Pilot versi 3 (coretax-agent.exe) masih berjalan di PC ini. Jangan jalankan dua versi bersamaan: tutup versi 3 lewat menu "Keluar" di ikon tray-nya, lalu lanjutkan di jendela ini.', 'Versi lama masih berjalan', 'Warning');
     }
 
     async function onReady() {
@@ -272,7 +323,7 @@ function main() {
             // aplikasi lain -> port bebas.
             core = await require('../lib/app').start({
                 smoke: SMOKE, findPrimary: async () => null, listenTries: 1,
-                banner: '[Electron ' + process.versions.electron + (app.isPackaged ? '' : ', pengembangan') + (ISOLATED ? ', terisolasi: tanpa protokol/update/serah-terima' : '') + (SMOKE ? ', SMOKE: tanpa jendela/tray' : '') + ']'
+                banner: '[Electron ' + process.versions.electron + (app.isPackaged ? '' : ', pengembangan') + (ISOLATED ? ', terisolasi: tanpa protokol/serah-terima, ' + (UPDATE_FEED ? 'update verifikasi-saja dari feed uji' : 'tanpa update') : '') + (SMOKE ? ', SMOKE: tanpa jendela/tray' : '') + ']'
             });
         } catch (e) {
             log('Fatal error saat memulai: ' + (e.stack || e.message));
@@ -292,8 +343,9 @@ function main() {
         // otomasi pertama; otomasi yang lebih dulu jalan menunggu unduhan yang sama.
         require('../lib/browser').ensure();
         if (SELFTEST_BROWSER) require('../lib/app').selfTestBrowser();
-        if (app.isPackaged && !ISOLATED) startUpdater();
-        else log('Update otomatis tidak aktif (' + (ISOLATED ? 'mode terisolasi' : 'mode pengembangan') + ').');
+        if (app.isPackaged && (!ISOLATED || UPDATE_FEED)) startUpdater();
+        else log('Update otomatis tidak aktif (' + (!app.isPackaged ? 'mode pengembangan' : 'mode terisolasi tanpa TAXIO_PILOT_UPDATE_FEED') + ').');
+        if (!ISOLATED) warnIfLegacyRunning().catch(() => {});
     }
 
     app.whenReady().then(onReady).catch((e) => {
