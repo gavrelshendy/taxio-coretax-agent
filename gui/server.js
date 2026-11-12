@@ -21,7 +21,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { log, onLogLine, LOG_FILE, pendingNotices, ackNotice } = require('../lib/log');
+const { log, showPopup, onLogLine, LOG_FILE, pendingNotices, ackNotice } = require('../lib/log');
 const state = require('../lib/state');
 const sessionStore = require('../lib/session-store');
 const entitiesLib = require('../lib/entities');
@@ -57,7 +57,7 @@ const { runSessionKey, runInBackground, runForResult, guarded } = require('./run
 const {
     requestOriginProblem, authProblem, needsAuth, setAuthCookieHeader, UNAUTHORIZED_MESSAGE, isProjectRestricted, anyRestricted, rejectIfRestricted,
     isEbupotTypeAllowed, isMyBupotAllowed, isIndividualEntityBlocked, ABSOLUTELY_BLOCKED_MYBUPOT_TYPES,
-    rejectIfOutdated
+    rejectIfOutdated, legacyProbeKind
 } = require('./guards');
 // Single source of truth for the version badge in gui/public/index.html - that used to be a
 // hardcoded <span>v1.8.1</span> that nobody remembered to bump across three straight releases
@@ -1227,11 +1227,12 @@ async function handleQuit(req, res) {
 // updater.configure() in electron/main.js), so behavior stays consistent (full-auto: finds it,
 // downloads it, restarts into it - explicit user request 2026-08-07, not a "review then confirm"
 // flow). Responds immediately with whatever checkForUpdate() alone reports so the UI has something
-// to show right away, then lets the full check-and-apply cycle run in the background.
+// to show right away, then lets the full check-and-apply cycle run in the background. `manual: true`: a
+// version whose installer already failed twice (lib/update-guard.js) is still tried once per click.
 async function handleCheckUpdate(req, res) {
     const info = await updater.checkForUpdate();
     sendJson(res, 200, info);
-    if (info.available) updater.checkAndApply().catch((e) => log('Gagal menerapkan update: ' + e.message));
+    if (info.available) updater.checkAndApply({ manual: true }).catch((e) => log('Gagal menerapkan update: ' + e.message));
 }
 
 /** URL pembuka jendela dashboard: membawa token sekali (/?t=), server menukarnya dengan cookie lalu
@@ -1239,6 +1240,34 @@ async function handleCheckUpdate(req, res) {
  *  cek Host), jadi 127.0.0.1 maupun localhost tetap konsisten dengan cookie-nya. */
 function dashboardUrl(req, ctx) {
     return 'http://' + req.headers.host + '/?t=' + encodeURIComponent(ctx.token);
+}
+
+/** Settings -> "Back to version 3": exe lama yang dicatat saat serah-terima (lib/legacy-handover.js) dan
+ *  halaman rilis v3 terakhir. Tidak ada downgrade otomatis - hanya petunjuk. */
+function rollbackInfo() {
+    let legacy = null;
+    try { legacy = require('../lib/legacy-handover').recalled(); } catch (e) { legacy = null; }
+    return { legacyExe: legacy ? legacy.exe : null, legacyExeExists: !!(legacy && legacy.exists), v3Version: updater.V3_VERSION, v3ReleaseUrl: updater.V3_RELEASE_URL };
+}
+
+/** Probe satu-instance dari exe pkg versi 3 (gui/guards.js legacyProbeKind): versi 3 keluar diam-diam
+ *  sesudah jendela versi 4 dibawa ke depan, dan pengguna diberi tahu cara kembali ke versi 3. Tidak ada
+ *  data yang dibocorkan dan deep link TIDAK dijalankan (tetap butuh token). */
+let _lastLegacyNotice = 0;
+async function handleLegacyProbe(kind, req, res, ctx) {
+    if (kind === 'session') return sendJson(res, 200, { app: 'Taxio Pilot', version: pkg.version, legacyProbe: true, message: 'Taxio Pilot versi ' + pkg.version + ' sedang berjalan di port ini.' });
+    // Habiskan body dulu: versi 3 menulis body deep link, dan koneksi yang ditutup sebelum body terkirim
+    // membuatnya mengira tidak ada yang menjawab (lalu mencoba bind port dan menampilkan popup galat).
+    try { await readJsonBody(req); } catch (e) { /* bukan JSON / kosong */ }
+    if (kind === 'deeplink') sendJson(res, 409, { error: 'Taxio Pilot versi ' + pkg.version + ' sedang berjalan; tautan dari versi lama tidak dijalankan.', legacyProbe: true });
+    else sendJson(res, 200, { ok: true, legacyProbe: true });
+    await shell.showDashboard(dashboardUrl(req, ctx));
+    const now = Date.now();
+    if (now - _lastLegacyNotice < 60000) return;
+    _lastLegacyNotice = now;
+    showPopup('Taxio Pilot versi 3 (coretax-agent.exe) baru saja dibuka, padahal versi ' + pkg.version + ' sedang berjalan - versi 3 langsung ditutup dan jendela ini dibawa ke depan.'
+        + (kind === 'deeplink' ? ' Tautan taxio-coretax:// yang dibukanya tidak dijalankan; buka lagi tautannya dari Taxio Hub.' : '')
+        + '\nUntuk kembali ke versi 3: Settings -> Quit app, lalu buka coretax-agent.exe (lihat Settings -> "Back to version 3").', 'Versi lama dibuka', 'Info');
 }
 
 /** "Open the dashboard" over HTTP (older launchers forwarded double-clicks here). Headless: no-op. */
@@ -1401,7 +1430,7 @@ const ROUTES = {
     'GET /events': handleEvents,
     'GET /api/session': (req, res) => sendJson(res, 200, sessionSummary()),
     'POST /api/session/retry': handleSessionRetry,
-    'GET /api/version': (req, res) => sendJson(res, 200, Object.assign({ version: pkg.version }, updater.getOutdatedInfo())),
+    'GET /api/version': (req, res) => sendJson(res, 200, Object.assign({ version: pkg.version }, updater.getOutdatedInfo(), { rollback: rollbackInfo() })),
     // MCP (mcp/taxio-pilot-mcp.js) membaca log Pilot yang SEDANG berjalan - exe bisa dijalankan dari folder lain.
     'GET /api/log-file': (req, res) => sendJson(res, 200, { path: LOG_FILE }),
     'POST /api/connect': handleConnect,
@@ -1520,6 +1549,13 @@ function createGuiServer(port, opts) {
                 }
                 res.writeHead(302, { 'Set-Cookie': setAuthCookieHeader(boundPort, token), Location: '/', 'Cache-Control': 'no-store' });
                 return res.end();
+            }
+            // Probe satu-instance exe pkg versi 3 (bentuknya persis, lihat gui/guards.js): dijawab tanpa token,
+            // hanya untuk "sudah berjalan" + "tampilkan jendela".
+            const legacy = legacyProbeKind(req, pathname);
+            if (legacy) {
+                const out = handleLegacyProbe(legacy, req, res, { token, port: boundPort });
+                return out.catch((e) => serverError(res, e));
             }
             // /api/* dan /events wajib token (Bearer atau cookie); berkas statis tidak.
             if (needsAuth(pathname)) {

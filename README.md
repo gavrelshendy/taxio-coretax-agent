@@ -58,6 +58,20 @@ $env:TAXIO_PILOT_DATA_DIR="$env:TEMP\tp-uji"; $env:TAXIO_PILOT_PORT='52555'; npm
 $env:TAXIO_PILOT_DATA_DIR="$env:TEMP\tp-smoke"; $env:TAXIO_PILOT_SMOKE='1'; $env:TAXIO_PILOT_PORT='0'; node main.js
 ```
 
+Uji updater tanpa memasang (hanya build terpaket `dist-electron\win-unpacked\taxio-pilot.exe`):
+
+```
+# feed lokal (latest.yml + installer) di http://127.0.0.1:<p>/feed/ ; updater cek + unduh + verifikasi sha512,
+# mencatat "UJI-UPDATE: ..." dan TIDAK keluar / memasang. Cache unduhan di <akar uji>\update-cache.
+$env:TAXIO_PILOT_DATA_DIR="$env:TEMP\tp-upd"; $env:TAXIO_PILOT_PORT='52577'
+$env:TAXIO_PILOT_UPDATE_FEED='http://127.0.0.1:52611/feed/'; $env:TAXIO_PILOT_UPDATE_VERIFY_ONLY='1'
+.\dist-electron\win-unpacked\taxio-pilot.exe
+```
+
+`TAXIO_PILOT_UPDATE_FEED` hanya dihormati bersama `TAXIO_PILOT_DATA_DIR`, dan mode terisolasi SELALU
+verifikasi-saja. `TAXIO_PILOT_UPDATE_VERIFY_ONLY=1` juga berlaku untuk aplikasi terpasang (tidak pernah
+memasang).
+
 Hentikan instance uji dengan `POST /api/quit` (Bearer token dari `runtime.json` di folder ujinya). Jangan
 pernah memakai port 51733 untuk uji. Catatan: lingkungan yang mengisi `ELECTRON_RUN_AS_NODE=1` (mis.
 terminal di dalam aplikasi Electron lain) membuat `electron.exe` berjalan sebagai node - hapus dulu.
@@ -76,37 +90,123 @@ untuk uji terisolasi). Paket berisi hanya `package.json`, `electron/`, `lib/`, `
 `playwright` dan `playwright-core` di-unpack dari asar (`app.asar.unpacked`). Tanpa tanda tangan kode:
 Windows SmartScreen bisa memperingatkan installer yang diunduh lewat browser.
 
+**Jangan build dari worktree yang `node_modules`-nya junction** ke checkout lain: pengumpul dependensi
+electron-builder 26.18 lalu melaporkan `cannot find path for dependency` dan paket JADI tanpa sebagian
+besar dependensi transitif (terukur 2026-11-12: 15 modul di `app.asar` alih-alih 124 - tanpa
+`playwright-core`, `builder-util-runtime`, `@supabase/auth-js`, `pg-pool`, ...; aplikasi gagal saat
+memuat modul itu). Build dari folder dengan `node_modules` sungguhan. Periksa sesudah build:
+`node -e "console.log(require('@electron/asar').listPackage('dist-electron/win-unpacked/resources/app.asar').filter(f=>/node_modules[\\\/]builder-util-runtime[\\\/]package.json/.test(f)))"`
+harus mencetak satu path.
+
 ## Rilis dan update otomatis
 
-Update otomatis = `electron-updater` terhadap GitHub Releases repo publik `gavrelshendy/taxio-coretax-agent`
-(cek 4 detik setelah start lalu tiap 15 menit; tidak pernah memasang saat ada otomasi berjalan; unduhan
-gagal dicoba lagi 1 -> 2 -> 5 menit lalu 15; selama versi lebih baru terkonfirmasi, aksi baru ditolak
-HTTP 426; begitu menganggur aplikasi keluar lewat jalur "Keluar" biasa - menutup jendela Chrome otomasi -
-lalu installer dijalankan diam-diam dan aplikasi terbuka lagi). Lihat `lib/updater.js`.
+Arsitektur Electron = **versi 4** (mulai 4.0.0). Pengguna lama memakai exe pkg `coretax-agent.exe`
+3.0.x (terakhir v3.0.50) yang updater-nya sendiri memeriksa `/releases/latest` repo publik
+`gavrelshendy/taxio-coretax-agent`, mengambil aset `.exe` pertama rilis itu, menjalankannya, dan selama
+versi lebih baru diketahui menolak semua aksi (HTTP 426). Jadi **rilis yang bertanda "latest" dipasang
+paksa ke semua pengguna versi 3.** Karena itu versi 4 memakai kanal update SENDIRI:
 
-Prosedur rilis:
+- `electron-updater` dengan provider **generic** ke
+  `https://github.com/gavrelshendy/taxio-coretax-agent/releases/download/pilot-v4/`
+  (`build.publish` di package.json = `lib/updater.js` `FEED_URL`), yaitu aset SATU rilis bertag tetap
+  `pilot-v4` - **pre-release, tidak pernah "latest"** - berisi `latest.yml`,
+  `taxio-pilot-setup-<versi>.exe` dan `.blockmap`, yang diganti setiap rilis versi 4.
+- Akibatnya: exe 3.0.x tidak pernah melihat versi 4 kecuali pemilik SENGAJA menerbitkan installer versi 4
+  dalam rilis bertanda latest (= saklar "migrasikan semua"); menandai v3.0.50 sebagai latest lagi = saklar
+  "berhenti memigrasikan"; rilis pemeliharaan 3.0.x (tanpa `latest.yml`) tidak lagi merusak cek update
+  versi 4.
+- Fakta provider generic (electron-updater 6.8.11, dibaca dari sumbernya): `latest.yml` diambil dari
+  `new URL('latest.yml', FEED_URL)` dengan `?noCache=<waktu>` (tanpa header Authorization); installer dari
+  `new URL(<path di latest.yml>, FEED_URL)` tanpa cache-buster (namanya memuat versi); redirect diikuti
+  sendiri (maks. 10). GitHub menjawab `releases/download/<tag>/<nama>` dengan **302 `Cache-Control:
+  no-cache`** ke `release-assets.githubusercontent.com/...<id aset>?...` (ditandatangani, berlaku ±1 jam,
+  cache CDN per id aset) - mengganti aset = id baru, jadi tidak ada `latest.yml` basi dari CDN. sha512 dari
+  `latest.yml` diverifikasi; unduhan diferensial dimatikan (blockmap versi lama tidak ada lagi di kanal).
 
-1. Naikkan `version` di package.json di atas rilis terbaru yang sudah terbit (tag `v<versi>`) DAN di atas
-   versi exe pkg mana pun yang masih dipakai (termasuk build lokal) - updater hanya pindah ke versi yang
-   lebih tinggi.
-2. `npm test`, lalu `npm run build`.
-3. Buat rilis GitHub bertag `v<versi>` (rilis biasa, bukan draft/prerelease, ditandai "latest") dengan
-   TEPAT tiga aset dari `dist-electron\`, namanya tidak diubah:
-   `taxio-pilot-setup-<versi>.exe`, `taxio-pilot-setup-<versi>.exe.blockmap`, `latest.yml`.
-   Installer harus satu-satunya aset `.exe` (updater exe lama mengambil `.exe` pertama). Server MCP
-   (`mcp/taxio-pilot-mcp.js`) tetap boleh dilampirkan sebagai aset terpisah seperti biasa.
-   Contoh: `gh release create v3.1.0 dist-electron/taxio-pilot-setup-3.1.0.exe dist-electron/taxio-pilot-setup-3.1.0.exe.blockmap dist-electron/latest.yml`
-4. Rilis cermin Chrome (`chrome-<versi>`) tidak boleh menjadi "latest".
+Perilaku (lihat `lib/updater.js`, `lib/update-guard.js`): cek 4 detik setelah start lalu tiap 15 menit;
+tidak pernah memasang saat ada otomasi berjalan; unduhan dicatat tiap 20% di log dashboard; unduhan gagal
+dicoba lagi 1 -> 2 -> 5 menit lalu 15. Selama versi lebih baru terkonfirmasi aksi baru ditolak HTTP 426,
+KECUALI: cek yang gagal (offline, 404) tidak pernah menggerbang; bila tangga 1/2/5 menit habis tanpa
+unduhan berhasil, gerbang dibuka (`reason: 'download-failed'`, satu pemberitahuan) sampai unduhan
+berikutnya berhasil; dan bila installer gagal dipasang 2x untuk versi yang sama (antivirus/SmartScreen -
+tercatat di `<akar>\update-install.json` sebelum keluar untuk memasang, diperiksa saat start), versi itu
+tidak dipasang otomatis lagi dan tidak menggerbang (`reason: 'install-failed'`); pemberitahuan di aplikasi
+memberi tautan unduhan langsung; "Check for updates" manual tetap mencoba (sekali per klik). Begitu
+menganggur aplikasi keluar lewat jalur "Keluar" biasa - menutup jendela Chrome otomasi - lalu installer
+dijalankan diam-diam dan aplikasi terbuka lagi.
 
-**Peralihan dari exe pkg lama (`coretax-agent.exe` 3.0.x).** Updater lama mengunduh aset `.exe` pertama
-rilis terbaru (kini installer; diverifikasi SHA-256 dari GitHub), menjalankannya sebagai
-`<installer> --finish-update <pid> <exe lama>` lalu menutup dirinya. Installer NSIS mengabaikan argumen
-itu (electron-builder hanya mengenali `--updated`, `--force-run`, `/S`, `/D=` dsb.), memasang aplikasi,
-membuat pintasan "Taxio Pilot" di Desktop dan Start Menu, lalu menjalankannya. Pada start pertama
-aplikasi baru (`lib/legacy-handover.js`): bila protokol `taxio-coretax` di HKCU masih menunjuk ke
-`coretax-agent*.exe` di luar folder instalasi, pintasan `.lnk` Desktop/Start Menu yang menunjuk exe lama
-itu diarahkan ke exe baru; exe lama TIDAK dihapus. Sesudah itu protokol didaftarkan ke aplikasi baru.
-Data lama sudah disalin oleh migrasi Tahap 1 (`lib/paths.js`).
+### Prosedur rilis versi 4 (perintah `gh` - dokumentasi, dijalankan pemilik)
+
+1. Naikkan `version` di package.json (dan root package-lock.json) di atas versi 4 yang sudah terbit.
+2. `npm test`, lalu `npm run build` dari folder dengan `node_modules` SUNGGUHAN (bukan junction - lihat
+   "Build").
+3. Kanal `pilot-v4` (sekali saja, bila belum ada):
+   `gh release create pilot-v4 --prerelease --latest=false --title "Taxio Pilot v4 (kanal update)" --notes "Kanal update otomatis Taxio Pilot versi 4. Bukan rilis 'latest'."`
+4. Unggah installer + blockmap DULU, `latest.yml` TERAKHIR (supaya klien tidak pernah membaca `latest.yml`
+   yang menunjuk installer yang belum ada):
+   `gh release upload pilot-v4 dist-electron/taxio-pilot-setup-<versi>.exe dist-electron/taxio-pilot-setup-<versi>.exe.blockmap --clobber`
+   `gh release upload pilot-v4 dist-electron/latest.yml --clobber`
+   lalu pastikan tetap pre-release dan bukan latest: `gh release edit pilot-v4 --prerelease --latest=false`.
+   Installer versi lama di kanal boleh dihapus sesudahnya:
+   `gh release delete-asset pilot-v4 taxio-pilot-setup-<versi-lama>.exe -y` (dan `.blockmap`-nya).
+5. Rilis cermin Chrome (`chrome-<versi>`) dan rilis apa pun selain `v3.0.x` tidak boleh menjadi "latest".
+
+**Migrasikan semua pengguna versi 3 (saklar, disengaja).** Buat rilis biasa bertanda latest yang aset
+`.exe`-nya HANYA installer versi 4 (updater 3.0.x mengambil `.exe` pertama dan membandingkan tag dengan
+versinya):
+`gh release create v4.0.0 dist-electron/taxio-pilot-setup-4.0.0.exe --latest --title "Taxio Pilot 4.0.0" --notes "..."`
+(server MCP boleh ikut sebagai aset `.js`). Updater lama mengunduhnya (diverifikasi SHA-256 dari GitHub),
+menjalankannya sebagai `<installer> --finish-update <pid> <exe lama>` lalu menutup dirinya. Installer NSIS
+mengabaikan argumen itu (electron-builder hanya mengenali `--updated`, `--force-run`, `/S`, `/D=` dsb.),
+memasang aplikasi, membuat pintasan "Taxio Pilot" di Desktop dan Start Menu, lalu menjalankannya. Pada
+start pertama aplikasi baru (`lib/legacy-handover.js`): bila protokol `taxio-coretax` di HKCU masih
+menunjuk ke `coretax-agent*.exe` di luar folder instalasi, pintasan `.lnk` Desktop/Start Menu yang
+menunjuk exe lama itu diarahkan ke exe baru dan path exe lama dicatat (`<akar>\legacy-v3.json`); exe lama
+TIDAK dihapus atau diubah. Sesudah itu protokol didaftarkan ke aplikasi baru. Data lama sudah disalin oleh
+migrasi Tahap 1 (`lib/paths.js`).
+
+**Berhenti memigrasikan.** `gh release edit v3.0.50 --latest` (atau rilis 3.0.x yang lebih baru). Pengguna
+yang sudah pindah tetap di versi 4 (kanalnya `pilot-v4`); yang belum, tetap di versi 3. Selama rilis
+versi 4 bertanda latest, pengguna yang kembali ke versi 3 akan langsung diperbarui lagi ke versi 4 oleh
+updater lama - "Kembali ke versi 3" hanya bertahan bila latest = 3.0.x.
+
+**Rilis pemeliharaan 3.0.x** (pengembang lain) tetap seperti biasa: rilis `v3.0.<n>` bertanda latest dengan
+`coretax-agent.exe`. Tidak memengaruhi pengguna versi 4.
+
+## Kembali ke versi 3
+
+Tidak ada downgrade otomatis. Pengguna bisa kembali ke v3.0.50 kapan saja (Settings -> "Back to version 3"
+menampilkan langkah yang sama dan path exe lama bila tercatat saat serah-terima):
+
+1. **Tutup Taxio Pilot versi 4** (Settings -> Quit app, atau "Keluar" di ikon tray). Jangan jalankan dua
+   versi bersamaan.
+2. Buka `coretax-agent.exe` lama (versi 4 tidak pernah menghapus/mengubahnya; installer NSIS hanya menulis
+   ke `%LOCALAPPDATA%\Programs\taxio-pilot` dan pintasannya), atau unduh lagi dari
+   https://github.com/gavrelshendy/taxio-coretax-agent/releases/tag/v3.0.50.
+
+Yang terjadi:
+- **Data**: berkas di `~/.coretax-agent` DISALIN (bukan dipindah) ke `%LOCALAPPDATA%\TaxioPilot\data`, jadi
+  versi 3 masih menemukan datanya - dalam keadaan saat migrasi (perubahan entitas lokal di versi 4 tidak
+  ikut). Token sesi Taxio Hub di salinan lama kemungkinan sudah kedaluwarsa/terpakai: masuk lagi bila diminta.
+- **Profil Chrome** per PIC DIPINDAH ke `%LOCALAPPDATA%\TaxioPilot\profiles`, jadi di versi 3 setiap PIC
+  login Coretax sekali lagi (profil baru di `~/.coretax-agent-profile`). Saat kembali ke versi 4, profil
+  versi 4 yang dipakai (yang dibuat versi 3 dibiarkan).
+- **Protokol `taxio-coretax://`** dimiliki aplikasi yang terakhir DIMULAI (keduanya mendaftarkan diri saat
+  start). Pintasan Desktop/Start Menu tetap menunjuk versi 4; membuka Taxio Pilot dari pintasan = kembali
+  ke versi 4 (serah-terima berjalan lagi dan mengambil alih protokol).
+- **Versi 3 dibuka saat versi 4 berjalan** (`gui/guards.js` `legacyProbeKind`). Exe 3.0.50 memeriksa
+  "sudah berjalan?" dengan `GET http://127.0.0.1:51733/api/session` tanpa token. Sebelum 4.0.0 versi 4
+  menjawab 401, sehingga versi 3 menganggap tidak ada yang berjalan: memulihkan sesi dari salinan lama
+  (token refresh usang), gagal bind port 51733, lalu menampilkan popup "Taxio Pilot gagal membuka dashboard
+  lokal (port 51733 mungkin dipakai aplikasi lain)" dan keluar. Kini versi 4 menjawab probe yang PERSIS
+  berbentuk probe versi 3 (tanpa Authorization/Cookie/Origin/User-Agent/header probe versi 4) dengan 200
+  tanpa data; versi 3 lalu mengirim `POST /api/tray/open`, versi 4 membawa jendelanya ke depan dan
+  menampilkan pemberitahuan cara kembali ke versi 3, dan versi 3 keluar diam-diam (`exit 0`). Deep link
+  dari versi 3 (`POST /api/deeplink`) dijawab 409 dan TIDAK dijalankan. Semua route lain tetap wajib token.
+  Batas: hanya bila versi 4 memegang port 51733.
+- **Versi 3 sudah berjalan saat versi 4 dibuka**: versi 4 terpaksa memakai port lain, lalu memeriksa
+  51733 (GET tanpa token) dan menampilkan peringatan "versi 3 masih berjalan - tutup lewat menu Keluar di
+  ikon tray-nya".
 
 Aplikasi desktop mandiri untuk otomasi Coretax. Terpisah dari, dan tidak menyentuh, `Taxio/coretax-helper`
 (`TaxioCoretaxHelper.exe`), yang tetap bekerja seperti biasa lewat deep link `taxio-coretax://` dari web

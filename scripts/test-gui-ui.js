@@ -12,8 +12,9 @@ const fakes = install();
 const { chromium } = require('playwright');
 const { createGuiServer } = require('../gui/server');
 
-const PORT = 52433;
-const BASE = 'http://127.0.0.1:' + PORT;
+// Port pilihan OS (0): dua checkout yang menjalankan tes bersamaan tidak bentrok (EADDRINUSE).
+let PORT = 0;
+let BASE = '';
 const SHOTS = process.env.PILOT_SHOTS || '';
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 
@@ -28,7 +29,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
 
 (async () => {
     // Token peluncuran: jendela dibuka di /?t=<token> seperti main.js; server menukarnya dengan cookie.
-    const server = await createGuiServer(PORT);
+    const server = await createGuiServer(0);
+    PORT = server.address().port;
+    BASE = 'http://127.0.0.1:' + PORT;
     // Chromium bawaan Playwright bila terpasang; kalau tidak (mis. "Executable doesn't exist"), pakai Google Chrome.
     let browser;
     try { browser = await chromium.launch({ headless: true }); }
@@ -144,7 +147,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         const titles = await page.locator('.nav-title').allInnerTexts();
         assert.deepStrictEqual(titles, ['DOWNLOAD', 'AUTOMATION']);
         const items = await page.locator('.nav-item[data-nav]').allInnerTexts();
-        assert.deepStrictEqual(items.map((t) => t.trim()), ['SPT', 'e-Bupot', 'My Bukti Potong', 'e-Faktur', 'Annual PPh 21 Recap', 'Laporan Realisasi Investasi Dividen', 'Faktur Masukan Crediting', 'PPh 25 Kode Billing', 'Bukti Potong Upload, Issue & Sign'], 'urutan & nama menu sidebar');
+        assert.deepStrictEqual(items.map((t) => t.trim()), ['SPT', 'e-Bupot', 'Bukti Potong Saya', 'e-Faktur', 'Annual PPh 21 Recap', 'e-Reporting', 'Credit Faktur Masukan', 'PPh 25 Kode Billing', 'e-Bupot Upload & Issue'], 'urutan & nama menu sidebar');
         assert.ok((await text('#open-settings')).includes('Settings'));
         assert.ok(items.join('|').includes('PPh 25 Kode Billing'));
         const billing = page.locator('.nav-item[data-nav="billing"]');
@@ -158,16 +161,16 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('tanpa entitas: formulir tetap tampil dengan banner pilih entitas, tombol mulai nonaktif', async () => {
         const main = await text('.col-main');
         assert.ok(main.includes('No entity selected'));
-        assert.ok(/Tax Type/i.test(main) && /Tax Period/i.test(main), 'formulir SPT tetap tampil');
+        assert.ok(/Jenis Pajak/i.test(main) && /Masa Pajak/i.test(main), 'formulir SPT tetap tampil');
         assert.ok(await page.locator('.col-main [data-act="open-palette"]').isVisible());
         assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
         assert.ok((await text('#rail')).includes('Select an entity first'));
         await shot('05-tanpa-entitas');
     });
-    await test('Laporan Realisasi Investasi Dividen: kini butuh entitas terpilih seperti halaman lain (banner sesi manual lama sudah dihapus)', async () => {
+    await test('Laporan Realisasi Investasi (Dividen): kini butuh entitas terpilih seperti halaman lain (banner sesi manual lama sudah dihapus)', async () => {
         await page.click('.nav-item[data-nav="dividen"]');
         await page.waitForSelector('.dropzone');
-        assert.strictEqual(await text('.topbar h1'), 'Laporan Realisasi Investasi Dividen');
+        assert.strictEqual(await text('.topbar h1'), 'Laporan Realisasi Investasi (Dividen)');
         const main = await text('.col-main');
         assert.ok(main.includes('No entity selected'), 'banner pilih entitas, sama seperti halaman lain');
         assert.ok(!/session you log in to yourself/i.test(main), 'banner sesi manual lama sudah dihapus');
@@ -306,10 +309,10 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.strictEqual(await text('#rail .big-num b'), '6', '2 jenis x 3 masa');
         await page.click('.pp [data-pp="text"]');
         await page.fill('.pp [data-pp-input]', '0126-0326;0526');
-        assert.ok((await text('.pp .summary-line')).includes('4 periods'));
+        assert.ok((await text('.pp .summary-line')).includes('4 Masa Pajak'));
         assert.ok((await text('.pp .code-chip')).includes('0126-0326;0526'));
         await page.fill('.pp [data-pp-input]', '1326');
-        assert.ok((await text('.pp [data-pp-error]')).includes('Invalid period'));
+        assert.ok((await text('.pp [data-pp-error]')).includes('Invalid Masa Pajak'));
         await page.fill('.pp [data-pp-input]', '0126-0326');
     });
     await test('SPT: tahunan eksklusif, memakai chip tahun; OP terkunci untuk Badan', async () => {
@@ -318,7 +321,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.strictEqual(await page.locator('.tile[data-val="pph21"]').getAttribute('aria-pressed'), 'false');
         assert.strictEqual(await page.locator('.tile[data-val="badan"]').getAttribute('aria-pressed'), 'true');
         assert.strictEqual(await page.locator('.pp .chip').count(), 6);
-        assert.ok((await text('.col-main')).toLowerCase().includes('tax year'));
+        assert.ok((await text('.col-main')).toLowerCase().includes('tahun pajak'));
         assert.ok(!(await text('.col-main')).includes('PPh 25'), 'opsi cek PPh 25 sudah dihapus dari SPT');
         await shot('10-spt-tahunan');
         await page.click('.tile[data-val="badan"]');
@@ -399,7 +402,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('.tile[data-val="bppu"]');
         for (const k of ['bpmp', 'bp21', 'bpa1', 'bpa2']) assert.ok(await page.locator('.tile[data-val="' + k + '"]').isDisabled(), k + ' terkunci');
         for (const k of ['bppu', 'bpnr', 'bp26', 'bpatc']) assert.ok(!(await page.locator('.tile[data-val="' + k + '"]').isDisabled()), k + ' terbuka');
-        assert.ok((await text('.tile[data-val="bpa1"]')).includes('BP A1'));
+        assert.ok((await text('.tile[data-val="bpa1"]')).includes('BPA1'));
     });
     await test('Unduh e-Faktur: 8 jenis dokumen, bawaan Pajak Masukan + Excel; kirim jenis, format, entitas dan masa', async () => {
         await page.click('.nav-item[data-nav="faktur"]');
@@ -446,11 +449,11 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('Billing di Otomasi: satu bulan saja yang bisa dipilih', async () => {
         assert.strictEqual(await page.locator('.pp .chip[aria-pressed="true"]').count(), 1);
     });
-    await test('Bukti Potong Upload, Issue & Sign: tiga tab (Upload e-Bupot / Issue & Sign / Konsep SPT), masing-masing dengan ringkasannya', async () => {
+    await test('e-Bupot Upload, Issue & Sign: tiga tab (Upload e-Bupot / Issue & Sign / Konsep SPT), masing-masing dengan ringkasannya', async () => {
         await page.click('.nav-item[data-nav="impor"]');
         await page.waitForSelector('[data-act="iview"]');
-        assert.strictEqual(await text('.topbar h1'), 'Bukti Potong Upload, Issue & Sign');
-        assert.deepStrictEqual((await page.locator('[data-act="iview"]').allInnerTexts()).map((t) => t.trim()), ['Upload e-Bupot', 'Issue & Sign', 'Konsep SPT']);
+        assert.strictEqual(await text('.topbar h1'), 'e-Bupot Upload, Issue & Sign');
+        assert.deepStrictEqual((await page.locator('[data-act="iview"]').allInnerTexts()).map((t) => t.trim()), ['Upload e-Bupot', 'Issue & sign', 'Konsep SPT']);
         assert.strictEqual(await page.locator('[data-act="iview"][data-val="upload"]').getAttribute('aria-pressed'), 'true', 'tab bawaan: Upload e-Bupot');
         assert.ok(await visible('.dropzone'));
         assert.ok((await text('#rail [data-act="start"]')).includes('Upload to Belum Terbit'));
@@ -980,7 +983,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('[data-au="login"]');
         await page.waitForSelector('#app .sidebar');
         assert.ok(!(await text('.sidebar')).includes('Annual PPh 21 Recap'), 'Annual PPh 21 Recap (A1) disembunyikan');
-        assert.ok(!(await text('.sidebar')).includes('Bukti Potong Upload'), 'Bukti Potong Upload, Issue & Sign disembunyikan');
+        assert.ok(!(await text('.sidebar')).includes('e-Bupot Upload'), 'e-Bupot Upload, Issue & Sign disembunyikan');
         assert.ok((await text('.sidebar')).includes('Restricted Editor'));
         assert.ok(!(await visible('#btn-open-coretax')), 'tanpa Buka Coretax');
         await page.click('#entity-chip');

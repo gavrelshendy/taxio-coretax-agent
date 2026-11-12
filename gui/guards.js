@@ -68,6 +68,30 @@ function setAuthCookieHeader(port, token) {
     return authCookieName(port) + '=' + token + '; Path=/; HttpOnly; SameSite=Strict';
 }
 
+// ---- Exe pkg lama (coretax-agent.exe 3.0.x) yang dibuka saat versi 4 berjalan ----
+// Satu-instance versi 3 lewat HTTP ke port 51733 (main.js v3.0.50): klik ganda -> GET /api/session TANPA
+// token; 200 = "sudah berjalan" -> POST /api/tray/open lalu exit(0) diam-diam. Selain 200 (versi 4 menjawab
+// 401) versi 3 memulihkan sesi Taxio dari salinan LAMA di ~/.coretax-agent (token refresh usang), mencoba
+// bind 51733, gagal, dan menampilkan popup galat "port mungkin dipakai aplikasi lain". Deep link: POST
+// /api/deeplink tanpa token; balasan < 500 = "diteruskan" -> exit(0).
+// Jadi permintaan yang PERSIS berbentuk probe versi 3 dijawab supaya versi 3 keluar diam-diam sesudah
+// jendela versi 4 dibawa ke depan. Bentuknya: http.request Node tanpa header apa pun selain Host - tanpa
+// Authorization, Cookie, Origin, User-Agent (browser SELALU mengirim User-Agent; fetch Node/undici dan
+// curl juga) dan tanpa header probe versi 4 (lib/runtime.js probe() mengirim PROBE_HEADER supaya instance
+// versi 4 lain - mis. milik pengguna Windows lain - tetap mendapat 401 dan tidak dikira "versi lama milik
+// kita"). Yang dibuka hanya: jawaban 200 tanpa data, dan "tampilkan jendela dashboard". Deep link TIDAK
+// dijalankan (itu aksi sungguhan; tetap butuh token) - hanya jendela dibawa ke depan dan pemberitahuan
+// ditampilkan. Semua route lain tetap wajib token.
+const { PROBE_HEADER } = require('../lib/runtime');
+function legacyProbeKind(req, pathname) {
+    const h = req.headers || {};
+    if (h.authorization !== undefined || h.cookie !== undefined || h.origin !== undefined || h['user-agent'] !== undefined || h[PROBE_HEADER] !== undefined) return null;
+    if (req.method === 'GET' && pathname === '/api/session') return 'session';
+    if (req.method === 'POST' && pathname === '/api/tray/open') return 'open';
+    if (req.method === 'POST' && pathname === '/api/deeplink') return 'deeplink';
+    return null;
+}
+
 // ---- Restricted Editor ----
 function isProjectRestricted(projectId) {
     const s = state.get(projectId);
@@ -140,5 +164,5 @@ function rejectIfOutdated(res) {
 module.exports = {
     requestOriginProblem, authProblem, needsAuth, authCookieName, setAuthCookieHeader, UNAUTHORIZED_MESSAGE, isProjectRestricted, anyRestricted, rejectIfRestricted,
     isEbupotTypeAllowed, isMyBupotAllowed, isIndividualEntityBlocked, ABSOLUTELY_BLOCKED_MYBUPOT_TYPES,
-    rejectIfOutdated
+    rejectIfOutdated, legacyProbeKind, PROBE_HEADER
 };

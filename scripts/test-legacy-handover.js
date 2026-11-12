@@ -103,6 +103,17 @@ function fakeDeps(over) {
         assert.ok(/3 pintasan diarahkan/.test(d.lines[0]) && /exe lama dibiarkan/.test(d.lines[0]));
     });
 
+    await test('legacy exe path is remembered for "Back to version 3" (only when found; errors ignored)', async () => {
+        const seen = [];
+        await h.run(fakeDeps({ remember: (exe) => seen.push(exe) }));
+        assert.deepStrictEqual(seen, [LEGACY]);
+        await h.run(fakeDeps({ remember: (exe) => seen.push(exe), readProtocolCommand: () => '"' + NEW + '" "%1"' }));
+        await h.run(fakeDeps({ remember: (exe) => seen.push(exe), env: { TAXIO_PILOT_DATA_DIR: 'x' } }));
+        assert.deepStrictEqual(seen, [LEGACY], 'not called when skipped');
+        const r = await h.run(fakeDeps({ remember: () => { throw new Error('disk penuh'); } }));
+        assert.strictEqual(r.done.length, 3, 'a failing remember never stops the hand-over');
+    });
+
     await test('write failures are reported, never thrown', async () => {
         let n = 0;
         const d = fakeDeps({ writeShortcut: () => { if (++n === 1) throw new Error('akses ditolak'); return n !== 2 ? true : false; } });

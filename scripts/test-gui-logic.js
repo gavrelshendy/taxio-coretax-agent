@@ -33,9 +33,9 @@ test('parseMasa: satu bulan, rentang, dan setahun penuh', () => {
 });
 test('parseMasa: rentang terbalik dibetulkan; galat memakai kalimat server', () => {
     assert.deepStrictEqual(Array.from(L.parseMasa('0326-0126').set), ['0126', '0226', '0326']);
-    assert.strictEqual(L.parseMasa('1326').error, 'Invalid period: "1326"');
-    assert.strictEqual(L.parseMasa('0126;xx').error, 'Invalid period: "xx"');
-    assert.strictEqual(L.parseMasa('1999').error, 'Invalid period: "1999"');
+    assert.strictEqual(L.parseMasa('1326').error, 'Invalid Masa Pajak: "1326"');
+    assert.strictEqual(L.parseMasa('0126;xx').error, 'Invalid Masa Pajak: "xx"');
+    assert.strictEqual(L.parseMasa('1999').error, 'Invalid Masa Pajak: "1999"');
 });
 test('parseMasa dan masaToCode konsisten dengan lib/masa.js di server (bolak-balik)', () => {
     for (const text of ['0126', '0126;0226', '0125-1225', '2025', '1125-0126;0526']) {
@@ -49,7 +49,7 @@ test('yearsToCode dan parseYears cocok dengan lib/masa.js (tahunan)', () => {
     assert.strictEqual(L.yearsToCode([2025, 2024]), '2024-2025');
     assert.strictEqual(L.yearsToCode([2021, 2024]), '2021;2024');
     assert.deepStrictEqual(Array.from(L.parseYears('2024-2025').set), [2024, 2025]);
-    assert.strictEqual(L.parseYears('20x5').error, 'Invalid year: "20x5"');
+    assert.strictEqual(L.parseYears('20x5').error, 'Invalid Tahun Pajak: "20x5"');
     for (const ys of [[2025], [2024, 2025], [2021, 2024, 2025]]) {
         assert.deepStrictEqual(masaLib.parseAnnualYearListInput(L.yearsToCode(ys)), ys.map(String));
     }
