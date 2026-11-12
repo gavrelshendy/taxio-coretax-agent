@@ -392,6 +392,32 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         assert.strictEqual(d.json.taxio_hub.pending, undefined);
     });
 
+    await test('pilih file: hanya path (tanpa base64); route base64 lama menerima filePath HANYA dari dialog ini', async () => {
+        const shell = require('../lib/shell');
+        const picked = path.join(process.env.TAXIO_PILOT_DATA_DIR, 'dividen-uji.xlsx');
+        const other = path.join(process.env.TAXIO_PILOT_DATA_DIR, 'tidak-dipilih.xlsx');
+        fs.writeFileSync(picked, 'isi'); fs.writeFileSync(other, 'isi');
+        shell.register({ pickFile: async () => picked });
+        try {
+            const a = await POST('/api/actions/pick-file', { title: 'x' });
+            assert.strictEqual(a.status, 200);
+            assert.deepStrictEqual(a.json, { filePath: picked, fileName: 'dividen-uji.xlsx', size: 3 });
+            const notPicked = await POST('/api/actions/import-dividen', { filePath: other });
+            assert.strictEqual(notPicked.status, 400);
+            assert.ok(/dipilih lewat tombol pilih file/.test(notPicked.json.error), notPicked.json.error);
+            // Path dari dialog: file terbaca, lalu jalan seperti base64 (di sini berhenti di "sesi manual belum ada").
+            for (const url of ['/api/actions/import-dividen', '/api/actions/check-dividen']) {
+                const ok = await POST(url, { filePath: picked });
+                assert.strictEqual(ok.status, 401, url + ': ' + JSON.stringify(ok.json));
+                assert.ok(/Sesi manual belum ada/.test(ok.json.error));
+            }
+            const base64 = await POST('/api/actions/check-dividen', { fileBase64: Buffer.from('isi').toString('base64') });
+            assert.strictEqual(base64.status, 401, 'base64 (seret-lepas / input file) tetap diterima');
+            const none = await POST('/api/actions/import-pajak-masukan', { entity: { project: 'manual' } });
+            assert.strictEqual(none.status, 400); assert.strictEqual(none.json.error, 'File template belum dipilih.');
+        } finally { shell.reset(); }
+    });
+
     console.log('\n' + passed + ' tes lulus' + (process.exitCode ? ', ADA YANG GAGAL' : '.'));
     fs.rmSync(process.env.TAXIO_PILOT_DATA_DIR, { recursive: true, force: true });
     process.exit(process.exitCode || 0);

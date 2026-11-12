@@ -16,7 +16,7 @@
 
    Menambah aksi Coretax baru: bungkus handler dengan action({...}) (versi usang, body, entitas,
    Restricted - lihat di bawah) lalu jalankan kerjanya lewat runInBackground() (409/202, log
-   berhenti/gagal, runcontrol.finish). Kebijakan akses ada di gui/guards.js. */
+   berhenti/gagal, pelepasan sesi - gui/run-wrappers.js). Kebijakan akses ada di gui/guards.js. */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -49,7 +49,11 @@ const shell = require('../lib/shell'); // jendela, dialog, keluar - Electron ata
 const runtime = require('../lib/runtime');
 const doctor = require('../lib/doctor');
 const diagnostics = require('../lib/diagnostics');
+const sessionRestore = require('../lib/session-restore');
+const uiEvents = require('../lib/ui-events');
 const { sendJson, readJsonBody, readLargeJsonBody, serveStatic } = require('./http-util');
+// Kerangka proses (409/202, pelepasan sesi sesudah kerja yang ditinggalkan selesai, batas waktu + Stop): gui/run-wrappers.js
+const { runSessionKey, runInBackground, runForResult, guarded } = require('./run-wrappers');
 const {
     requestOriginProblem, authProblem, needsAuth, setAuthCookieHeader, UNAUTHORIZED_MESSAGE, isProjectRestricted, anyRestricted, rejectIfRestricted,
     isEbupotTypeAllowed, isMyBupotAllowed, isIndividualEntityBlocked, ABSOLUTELY_BLOCKED_MYBUPOT_TYPES,
@@ -92,46 +96,13 @@ function action(opts, fn) {
             catch (e) { return sendJson(res, 400, { error: (large && e.message) || 'Body tidak valid.' }); }
         }
         body = body || {};
+        // Sesi Taxio Hub masih dipulihkan di latar (lib/session-restore.js): tunggu (terbatas), jangan
+        // langsung "belum terhubung".
+        await sessionRestore.waitIfRestoring();
         if (opts.entity !== false && !(body.entity && body.entity.project)) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
         if (opts.restricted && rejectIfRestricted(res, opts.restricted)) return;
         return fn(req, res, body, ctx);
     };
-}
-
-function runSessionKey() { const r = runcontrol.current(); return r ? r.key : null; }
-
-/** Satu proses otomasi di latar: daftar di runcontrol (409 bila sesi itu sibuk), balas 202
- *  { started, session, ...extra } segera (proses bisa berjalan bermenit-menit dan melaporkan
- *  kemajuannya lewat /events), jalankan `work`, lalu SELALU runcontrol.finish().
- *  Galat: `quiet(e)` true = sudah dilaporkan sendiri; Stop pengguna -> log `stopMsg`; selainnya
- *  log `failPrefix + e.message`. `cleanup` berjalan sesudah finish().
- *  Dipanggil dari dalam handler (alur async permintaan yang sama), karena runcontrol.start()
- *  mengikat proses ke konteks AsyncLocalStorage permintaan itu (runcontrol.isolate). */
-async function runInBackground(res, { label, session, extra, onStart }, work, { stopMsg, failPrefix, quiet, cleanup } = {}) {
-    try { runcontrol.start(label, session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    if (onStart) onStart();
-    sendJson(res, 202, Object.assign({ started: true, session: runSessionKey() }, extra));
-    try {
-        await work();
-    } catch (e) {
-        if (quiet && quiet(e)) { /* sudah dilaporkan */ }
-        else if (e && e.isStop) log(stopMsg || 'Proses dihentikan oleh pengguna.');
-        else log((failPrefix || 'Gagal: ') + (e && e.message));
-    } finally {
-        runcontrol.finish();
-        if (cleanup) await cleanup();
-    }
-}
-
-/** Seperti runInBackground, tetapi menunggu hasilnya (pratinjau / pencarian yang hanya membaca):
- *  200 dengan nilai `work()`, atau 400 { error: (errorPrefix || '') + pesan } + log `failPrefix + pesan`. */
-async function runForResult(res, { label, session }, work, { failPrefix, errorPrefix }) {
-    try { runcontrol.start(label, session); }
-    catch (e) { return sendJson(res, 409, { error: e.message }); }
-    try { return sendJson(res, 200, await work()); }
-    catch (e) { log(failPrefix + e.message); if (!res.headersSent) sendJson(res, 400, { error: (errorPrefix || '') + e.message }); }
-    finally { runcontrol.finish(); }
 }
 
 /** Opsi run untuk automation/* dari resolveEntitySource: sesi manual polos vs login otomatis. */
@@ -150,11 +121,27 @@ function sessionSummary() {
         // `pending`: akun sudah masuk/mendaftar tapi belum jadi anggota aktif grup (lihat
         // lib/connection.js) - dashboard menampilkan layar status pendaftaran, bukan aplikasi.
         const pending = state.getPending(projectId);
+        // `restore`: sesi tersimpan masih dipulihkan di latar ({ phase: 'restoring' | 'retrying', email,
+        // nextRetryAt, error } - lib/session-restore.js) - dashboard menampilkan "Memulihkan sesi…", bukan form masuk.
         out[projectId] = conn && state.isConnected(projectId)
             ? { connected: true, label: PROJECTS[projectId].label, email: conn.user.email, role: restricted ? 'restricted_editor' : conn.role }
-            : { connected: false, label: PROJECTS[projectId].label, pending: pending ? { status: pending.status, email: pending.email, initial: pending.initial || '' } : undefined };
+            : { connected: false, label: PROJECTS[projectId].label, pending: pending ? { status: pending.status, email: pending.email, initial: pending.initial || '' } : undefined, restore: pending ? undefined : sessionRestore.summary(projectId) };
     }
     return out;
+}
+
+/** "Coba lagi" di layar pemulihan sesi: percobaan sekarang juga (dibatasi waktu), lalu status terbaru. */
+async function handleSessionRetry(req, res) {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { body = {}; }
+    const project = (body && body.project) || 'taxio_hub';
+    if (!PROJECTS[project]) return sendJson(res, 400, { error: 'Project tidak dikenal.' });
+    if (sessionRestore.active(project)) {
+        let timer;
+        await Promise.race([sessionRestore.retryNow(project), new Promise((r) => { timer = setTimeout(r, sessionRestore.WAIT_MAX_MS); })]);
+        clearTimeout(timer);
+    }
+    return sendJson(res, 200, sessionSummary());
 }
 
 async function handleConnect(req, res) {
@@ -163,6 +150,7 @@ async function handleConnect(req, res) {
     const { project, email, password } = body || {};
     if (!PROJECTS[project]) return sendJson(res, 400, { error: 'Project tidak dikenal.' });
     if (!email || !password) return sendJson(res, 400, { error: 'Email & kata sandi wajib diisi.' });
+    sessionRestore.cancel(project); // masuk sendiri menggantikan pemulihan sesi lama yang mungkin masih dicoba
     try {
         const auth = await sessionStore.connectWithPassword(project, email, password);
         const reg = await connection.attach(project, auth);
@@ -216,6 +204,7 @@ async function handleRegistrationCheck(req, res) {
     let body;
     try { body = await readJsonBody(req); } catch (e) { body = {}; }
     const project = (body && body.project) || 'taxio_hub';
+    await sessionRestore.waitIfRestoring();
     const p = PROJECTS[project] && state.getPending(project);
     if (!p) return sendJson(res, 400, { error: 'Tidak ada pendaftaran yang sedang menunggu.' });
     if (!p.client || !p.user) return sendJson(res, 409, { error: 'Konfirmasi email dulu, lalu masuk dengan email dan kata sandi Anda.', needsLogin: true });
@@ -252,9 +241,14 @@ async function handleDisconnect(req, res) {
     try { body = await readJsonBody(req); } catch (e) { body = {}; }
     const projectId = body && body.project;
     if (!PROJECTS[projectId]) return sendJson(res, 400, { error: 'Project tidak dikenal.' });
+    // Keluar selagi sesi tersimpan masih dipulihkan / menunggu jaringan: hentikan pemulihannya, lalu buang
+    // sesi tersimpan itu juga (pengguna memilih "Masuk dengan akun lain").
+    const wasRestoring = sessionRestore.active(projectId);
+    sessionRestore.cancel(projectId);
     // Juga untuk akun yang masih menunggu grup: keluar berarti sesinya ikut dihapus.
     const conn = state.get(projectId) || state.getPending(projectId);
     if (conn && conn.client) await sessionStore.disconnect(conn.client);
+    else if (wasRestoring) sessionStore.forgetStored(projectId); // lokal saja: Taxio Hub mungkin tidak terjangkau
     state.clear(projectId);
     state.clearPending(projectId);
     log('Terputus dari ' + PROJECTS[projectId].label + '.');
@@ -262,6 +256,7 @@ async function handleDisconnect(req, res) {
 }
 
 async function handleEntities(req, res, mode) {
+    await sessionRestore.waitIfRestoring();
     const connectedIds = state.connectedProjectIds();
     if (!connectedIds.length) return sendJson(res, 401, { error: 'Belum terhubung ke akun manapun.' });
     const all = [];
@@ -277,7 +272,8 @@ async function handleEntities(req, res, mode) {
         } catch (e) {
             // Sejak penguncian kredensial Taxio Hub (2026-10-21) coretax_pics hanya bisa dibaca saat login;
             // permintaan tanpa sesi yang sah (token gagal diperbarui) ditolak dengan 42501.
-            const expired = e.code === '42501' || /permission denied/i.test(e.message || '');
+            // Sesi yang hilang kini ditolak lib/session-store.js sendiri ("... kedaluwarsa ...") sebelum terkirim anonim.
+            const expired = e.code === '42501' || /permission denied|kedaluwarsa/i.test(e.message || '');
             errors.push(PROJECTS[projectId].label + ': ' + (expired ? 'sesi login sudah kedaluwarsa - putuskan lalu hubungkan ulang akun ini.' : e.message));
         }
     }
@@ -294,19 +290,20 @@ async function handleEntities(req, res, mode) {
 // ---- Entitas lokal (tab "Saya") - kredensial Coretax asli disimpan di komputer ini saja
 // (lib/local-entities.js), login OTOMATIS lewat jalur yang sama persis dengan PIC Taxio Hub
 // (lib/local-auth-client.js menyamar sebagai klien Supabase di depan lib/entities.js). ----
-function guardLocalEntities(res) {
+async function guardLocalEntities(res) {
+    await sessionRestore.waitIfRestoring();
     if (!state.connectedProjectIds().length) { sendJson(res, 401, { error: 'Belum terhubung ke akun manapun.' }); return false; }
     if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai entitas lokal.')) return false;
     return true;
 }
 
 async function handleLocalEntities(req, res) {
-    if (!guardLocalEntities(res)) return;
+    if (!await guardLocalEntities(res)) return;
     return sendJson(res, 200, { entities: localEntities.listEntitiesFor(currentUserId()) });
 }
 
 async function handleLocalEntitySave(req, res) {
-    if (!guardLocalEntities(res)) return;
+    if (!await guardLocalEntities(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     const uid = currentUserId();
@@ -320,7 +317,7 @@ async function handleLocalEntitySave(req, res) {
 }
 
 async function handleLocalEntityDelete(req, res) {
-    if (!guardLocalEntities(res)) return;
+    if (!await guardLocalEntities(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     try {
@@ -350,7 +347,7 @@ const handleBillingPph25 = action({}, async (req, res, body) => {
 });
 
 async function handleManualStatus(req, res) {
-    try { return sendJson(res, 200, await chrome.getManualStatus()); }
+    try { return sendJson(res, 200, await chrome.getManualStatus({ cached: true })); }
     catch (e) { return sendJson(res, 200, { open: false, loggedIn: false, identity: '' }); }
 }
 
@@ -455,7 +452,10 @@ async function resolveEntitySource(res, entity) {
     if (!entity.entity_id || !entity.pic_id) { sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' }); return null; }
     const s = state.get(entity.project);
     if (!s || !state.isConnected(entity.project)) { sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' }); return null; }
-    await sessionStore.refreshIfNeeded(s.client);
+    // Token segar SEBELUM membaca PIC (lib/session-store.js); sesi hilang / Taxio Hub tak terjangkau dijawab jelas di sini.
+    const fresh = await sessionStore.refreshIfNeeded(s.client);
+    if (fresh && fresh.status === 'invalid') { sendJson(res, 401, { error: (PROJECTS[entity.project] || {}).label + ': ' + sessionStore.EXPIRED_MESSAGE }); return null; }
+    if (fresh && fresh.status === 'network') { sendJson(res, 503, { error: (PROJECTS[entity.project] || {}).label + ' tidak bisa dihubungi untuk memperbarui sesi login - periksa koneksi internet, lalu coba lagi.' }); return null; }
     const restricted = isProjectRestricted(entity.project);
     if (isIndividualEntityBlocked(restricted, entity)) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' }); return null; }
     const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
@@ -642,13 +642,13 @@ const handleDownloadEfaktur = action({}, async (req, res, body) => {
 
 /** Pajak Masukan - pengkreditan per baris Excel. Entitas+PIC (login otomatis) atau sesi manual. */
 const handleImportPajakMasukan = action({ body: 'large' }, async (req, res, body) => {
-    const { entity, fileBase64, targetMasaInput } = body;
-    if (!fileBase64) return sendJson(res, 400, { error: 'File template belum dipilih.' });
+    const { entity, targetMasaInput } = body;
+    if (!body.fileBase64 && !body.filePath) return sendJson(res, 400, { error: 'File template belum dipilih.' });
     if (targetMasaInput && !/^(0[1-9]|1[0-2])\d{2}$/.test(String(targetMasaInput).trim())) {
         return sendJson(res, 400, { error: 'Masa Pengkreditan harus berformat MMYY, misalnya 0726.' });
     }
-    let fileBuffer;
-    try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
+    const fileBuffer = readUploadedFile(res, body, 'File template belum dipilih.');
+    if (!fileBuffer) return;
 
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
@@ -978,17 +978,6 @@ function rememberPreview(token, data) {
     ebupotPreviews.set(token, { ...data, at: Date.now() });
     for (const k of [...ebupotPreviews.keys()].slice(0, Math.max(0, ebupotPreviews.size - 100))) ebupotPreviews.delete(k);
 }
-/** Batas waktu + tombol Stop untuk langkah yang hanya membaca (cari / pratinjau): dulu satu permintaan Coretax yang menggantung
- *  menahan sesi entitas beberapa menit dan Stop tidak berpengaruh. Dipanggil di dalam runForResult (sesudah runcontrol.start). */
-function guarded(promise, ms) {
-    let timer, poll;
-    const run = runcontrol.current();
-    const stop = new Promise((_, rej) => {
-        timer = setTimeout(() => rej(new Error('tidak selesai dalam ' + Math.round(ms / 60000) + ' menit - dihentikan. Coba lagi; bila berulang, muat ulang jendela Coretax PIC.')), ms);
-        poll = setInterval(() => { if (run && run.stopRequested) rej(Object.assign(new Error('dihentikan oleh pengguna.'), { isStop: true })); }, 500);
-    });
-    return Promise.race([promise, stop]).finally(() => { clearTimeout(timer); clearInterval(poll); });
-}
 /** NIK / NPWP penerima di file impor dicek ke Coretax sebelum upload (MCP upload_ebupot): bila ada yang tidak dikenal,
  *  pengguna ditanya lanjut atau tidak. Maks 30 nomor (lebih dari itu: tidak dicek - terlalu lama). Hanya membaca. */
 const handleImportCheckNik = action({ body: 'large', restricted: 'Upload impor e-Bupot tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
@@ -1130,10 +1119,9 @@ async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
 }
 
 const handleImportDividen = action({ body: 'large', entity: false }, async (req, res, body) => {
-    const { fileBase64, entity } = body;
-    if (!fileBase64) return sendJson(res, 400, { error: 'File template belum dipilih.' });
-    let fileBuffer;
-    try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
+    const { entity } = body;
+    const fileBuffer = readUploadedFile(res, body, 'File template belum dipilih.');
+    if (!fileBuffer) return;
 
     const target = await prepareDividenPage(res, entity, true);
     if (!target) return;
@@ -1143,10 +1131,9 @@ const handleImportDividen = action({ body: 'large', entity: false }, async (req,
 });
 
 const handleCheckDividen = action({ body: 'large', entity: false }, async (req, res, body) => {
-    const { fileBase64, entity } = body;
-    if (!fileBase64) return sendJson(res, 400, { error: 'File pembanding belum dipilih.' });
-    let fileBuffer;
-    try { fileBuffer = Buffer.from(fileBase64, 'base64'); } catch (e) { return sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); }
+    const { entity } = body;
+    const fileBuffer = readUploadedFile(res, body, 'File pembanding belum dipilih.');
+    if (!fileBuffer) return;
 
     const target = await prepareDividenPage(res, entity, true);
     if (!target) return;
@@ -1192,6 +1179,7 @@ async function handleDeepLink(req, res, ctx) {
 
 async function handleOpenCoretaxManual(req, res) {
     if (rejectIfOutdated(res)) return;
+    await sessionRestore.waitIfRestoring();
     if (!state.connectedProjectIds().length) return sendJson(res, 401, { error: 'Harus terhubung ke setidaknya satu akun Taxio/Taxio.me sebelum membuka Coretax manual.' });
     if (anyRestricted()) {
         log('Akses Coretax Manual ditolak untuk akun Restricted Editor.');
@@ -1211,6 +1199,7 @@ function gracefulQuit({ finalize } = {}) {
     if (_quitting) return _quitting;
     _quitting = (async () => {
         log('Menutup Taxio Pilot...');
+        try { sessionRestore.stop(); require('../lib/hub-refresher').stop(); } catch (e) { /* abaikan */ }
         shell.closeDashboard();
         // Chrome automation windows (per-PIC + manual login) are launchPersistentContext()'d - a
         // genuinely separate OS process from this one, so exiting never touches them on its own;
@@ -1286,6 +1275,34 @@ async function handleDiagnosticsExport(req, res, ctx) {
     return sendJson(res, 200, { file: out.file, bytes: out.bytes, entries: out.entries });
 }
 
+// ---- Perawatan profil Chrome per PIC (lib/profile-housekeeping.js; Pengaturan > "Bersihkan profil Chrome yang lama") ----
+/** busy(dir): jendela profil itu sedang dibuka proses ini, atau masih dipegang proses chrome.exe (sisa sesi lama). */
+async function profileBusyCheck() {
+    const norm = (p) => path.resolve(String(p)).replace(/[\\/]+$/, '').toLowerCase();
+    const open = new Set(chrome.openProfileDirs().map(norm));
+    const procs = await chrome.listChromeProcesses().catch(() => []);
+    return (dir) => open.has(norm(dir)) || chrome.findProfileProcessPids(procs, dir).length > 0;
+}
+const profileDays = (body) => (Number(body.days) >= 1 ? Math.floor(Number(body.days)) : require('../lib/profile-housekeeping').DEFAULT_DAYS);
+const handleProfilesStale = action({ outdated: false, entity: false }, async (req, res, body) => {
+    const hk = require('../lib/profile-housekeeping');
+    const days = profileDays(body);
+    const all = await hk.scan();
+    const stale = hk.selectStale(all.profiles, { days, busy: await profileBusyCheck() });
+    return sendJson(res, 200, {
+        days, count: all.count, totalBytes: all.totalBytes, partial: all.partial,
+        profiles: stale.map((p) => ({ dir: p.dir, name: p.name, kind: p.kind, lastUsed: p.lastUsed, ageDays: p.ageDays, bytes: p.bytes, partial: p.partial, inUse: p.inUse }))
+    });
+});
+const handleProfilesDelete = action({ outdated: false, entity: false }, async (req, res, body) => {
+    const dirs = Array.isArray(body.dirs) ? body.dirs.filter((d) => typeof d === 'string' && d) : [];
+    if (!dirs.length) return sendJson(res, 400, { error: 'Pilih minimal satu profil.' });
+    const hk = require('../lib/profile-housekeeping');
+    const out = await hk.removeProfiles(dirs, { days: profileDays(body), busy: await profileBusyCheck() });
+    log('Bersihkan profil Chrome: ' + out.deleted.length + ' profil dihapus (' + hk.MB(out.freedBytes) + ')' + (out.skipped.length ? ', ' + out.skipped.length + ' dilewati (' + out.skipped.map((s) => path.basename(s.dir) + ': ' + s.reason).join('; ').slice(0, 300) + ')' : '') + '. PIC-nya cukup login otomatis lagi saat dipakai.');
+    return sendJson(res, 200, out);
+});
+
 function handleClearLog(req, res) {
     logBacklog.length = 0;
     log('Log dibersihkan dari layar (arsip tetap tersimpan di ' + LOG_FILE + ').');
@@ -1303,8 +1320,11 @@ function handleEvents(req, res) {
     for (const entry of logBacklog) if (!entry.notice) res.write('data: ' + JSON.stringify(entry) + '\n\n');
     for (const notice of pendingNotices()) res.write('data: ' + JSON.stringify({ notice, ts: notice.ts }) + '\n\n');
     const unsubscribe = onLogLine((entry) => { try { res.write('data: ' + JSON.stringify(entry) + '\n\n'); } catch (e) { } });
+    // Kabar perubahan yang sudah diketahui server (proses mulai/selesai, login, jendela sesi, pemulihan sesi -
+    // lib/ui-events.js): dashboard memuat ulang bagian itu segera, tanpa menunggu polling berikutnya.
+    const unsubscribeUi = uiEvents.on((ev) => { try { res.write('data: ' + JSON.stringify({ event: ev.event }) + '\n\n'); } catch (e) { } });
     const keepAlive = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) { } }, 20000);
-    req.on('close', () => { clearInterval(keepAlive); unsubscribe(); });
+    req.on('close', () => { clearInterval(keepAlive); unsubscribe(); unsubscribeUi(); });
 }
 
 async function handlePickFile(req, res) {
@@ -1315,15 +1335,44 @@ async function handlePickFile(req, res) {
     const filePath = await shell.pick({ kind: 'file', title: body.title || 'Pilih File', filter: body.filter || 'Semua File (*.*)|*.*', dir });
     if (filePath && filePath.busy) return sendJson(res, 200, { canceled: true, busy: true });
     if (!filePath) return sendJson(res, 200, { canceled: true });
-    let fileBase64 = null;
-    let fileName = path.basename(filePath);
-    try {
-        const buf = fs.readFileSync(filePath);
-        fileBase64 = buf.toString('base64');
-    } catch (e) {
-        return sendJson(res, 400, { error: 'Gagal membaca file dari ' + filePath + ': ' + e.message });
+    // Hanya path + nama (audit 2026-11-12): dulu isi file (s.d. 20 MB) dikirim ke dashboard sebagai base64 lalu
+    // dikirim balik utuh ke route aksi. Dashboard kini mengirim `filePath`; route membacanya dari disk, dan path
+    // yang belum pernah diterima route itu hanya boleh dibaca bila diserahkan dialog ini (rememberPicked).
+    let size;
+    try { size = fs.statSync(filePath).size; }
+    catch (e) { return sendJson(res, 400, { error: 'Gagal membaca file dari ' + filePath + ': ' + e.message }); }
+    rememberPicked(filePath);
+    return sendJson(res, 200, { filePath, fileName: path.basename(filePath), size });
+}
+
+/* File yang diserahkan dialog pilih file di peluncuran ini (path dinormalisasi, maks PICKED_MAX terakhir). Route
+ * yang dulu hanya menerima base64 (impor Pajak Masukan, impor / cek Dividen) kini juga menerima `filePath`, tapi
+ * HANYA path dari daftar ini - jadi API tidak bisa dipakai membaca file sembarang di PC. Route yang sudah lama
+ * menerima `filePath` (rekap A1, Pembetulan BPMP, impor e-Bupot - dipakai server MCP) tidak berubah. */
+const PICKED_MAX = 50;
+const PICKED_MAX_BYTES = 15 * 1024 * 1024; // setara batas body base64 20 MB yang lama
+const pickedFiles = new Map(); // path ternormalisasi -> waktu
+const pickedKey = (p) => path.resolve(String(p)).toLowerCase();
+function rememberPicked(p) {
+    const k = pickedKey(p);
+    pickedFiles.delete(k);
+    pickedFiles.set(k, Date.now());
+    while (pickedFiles.size > PICKED_MAX) pickedFiles.delete(pickedFiles.keys().next().value);
+}
+function wasPicked(p) { return !!p && pickedFiles.has(pickedKey(p)); }
+/** Isi file untuk route berbasis base64: `fileBase64` (seret-lepas / input file di dashboard, MCP lama) atau
+ *  `filePath` dari dialog pilih file (lihat di atas). Mengembalikan Buffer, atau null sesudah membalas galat. */
+function readUploadedFile(res, body, missingMsg) {
+    const { fileBase64, filePath } = body;
+    if (fileBase64) {
+        try { return Buffer.from(fileBase64, 'base64'); } catch (e) { sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); return null; }
     }
-    return sendJson(res, 200, { filePath, fileName, fileBase64 });
+    if (!filePath) { sendJson(res, 400, { error: missingMsg }); return null; }
+    if (!wasPicked(filePath)) { sendJson(res, 400, { error: 'File harus dipilih lewat tombol pilih file di dashboard (path ini tidak berasal dari dialog pilih file).' }); return null; }
+    try {
+        if (fs.statSync(filePath).size > PICKED_MAX_BYTES) { sendJson(res, 400, { error: 'File terlalu besar.' }); return null; }
+        return fs.readFileSync(filePath);
+    } catch (e) { sendJson(res, 400, { error: e.code === 'ENOENT' ? 'File tidak ditemukan: ' + filePath : 'File tidak bisa dibaca: ' + e.message }); return null; }
 }
 
 async function handlePickFolder(req, res) {
@@ -1351,6 +1400,7 @@ async function handleRunPageSize(req, res, { sess }) {
 const ROUTES = {
     'GET /events': handleEvents,
     'GET /api/session': (req, res) => sendJson(res, 200, sessionSummary()),
+    'POST /api/session/retry': handleSessionRetry,
     'GET /api/version': (req, res) => sendJson(res, 200, Object.assign({ version: pkg.version }, updater.getOutdatedInfo())),
     // MCP (mcp/taxio-pilot-mcp.js) membaca log Pilot yang SEDANG berjalan - exe bisa dijalankan dari folder lain.
     'GET /api/log-file': (req, res) => sendJson(res, 200, { path: LOG_FILE }),
@@ -1417,6 +1467,8 @@ const ROUTES = {
     'POST /api/log/clear': handleClearLog,
     'GET /api/health': handleHealth,
     'POST /api/diagnostics/export': handleDiagnosticsExport,
+    'POST /api/profiles/stale': handleProfilesStale,
+    'POST /api/profiles/delete': handleProfilesDelete,
     'POST /api/notices/ack': (req, res, { url }) => { ackNotice(url.searchParams.get('id') || 'all'); return sendJson(res, 200, { ok: true }); }
 };
 

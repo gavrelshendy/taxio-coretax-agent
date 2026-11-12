@@ -43,7 +43,8 @@
         const sig = JSON.stringify(st);
         if (sig !== last) { last = sig; P.emit('run', P.state.run); }
     }
-    R.startPolling = function () { R.poll(); setInterval(R.poll, 1500); };
+    // Berhenti saat dashboard tersembunyi (P.every); proses mulai/selesai juga dikabarkan server lewat /events.
+    R.startPolling = function () { R.poll(); P.every(R.poll, 1500); };
     /** Proses sesi `key` sedang berjalan? (dari polling terakhir). */
     R.busy = (key) => !!key && (P.state.runs || []).some((r) => r.key === key && r.active);
     R.runOf = (key) => (P.state.runs || []).find((r) => r.key === key) || null;
@@ -243,6 +244,8 @@
             try {
                 const entry = JSON.parse(ev.data);
                 if (entry.notice) { P.notice(entry.notice); return; }
+                // Kabar perubahan dari server (lib/ui-events.js): 'run' | 'login' | 'sessions' | 'session'.
+                if (entry.event) { if (!P.isHidden()) P.emit('server-event', entry.event); return; }
                 if (entry.line != null) addLine(entry.line, entry.session);
             } catch (e) { /* baris rusak diabaikan */ }
         };

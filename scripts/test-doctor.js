@@ -39,6 +39,7 @@ function deps(over) {
         hubUrl: () => ({ url: 'https://contoh.supabase.co', anonKey: 'anon' }),
         powershell: async () => ({ ok: true, version: '5.1' }),
         versionInfo: () => ({ current: '3.0.44', outdated: false, latestVersion: null }),
+        profiles: async () => ({ count: 3, totalBytes: 900 * 1024 * 1024, partial: false, profiles: [] }),
         now: () => NOW
     }, over || {});
 }
@@ -50,13 +51,13 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
     await test('healthy PC: every check ok, with the documented shape and Indonesian labels', async () => {
         const rep = await run();
         assert.deepStrictEqual(rep.checks.map((c) => c.id), doctor.CHECK_IDS);
-        assert.deepStrictEqual(doctor.CHECK_IDS, ['data-root', 'disk', 'browser', 'proxy', 'coretax', 'hub', 'clock', 'powershell', 'port', 'version']);
+        assert.deepStrictEqual(doctor.CHECK_IDS, ['data-root', 'disk', 'browser', 'proxy', 'coretax', 'hub', 'clock', 'powershell', 'port', 'profiles', 'version']);
         for (const c of rep.checks) {
             assert.deepStrictEqual(Object.keys(c).sort(), ['detail', 'fix', 'id', 'label', 'ms', 'status']);
             assert.strictEqual(c.status, 'ok', c.id + ': ' + c.detail);
             assert.ok(c.label && typeof c.detail === 'string' && typeof c.fix === 'string');
         }
-        assert.deepStrictEqual(rep.summary, { ok: 10, warn: 0, fail: 0 });
+        assert.deepStrictEqual(rep.summary, { ok: 11, warn: 0, fail: 0 });
         assert.deepStrictEqual(doctor.problemLines(rep), []);
     });
 
@@ -171,7 +172,7 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
             setLaunchInfo({ preferredPort: 51733, fellBack: true });
             assert.strictEqual((await fetch(base + '/api/health')).status, 401);
             const a = await (await fetch(base + '/api/health', auth)).json();
-            assert.strictEqual(a.checks.length, 10);
+            assert.strictEqual(a.checks.length, doctor.CHECK_IDS.length);
             const port = a.checks.find((c) => c.id === 'port');
             assert.strictEqual(port.status, 'warn'); assert.ok(port.detail.includes(String(server.address().port)));
             await fetch(base + '/api/health', auth);
@@ -182,6 +183,15 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
             doctor.runChecks = realRun;
             await new Promise((r) => server.close(r));
         }
+    });
+
+    await test('profiles: count + size; warn from 5 GB with the cleanup hint; partial size marked', async () => {
+        const big = byId(await run({ profiles: async () => ({ count: 40, totalBytes: 6 * 1024 ** 3, partial: true, profiles: [] }) })).profiles;
+        assert.strictEqual(big.status, 'warn');
+        assert.ok(/40 profil/.test(big.detail) && /≥ 6\.0 GB/.test(big.detail), big.detail);
+        assert.ok(/Bersihkan profil Chrome yang lama/.test(big.fix));
+        const none = byId(await run({ profiles: async () => ({ count: 0, totalBytes: 0, partial: false, profiles: [] }) })).profiles;
+        assert.strictEqual(none.status, 'ok');
     });
 
     try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) { /* ignore */ }

@@ -10,11 +10,14 @@
     /** Layar yang harus tampil menurut status akun di server (akun yang menunggu selalu menang). */
     A.sync = function () {
         const pending = P.hub().pending;
+        // Sesi tersimpan masih dipulihkan di latar (server baru dibuka / Taxio Hub belum terjangkau):
+        // tampilkan "Memulihkan sesi…", bukan form masuk yang lalu melompat ke aplikasi.
+        if (P.hub().restore && !pending) { A.screen = 'pulih'; return; }
         if (pending) {
             A.email = pending.email || A.email;
             if (pending.status === 'need-initial') A.screen = 'inisial';
             else A.screen = 'status';
-        } else if (A.screen === 'status' || A.screen === 'inisial') A.screen = 'masuk';
+        } else if (A.screen === 'status' || A.screen === 'inisial' || A.screen === 'pulih') A.screen = 'masuk';
     };
 
     const feat = (icon, t, s) => '<div class="hero-feat"><span class="ico">' + P.icon(icon, 20) + '</span><div><b>' + t + '</b><span>' + s + '</span></div></div>';
@@ -44,6 +47,19 @@
         const pending = P.hub().pending || {};
         const err = '<div class="form-error" id="au-error" role="alert">' + esc(A.error) + '</div>';
         const busy = A.busy ? ' disabled' : '';
+        if (A.screen === 'pulih') {
+            const r = P.hub().restore || {};
+            const who = r.email ? esc(r.email) : 'akun Taxio Hub Anda';
+            if (r.phase === 'retrying') {
+                const secs = r.nextRetryAt ? Math.max(0, Math.round((r.nextRetryAt - Date.now()) / 1000)) : 0;
+                return '<div class="auth-form" data-restore="retrying"><div><h2>Taxio Hub belum bisa dihubungi</h2><p class="lead">Sesi ' + who + ' tetap tersimpan, jadi Anda tidak perlu masuk lagi. Pilot mencoba lagi otomatis' + (secs ? ' dalam ±' + secs + ' detik' : '') + '. Periksa koneksi internet Anda.</p></div>'
+                    + (r.error ? '<div class="callout">' + P.icon('info', 16, '', 1.8) + '<span>' + esc(r.error) + '</span></div>' : '') + err
+                    + '<button type="button" class="btn btn-primary btn-lg btn-block" data-au="retry"' + busy + '>' + P.icon('retry', 17, A.busy ? 'spin' : '', 2) + (A.busy ? 'Mencoba…' : 'Coba lagi') + '</button>'
+                    + '<div class="row" style="justify-content:space-between"><span class="hint">' + esc(r.email || '') + '</span><button type="button" class="link" data-au="logout">Masuk dengan akun lain</button></div></div>';
+            }
+            return '<div class="auth-form" data-restore="restoring"><div><h2>Memulihkan sesi…</h2><p class="lead">Menyambungkan kembali ' + who + ' ke Taxio Hub. Mohon tunggu sebentar.</p></div>'
+                + '<div class="row" style="gap:10px">' + P.icon('loader', 18, 'spin', 2.4) + '<span class="hint">Memulihkan sesi…</span></div></div>';
+        }
         if (A.screen === 'daftar') {
             return '<div class="auth-form"><div><h2>Create account</h2><p class="lead">Sign up for a new account. Access requires admin approval.</p></div>'
                 + '<div class="field"><label for="au-initial">Initials (e.g. SGA)</label><input class="input" id="au-initial" maxlength="8" placeholder="SGA" style="text-transform:uppercase" autocomplete="off"><span class="hint">Max. 8 letters. The admin uses them to match your account with a team member.</span></div>'
@@ -107,7 +123,8 @@
                 const initial = val('au-initial').trim().toUpperCase();
                 if (!initial) return setError('Initials are required.');
                 run(async () => { P.state.session = await P.post('/api/registration/initial', { project: 'taxio_hub', initial }); });
-            } else if (act === 'logout') run(async () => { P.state.session = await P.post('/api/disconnect', { project: 'taxio_hub' }); A.screen = 'masuk'; });
+            } else if (act === 'retry') run(async () => { P.state.session = await P.post('/api/session/retry', { project: 'taxio_hub' }); });
+            else if (act === 'logout') run(async () => { P.state.session = await P.post('/api/disconnect', { project: 'taxio_hub' }); A.screen = 'masuk'; });
         });
         root.addEventListener('keydown', (e) => {
             if (e.key !== 'Enter' || !e.target.matches('input')) return;
