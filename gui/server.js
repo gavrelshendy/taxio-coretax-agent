@@ -8,6 +8,10 @@
    every route that touches "the connection" takes an explicit `project` id rather than
    assuming a single global one.
 
+   Akses (Tahap 1): port dinamis (51733 bila bebas) dan token per peluncuran - setiap /api/* dan
+   /events butuh `Authorization: Bearer <token>` atau cookie dari /?t=<token>; lihat gui/guards.js
+   dan lib/runtime.js. Handler menerima ctx { url, sess, token, port }.
+
    Menambah aksi Coretax baru: bungkus handler dengan action({...}) (versi usang, body, entitas,
    Restricted - lihat di bawah) lalu jalankan kerjanya lewat runInBackground() (409/202, log
    berhenti/gagal, runcontrol.finish). Kebijakan akses ada di gui/guards.js. */
@@ -42,9 +46,12 @@ const tray = require('../lib/tray');
 const updater = require('../lib/updater');
 const fileDialog = require('../lib/file-dialog');
 const { closeWindow, ensureWindowOpenOrFocused } = require('./window');
+const runtime = require('../lib/runtime');
+const doctor = require('../lib/doctor');
+const diagnostics = require('../lib/diagnostics');
 const { sendJson, readJsonBody, readLargeJsonBody, serveStatic } = require('./http-util');
 const {
-    requestOriginProblem, isProjectRestricted, anyRestricted, rejectIfRestricted,
+    requestOriginProblem, authProblem, needsAuth, setAuthCookieHeader, UNAUTHORIZED_MESSAGE, isProjectRestricted, anyRestricted, rejectIfRestricted,
     isEbupotTypeAllowed, isMyBupotAllowed, isIndividualEntityBlocked, ABSOLUTELY_BLOCKED_MYBUPOT_TYPES,
     rejectIfOutdated
 } = require('./guards');
@@ -56,6 +63,8 @@ const {
 const pkg = require('../package.json');
 
 const PROJECTS_WITH_OWNER_COLUMN = {};
+// Smoke run (main.js TAXIO_PILOT_SMOKE=1): never open / focus / close dashboard windows.
+const SMOKE = process.env.TAXIO_PILOT_SMOKE === '1';
 
 const LOG_BACKLOG_MAX = 200;
 const logBacklog = [];
@@ -1090,7 +1099,7 @@ const handleLoginEntity = action({}, async (req, res, body) => {
  *  just dispatches the link itself instead of the caller trying to become its own primary. Acks
  *  immediately (fire-and-forget, same as the download/login routes) since dispatch can run for
  *  minutes. */
-async function handleDeepLink(req, res) {
+async function handleDeepLink(req, res, ctx) {
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
     if (!body || !body.url) return sendJson(res, 400, { error: 'URL kosong.' });
@@ -1105,7 +1114,7 @@ async function handleDeepLink(req, res) {
     // serializing queue (not a raw isWindowOpen/openWindow check) - see ensureWindowOpenOrFocused()'s
     // header comment for why: rapid back-to-back clicks from Taxio each hitting this handler
     // concurrently used to race past the check and each spawn their own window.
-    await ensureWindowOpenOrFocused('http://' + req.headers.host + '/');
+    if (!SMOKE) await ensureWindowOpenOrFocused(dashboardUrl(req, ctx));
     deeplink.dispatch(body.url).catch((e) => log('Deep link gagal: ' + e.message));
 }
 
@@ -1124,7 +1133,9 @@ async function handleQuit(req, res) {
     sendJson(res, 200, { ok: true });
     log('Menutup Taxio Pilot...');
     tray.stop(); // otherwise the NotifyIcon is orphaned - still visible, both menu items dead
-    closeWindow(); // window is spawned detached+unref'd - survives process.exit() below on its own otherwise
+    // closeWindow() finds the dashboard by its window TITLE - in a smoke run (no window of its own)
+    // that would close a real Taxio Pilot window running on the same PC, so it is skipped there.
+    if (!SMOKE) closeWindow(); // window is spawned detached+unref'd - survives process.exit() below on its own otherwise
     // Chrome automation windows (per-PIC + manual login) are launchPersistentContext()'d - a
     // genuinely separate OS process from this one, so process.exit() below never touches them on
     // its own; any window opened this session (including a restricted editor's hidden off-screen
@@ -1145,23 +1156,59 @@ async function handleQuit(req, res) {
 // show right away, then lets the full check-and-apply cycle run in the background - if an
 // update was found the app will restart itself within a few seconds regardless of what this
 // response said.
-async function handleCheckUpdate(req, res) {
+async function handleCheckUpdate(req, res, ctx) {
     const info = await updater.checkForUpdate();
     sendJson(res, 200, info);
     if (info.available) {
         updater.checkAndApply({
             isRunActive: () => runcontrol.anyActive(),
             onBeforeRestart: async () => {
-                try { await fetch('http://' + req.headers.host + '/api/quit', { method: 'POST' }); } catch (e) {}
+                try { await fetch('http://127.0.0.1:' + ctx.port + '/api/quit', { method: 'POST', headers: { Authorization: 'Bearer ' + ctx.token } }); } catch (e) {}
             }
         }).catch((e) => log('Gagal menerapkan update: ' + e.message));
     }
 }
 
-async function handleTrayOpen(req, res) {
+/** URL pembuka jendela dashboard: membawa token sekali (/?t=), server menukarnya dengan cookie lalu
+ *  redirect ke / (lihat route() di createGuiServer). Host = host permintaan ini sendiri (sudah lolos
+ *  cek Host), jadi 127.0.0.1 maupun localhost tetap konsisten dengan cookie-nya. */
+function dashboardUrl(req, ctx) {
+    return 'http://' + req.headers.host + '/?t=' + encodeURIComponent(ctx.token);
+}
+
+async function handleTrayOpen(req, res, ctx) {
     sendJson(res, 200, { ok: true });
+    if (SMOKE) return; // smoke run: no windows (gui/window.js matches windows by title - see handleQuit)
     // Serializing queue, same reason as handleDeepLink above.
-    await ensureWindowOpenOrFocused('http://' + req.headers.host + '/');
+    await ensureWindowOpenOrFocused(dashboardUrl(req, ctx));
+}
+
+// ---- Pemeriksaan sistem & ekspor diagnostik (lib/doctor.js, lib/diagnostics.js) ----
+// Hasil pemeriksaan disimpan sebentar: tombol "Periksa ulang" mengirim ?fresh=1.
+const HEALTH_CACHE_MS = 30000;
+let _health = null; // { at, promise }
+let launchInfo = { preferredPort: runtime.PREFERRED_PORT, fellBack: false };
+/** main.js memberi tahu apakah port pilihan terpakai (pemeriksaan "Port & token"). */
+function setLaunchInfo(info) { launchInfo = Object.assign({}, launchInfo, info || {}); _health = null; }
+function healthContext(ctx) {
+    return { port: ctx.port, preferredPort: launchInfo.preferredPort, fellBack: !!launchInfo.fellBack, tokenRequired: !!ctx.token };
+}
+function runHealth(ctx, fresh) {
+    if (!fresh && _health && Date.now() - _health.at < HEALTH_CACHE_MS) return _health.promise;
+    const promise = doctor.runChecks({ server: healthContext(ctx) });
+    _health = { at: Date.now(), promise };
+    promise.catch(() => { _health = null; });
+    return promise;
+}
+async function handleHealth(req, res, ctx) {
+    const report = await runHealth(ctx, ctx.url.searchParams.get('fresh') === '1');
+    return sendJson(res, 200, report);
+}
+async function handleDiagnosticsExport(req, res, ctx) {
+    const report = await runHealth(ctx, false);
+    const out = await diagnostics.exportZip({ health: report, runtimeInfo: runtime.publicInfo(Object.assign({ pid: process.pid, version: pkg.version, token: ctx.token }, healthContext(ctx))), secrets: [ctx.token] });
+    log('Diagnostik diekspor ke ' + out.file + ' (' + Math.round(out.bytes / 1024) + ' KB).');
+    return sendJson(res, 200, { file: out.file, bytes: out.bytes, entries: out.entries });
 }
 
 function handleClearLog(req, res) {
@@ -1291,6 +1338,8 @@ const ROUTES = {
     'POST /api/check-update': handleCheckUpdate,
     'POST /api/tray/open': handleTrayOpen,
     'POST /api/log/clear': handleClearLog,
+    'GET /api/health': handleHealth,
+    'POST /api/diagnostics/export': handleDiagnosticsExport,
     'POST /api/notices/ack': (req, res, { url }) => { ackNotice(url.searchParams.get('id') || 'all'); return sendJson(res, 200, { ok: true }); }
 };
 
@@ -1310,12 +1359,20 @@ function serverError(res, e) {
     else { try { res.end(); } catch (e2) { /* abaikan */ } }
 }
 
-function createGuiServer(port) {
+/** Membuka server dashboard di 127.0.0.1:`port` (0 = port bebas pilihan OS). `opts.token`: token
+ *  peluncuran (lib/runtime.js; dibuat baru bila tidak diberikan). Resolves server http dengan
+ *  `server.token`. EADDRINUSE dilempar apa adanya - pemilihan port cadangan ada di
+ *  lib/runtime.js listenPreferred(). */
+function createGuiServer(port, opts) {
+    const token = (opts && opts.token) || runtime.newToken();
     fileDialog.warm();
     const server = http.createServer((req, res) => runcontrol.isolate(() => route(req, res)));
+    server.token = token;
     let boundPort = null; // diisi begitu listen() berhasil (port 0 = dipilih OS)
     function route(req, res) {
         try {
+            // Penanda "ini Taxio Pilot" untuk instance lain yang memeriksa port (lib/runtime.js) - bukan rahasia.
+            res.setHeader(runtime.PILOT_HEADER, pkg.version);
             const url = new URL(req.url, 'http://127.0.0.1');
             const { pathname } = url;
             // SETIAP permintaan (API, /events, berkas statis): Host harus dashboard ini sendiri
@@ -1326,9 +1383,27 @@ function createGuiServer(port) {
                 logRejected(req, pathname, problem);
                 return sendJson(res, 403, { error: 'Ditolak: permintaan lintas-origin tidak diizinkan.' });
             }
+            // Pembuka jendela dashboard: /?t=<token> -> cookie HttpOnly, lalu redirect ke / (token tidak
+            // tertinggal di alamat / riwayat halaman). t yang salah ditolak 401.
+            if (pathname === '/' && url.searchParams.has('t')) {
+                if (!runtime.tokenEquals(url.searchParams.get('t'), token)) {
+                    logRejected(req, pathname, 'token ?t= salah');
+                    return sendJson(res, 401, { error: 'Tautan dashboard tidak berlaku (Taxio Pilot sudah dibuka ulang?). Buka Taxio Pilot lagi dari ikon / pintasannya.', auth: true });
+                }
+                res.writeHead(302, { 'Set-Cookie': setAuthCookieHeader(boundPort, token), Location: '/', 'Cache-Control': 'no-store' });
+                return res.end();
+            }
+            // /api/* dan /events wajib token (Bearer atau cookie); berkas statis tidak.
+            if (needsAuth(pathname)) {
+                const why = authProblem(req, boundPort, token);
+                if (why) {
+                    logRejected(req, pathname, why);
+                    return sendJson(res, 401, { error: UNAUTHORIZED_MESSAGE, auth: true });
+                }
+            }
             const key = req.method + ' ' + pathname;
             if (!Object.prototype.hasOwnProperty.call(ROUTES, key)) return serveStatic(req, res, pathname);
-            const out = ROUTES[key](req, res, { url, sess: url.searchParams.get('session') || null });
+            const out = ROUTES[key](req, res, { url, sess: url.searchParams.get('session') || null, token, port: boundPort });
             if (out && typeof out.catch === 'function') out.catch((e) => serverError(res, e));
         } catch (e) {
             serverError(res, e);
@@ -1340,4 +1415,4 @@ function createGuiServer(port) {
     });
 }
 
-module.exports = { createGuiServer };
+module.exports = { createGuiServer, setLaunchInfo };

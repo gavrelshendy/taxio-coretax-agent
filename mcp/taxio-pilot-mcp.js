@@ -2,41 +2,99 @@
 /* Taxio Pilot MCP server - lets Claude Desktop (or any MCP client) use Taxio Pilot's local API directly instead of
  * operating the screen. Stdio transport, JSON-RPC 2.0, one message per line; no dependencies.
  *
- * Talks only to Taxio Pilot on this PC (http://127.0.0.1:51733 - Pilot must be running and connected to Taxio Hub).
+ * Talks only to Taxio Pilot on this PC (Pilot must be running and connected to Taxio Hub).
  * Coretax logins, passphrases and sessions stay inside Pilot; nothing here stores or prints them.
+ *
+ * Finding Pilot (Pilot after v3.0.44 / "Tahap 1"): Pilot picks its port at start (51733 when free, otherwise a free
+ * port) and protects its API with a random per-launch token. Both are in runtime.json in Pilot's data root -
+ * %LOCALAPPDATA%\TaxioPilot\runtime.json (or <TAXIO_PILOT_DATA_DIR>\runtime.json) - which this file reads ITSELF
+ * on every call (it is distributed standalone: one file, no dependencies, plain `node`), so a Pilot restart with
+ * a new port/token is picked up without restarting the MCP client. The token is sent as `Authorization: Bearer`
+ * and never printed.
  *
  * Claude Desktop config (claude_desktop_config.json):
  *   { "mcpServers": { "taxio-pilot": { "command": "node", "args": ["<path>\\mcp\\taxio-pilot-mcp.js"] } } }
- * Optional env: TAXIO_PILOT_URL (default http://127.0.0.1:51733), TAXIO_PILOT_LOG (path of coretax-agent.log). */
+ * Optional env: TAXIO_PILOT_URL (fixed address, e.g. http://127.0.0.1:51733 for a Pilot up to v3.0.44, which has
+ * no runtime.json; the token then comes from TAXIO_PILOT_TOKEN, or from runtime.json when its port matches),
+ * TAXIO_PILOT_LOG (path of coretax-agent.log). */
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
-const BASE = new URL(process.env.TAXIO_PILOT_URL || 'http://127.0.0.1:51733');
-// Log Pilot yang sedang berjalan: TAXIO_PILOT_LOG, atau ditanyakan ke Pilot (/api/log-file, v3.0.42+), atau log
-// terbaru di folder exe yang dikenal (dist, dist-fix, dist-next). Dulu selalu dist\ - bila Pilot dijalankan dari folder
-// lain, read_log membaca log lama dan run yang sudah SELESAI tampak tidak berjalan.
-const LOG_GUESSES = ['dist', 'dist-fix', 'dist-next'].map((d) => path.join(__dirname, '..', d, 'coretax-agent.log'));
+const VERSION = '1.4.0';
+const NOT_RUNNING = 'Taxio Pilot tidak berjalan - buka Taxio Pilot dulu (lalu coba lagi).';
+
+/** Akar data Pilot - sama dengan lib/paths.js root() (disalin di sini karena file ini berdiri sendiri). */
+function pilotRoot() {
+    if (process.env.TAXIO_PILOT_DATA_DIR) return path.resolve(process.env.TAXIO_PILOT_DATA_DIR);
+    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'TaxioPilot');
+}
+function readRuntime() {
+    try {
+        const r = JSON.parse(fs.readFileSync(path.join(pilotRoot(), 'runtime.json'), 'utf8'));
+        return r && Number.isInteger(r.port) && typeof r.token === 'string' ? r : null;
+    } catch (e) { return null; }
+}
+function pidAlive(pid) {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+/** { host, port, token } untuk panggilan berikutnya, atau melempar NOT_RUNNING. */
+function target() {
+    const rt = readRuntime();
+    if (process.env.TAXIO_PILOT_URL) {
+        const u = new URL(process.env.TAXIO_PILOT_URL);
+        const port = Number(u.port || 80);
+        const token = process.env.TAXIO_PILOT_TOKEN || (rt && rt.port === port ? rt.token : '');
+        return { host: u.hostname, port, token };
+    }
+    if (!rt) throw new Error(NOT_RUNNING + ' (runtime.json tidak ada di ' + pilotRoot() + ')');
+    if (Number.isInteger(rt.pid) && !pidAlive(rt.pid)) throw new Error(NOT_RUNNING + ' (runtime.json usang: proses ' + rt.pid + ' sudah tidak ada)');
+    return { host: '127.0.0.1', port: rt.port, token: rt.token };
+}
+
+// Log Pilot yang sedang berjalan: TAXIO_PILOT_LOG, atau ditanyakan ke Pilot (/api/log-file, v3.0.42+), atau tebakan:
+// %LOCALAPPDATA%\TaxioPilot\logs (Pilot sesudah v3.0.44), lalu log di samping exe versi lama (dist, dist-fix, dist-next).
+// Dulu selalu dist\ - bila Pilot dijalankan dari folder lain, read_log membaca log lama dan run yang sudah SELESAI
+// tampak tidak berjalan.
+const LOG_GUESSES = [path.join(pilotRoot(), 'logs', 'coretax-agent.log')]
+    .concat(['dist', 'dist-fix', 'dist-next'].map((d) => path.join(__dirname, '..', d, 'coretax-agent.log')));
 async function logFile() {
     if (process.env.TAXIO_PILOT_LOG) return process.env.TAXIO_PILOT_LOG;
     try { const r = await call('GET', '/api/log-file'); if (r && r.path && fs.existsSync(r.path)) return r.path; } catch (e) { /* Pilot lama / tidak berjalan */ }
     const found = LOG_GUESSES.filter((f) => fs.existsSync(f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
     return found[0] || LOG_GUESSES[0];
 }
-const VERSION = '1.3.0';
 
-function call(method, p, body) {
+function callOnce(method, p, body) {
     return new Promise((resolve, reject) => {
+        let t;
+        try { t = target(); } catch (e) { return reject(e); }
         const data = body === undefined ? null : JSON.stringify(body);
-        const req = http.request({ host: BASE.hostname, port: BASE.port, path: p, method, timeout: 120000,
-            headers: data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {} }, (res) => {
+        const headers = data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {};
+        if (t.token) headers.Authorization = 'Bearer ' + t.token;
+        const req = http.request({ host: t.host, port: t.port, path: p, method, timeout: 120000, headers }, (res) => {
             let s = ''; res.setEncoding('utf8'); res.on('data', (d) => { s += d; });
-            res.on('end', () => { let j = null; try { j = JSON.parse(s); } catch (e) {} if (res.statusCode >= 400) reject(new Error((j && j.error) || ('HTTP ' + res.statusCode))); else resolve(j ?? s); });
+            res.on('end', () => {
+                let j = null; try { j = JSON.parse(s); } catch (e) {}
+                if (res.statusCode === 401) { const e = new Error('Taxio Pilot menolak token (Pilot baru dibuka ulang?). ' + ((j && j.error) || '')); e.unauthorized = true; return reject(e); }
+                if (res.statusCode >= 400) reject(new Error((j && j.error) || ('HTTP ' + res.statusCode))); else resolve(j ?? s);
+            });
         });
         req.on('timeout', () => req.destroy(new Error('Taxio Pilot tidak menjawab (timeout).')));
-        req.on('error', (e) => reject(new Error(e.code === 'ECONNREFUSED' ? 'Taxio Pilot tidak berjalan di ' + BASE.origin + ' - buka Taxio Pilot dulu.' : e.message)));
+        req.on('error', (e) => reject(new Error(e.code === 'ECONNREFUSED' ? NOT_RUNNING + ' (tidak ada yang menjawab di port ' + t.port + ')' : e.message)));
         if (data) req.write(data); req.end();
     });
+}
+/** Satu kali coba ulang bila token ditolak: Pilot bisa baru saja dibuka ulang dan menulis runtime.json baru. */
+async function call(method, p, body) {
+    try { return await callOnce(method, p, body); }
+    catch (e) {
+        if (!e.unauthorized) throw e;
+        await new Promise((r) => setTimeout(r, 500));
+        return callOnce(method, p, body);
+    }
 }
 
 /** Entity from Pilot's list (Taxio Hub), with its primary Coretax PIC filled in (what the Pilot GUI sends). */

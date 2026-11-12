@@ -26,10 +26,11 @@ const leftovers = (dir) => fs.readdirSync(dir).filter((n) => n.includes('.tmp-')
     const realHome = path.join(os.homedir(), '.coretax-agent');
 
     await test('STORE_FILE lives under TAXIO_PILOT_DATA_DIR and follows it', () => {
-        assert.strictEqual(sessionStore.STORE_FILE, path.join(TMP, 'a', 'session.json'));
+        assert.strictEqual(sessionStore.STORE_FILE, path.join(TMP, 'a', 'data', 'session.json'));
         process.env.TAXIO_PILOT_DATA_DIR = path.join(TMP, 'b');
-        assert.strictEqual(sessionStore.STORE_FILE, path.join(TMP, 'b', 'session.json'));
+        assert.strictEqual(sessionStore.STORE_FILE, path.join(TMP, 'b', 'data', 'session.json'));
         assert.ok(!sessionStore.STORE_FILE.startsWith(realHome));
+        assert.ok(!sessionStore.STORE_FILE.startsWith(require('../lib/paths').defaultRoot()));
     });
 
     await test('FileSessionStorage set/get/remove round-trips through an atomic write', async () => {

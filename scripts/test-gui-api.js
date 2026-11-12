@@ -68,8 +68,9 @@ const { createGuiServer } = require('../gui/server');
 const PORT = 52411;
 const BASE = 'http://127.0.0.1:' + PORT;
 
+let TOKEN = null; // token peluncuran server (Bearer) - lihat gui/guards.js
 async function call(method, url, body, headers) {
-    const res = await fetch(BASE + url, { method, headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await fetch(BASE + url, { method, headers: Object.assign({ 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN }, headers), body: body === undefined ? undefined : JSON.stringify(body) });
     let json = null; try { json = await res.json(); } catch (e) { /* bukan JSON */ }
     return { status: res.status, json };
 }
@@ -94,7 +95,7 @@ async function test(name, fn) {
 const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
 
 (async () => {
-    await createGuiServer(PORT);
+    TOKEN = (await createGuiServer(PORT)).token;
     console.log('gui api');
 
     await test('awal: belum terhubung dan tidak ada pendaftaran menunggu', async () => {

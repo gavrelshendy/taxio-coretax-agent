@@ -6,7 +6,7 @@ const {runSptDownload}=require('../automation/spt');
 module.exports=async function(){
  const saved={...state.getAll()};const server=await createGuiServer(0);
  const url='http://127.0.0.1:'+server.address().port+'/api/actions/download-spt';
- const post=body=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const post=body=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+server.token},body:JSON.stringify(body)});
  try{
   for(const session of [{role:'restricted_editor'},{role:'admin',membership:{role:'restricted-editor'}},{role:' Restricted_Editor '}]){
    state.set('taxio_hub',{client:{},session:{},...session});

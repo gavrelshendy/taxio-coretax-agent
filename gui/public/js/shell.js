@@ -158,9 +158,11 @@
         const scrim = document.createElement('div'); scrim.className = 'scrim'; scrim.id = 'settings';
         scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Settings"><div class="dialog-head"><h2>Settings</h2><button type="button" class="icon-btn" aria-label="Close" data-x="close">' + P.icon('x', 18) + '</button></div>'
             + '<div class="dialog-body"><div class="stack"><div class="eyebrow">Account</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Disconnect</button></div></div>'
-            + '<div class="stack"><div class="eyebrow">App version</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div></div>'
+            + '<div class="stack"><div class="eyebrow">App version</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div>'
+            + healthSectionHtml() + '</div>'
             + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Quit app</button><span class="grow"></span><button type="button" class="btn" data-x="close">Done</button></div></div>';
         document.body.appendChild(scrim);
+        loadHealth(false);
         const onKey = (e) => { if (e.key === 'Escape') closeIt(); };
         const closeIt = () => { document.removeEventListener('keydown', onKey); scrim.remove(); };
         document.addEventListener('keydown', onKey);
@@ -179,7 +181,40 @@
                     if (!info.available) b.disabled = false;
                 } catch (err) { t.textContent = 'Failed to check for updates: ' + err.message; b.disabled = false; }
             }
+            else if (x === 'health') { b.disabled = true; await loadHealth(true); b.disabled = false; }
+            else if (x === 'diag') {
+                const t = P.$('diag-text'); b.disabled = true; t.textContent = 'Menyusun file diagnostik…';
+                try {
+                    const r = await P.post('/api/diagnostics/export');
+                    t.textContent = 'Tersimpan: ' + r.file + ' — periksa dulu isinya; log bisa memuat nama entitas dan NPWP. Kirim hanya ke pihak yang Anda percaya.';
+                } catch (err) { t.textContent = 'Gagal mengekspor diagnostik: ' + err.message; }
+                b.disabled = false;
+            }
         });
+    }
+
+    // ---------- Pemeriksaan sistem (GET /api/health, lib/doctor.js) ----------
+    const HEALTH_LABEL = { ok: 'OK', warn: 'Perhatian', fail: 'Gagal' };
+    function healthSectionHtml() {
+        return '<div class="stack"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">Pemeriksaan sistem</div>'
+            + '<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" data-x="health">Periksa ulang</button><button type="button" class="btn btn-sm" data-x="diag">' + P.icon('download', 15) + 'Ekspor diagnostik</button></div></div>'
+            + '<div class="health-list" id="health-list" aria-live="polite"><div class="health-empty">Memeriksa…</div></div>'
+            + '<div class="hint" id="diag-text">Ekspor diagnostik menyimpan file zip di folder Downloads: hasil pemeriksaan, versi, lokasi folder, dan log terakhir - tanpa sesi login, kata sandi, passphrase, atau token. Log bisa memuat nama entitas dan NPWP, jadi tentukan sendiri kepada siapa file itu dikirim.</div></div>';
+    }
+    function healthRowsHtml(rep) {
+        return (rep.checks || []).map((c) => '<div class="health-row ' + esc(c.status) + '"><span class="health-dot" aria-hidden="true"></span>'
+            + '<div class="t"><b>' + esc(c.label) + '</b><span>' + esc(c.detail) + '</span>' + (c.fix && c.status !== 'ok' ? '<span class="fix">' + esc(c.fix) + '</span>' : '') + '</div>'
+            + '<span class="health-st">' + esc(HEALTH_LABEL[c.status] || c.status) + '</span></div>').join('');
+    }
+    async function loadHealth(fresh) {
+        const box = P.$('health-list'); if (!box) return;
+        if (fresh) box.innerHTML = '<div class="health-empty">Memeriksa…</div>';
+        try {
+            const rep = await P.api('/api/health' + (fresh ? '?fresh=1' : ''));
+            const el = P.$('health-list'); if (el) el.innerHTML = healthRowsHtml(rep);
+        } catch (e) {
+            const el = P.$('health-list'); if (el) el.innerHTML = '<div class="health-empty">Pemeriksaan gagal: ' + esc(e.message) + '</div>';
+        }
     }
 
     // Sesi Coretax aktif kini digabung ke dalam palet entitas (Ctrl+K/Alt+K) sendiri, bukan

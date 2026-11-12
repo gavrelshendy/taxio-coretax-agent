@@ -21,13 +21,18 @@ chrome.getManualPage = () => null;
 chrome.getManualStatus = async () => ({ open: false, loggedIn: false, identity: '' });
 const { createGuiServer } = require('../gui/server');
 
-/** Permintaan mentah lewat node:http supaya header Host dan Origin bisa diatur bebas (fetch tidak mengizinkan Host). */
-function request(port, { method = 'GET', path: p = '/api/session', host, origin, body, rawBody, timeout = 5000 } = {}) {
+/** Permintaan mentah lewat node:http supaya header Host dan Origin bisa diatur bebas (fetch tidak mengizinkan Host).
+ *  `auth`: token Bearer (bawaan: token server; null = tanpa Authorization). `cookie`: header Cookie mentah. */
+let TOKEN = null;
+function request(port, { method = 'GET', path: p = '/api/session', host, origin, body, rawBody, timeout = 5000, auth, cookie } = {}) {
     return new Promise((resolve, reject) => {
         const data = rawBody !== undefined ? rawBody : body === undefined ? null : Buffer.from(JSON.stringify(body));
         // host '' = tanpa header Host sama sekali.
         const headers = host === '' ? {} : { Host: host === undefined ? '127.0.0.1:' + port : host };
         if (origin !== undefined) headers.Origin = origin;
+        const bearer = auth === undefined ? TOKEN : auth;
+        if (bearer) headers.Authorization = 'Bearer ' + bearer;
+        if (cookie) headers.Cookie = cookie;
         if (data) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = data.length; }
         const req = http.request({ host: '127.0.0.1', port, method, path: p, headers, timeout, setHost: host !== '' }, (res) => {
             const chunks = [];
@@ -43,7 +48,7 @@ function request(port, { method = 'GET', path: p = '/api/session', host, origin,
             res.on('end', () => {
                 const text = Buffer.concat(chunks).toString('utf8');
                 let json = null; try { json = JSON.parse(text); } catch (e) { /* bukan JSON */ }
-                resolve({ status: res.statusCode, json, text });
+                resolve({ status: res.statusCode, json, text, headers: res.headers });
             });
         });
         req.on('timeout', () => { req.destroy(new Error('timeout - server tidak menjawab')); });
@@ -62,9 +67,72 @@ async function test(name, fn) {
 (async () => {
     const server = await createGuiServer(0);
     const port = server.address().port;
+    TOKEN = server.token;
     const R = (o) => request(port, o);
     console.log('server security (port ' + port + ')');
     try {
+        await test('token per peluncuran: 64 hex, berbeda tiap server; opts.token dipakai apa adanya', async () => {
+            assert.match(TOKEN, /^[0-9a-f]{64}$/);
+            const other = await createGuiServer(0);
+            const fixed = await createGuiServer(0, { token: 'f'.repeat(64) });
+            try { assert.notStrictEqual(other.token, TOKEN); assert.strictEqual(fixed.token, 'f'.repeat(64)); }
+            finally { await new Promise((r) => other.close(r)); await new Promise((r) => fixed.close(r)); }
+        });
+
+        await test('tanpa token: /api/* dan /events ditolak 401 JSON yang jelas (GET dan POST)', async () => {
+            for (const o of [{ path: '/api/session' }, { path: '/api/version' }, { path: '/api/health' }, { path: '/events' }, { path: '/api/tidak-ada' }, { method: 'POST', path: '/api/run/stop', body: {} }, { method: 'POST', path: '/api/quit', body: {} }]) {
+                const r = await R(Object.assign({ auth: null }, o));
+                assert.strictEqual(r.status, 401, (o.method || 'GET') + ' ' + o.path + ' -> ' + r.status);
+                if (o.path !== '/events') { assert.strictEqual(r.json.auth, true); assert.ok(/token/i.test(r.json.error)); }
+            }
+        });
+
+        await test('token salah (Bearer / cookie) ditolak 401; Bearer benar diterima', async () => {
+            assert.strictEqual((await R({ auth: 'a'.repeat(64) })).status, 401);
+            assert.strictEqual((await R({ auth: TOKEN.slice(0, 63) })).status, 401, 'prefiks token');
+            assert.strictEqual((await R({ auth: null, cookie: 'taxio_pilot_' + port + '=' + 'b'.repeat(64) })).status, 401);
+            // Cookie berisi token benar tetapi untuk port lain tidak berlaku.
+            assert.strictEqual((await R({ auth: null, cookie: 'taxio_pilot_' + (port + 1) + '=' + TOKEN })).status, 401);
+            assert.strictEqual((await R({})).status, 200);
+            assert.strictEqual((await R({ method: 'POST', path: '/api/run/stop', body: {} })).status, 200);
+        });
+
+        await test('berkas statis tanpa token tetap dilayani; header x-taxio-pilot ada', async () => {
+            const r = await R({ auth: null, path: '/' });
+            assert.strictEqual(r.status, 200); assert.ok(/<html/i.test(r.text));
+            assert.strictEqual((await R({ auth: null, path: '/styles.css' })).status, 200);
+            assert.ok(r.headers['x-taxio-pilot']);
+            assert.ok((await R({ auth: null })).headers['x-taxio-pilot'], 'juga pada 401');
+        });
+
+        await test('/?t=<token> memasang cookie HttpOnly SameSite=Strict lalu redirect ke /; cookie itu membuka API', async () => {
+            const r = await R({ auth: null, path: '/?t=' + TOKEN });
+            assert.strictEqual(r.status, 302);
+            assert.strictEqual(r.headers.location, '/');
+            const set = [].concat(r.headers['set-cookie'] || [])[0] || '';
+            assert.ok(set.startsWith('taxio_pilot_' + port + '=' + TOKEN + ';'), set.slice(0, 40));
+            assert.ok(/HttpOnly/i.test(set) && /SameSite=Strict/i.test(set) && /Path=\//i.test(set));
+            const cookie = set.split(';')[0];
+            assert.strictEqual((await R({ auth: null, cookie })).status, 200);
+            assert.strictEqual((await R({ auth: null, cookie: 'lain=1; ' + cookie + '; x=y' })).status, 200);
+            const ev = await R({ auth: null, cookie, path: '/events', origin: 'http://127.0.0.1:' + port });
+            assert.strictEqual(ev.status, 200);
+        });
+
+        await test('/?t= salah ditolak 401 tanpa cookie', async () => {
+            for (const t of ['', 'salah', TOKEN.toUpperCase() === TOKEN ? 'x' : TOKEN.toUpperCase(), TOKEN + '0']) {
+                const r = await R({ auth: null, path: '/?t=' + encodeURIComponent(t) });
+                assert.strictEqual(r.status, 401, 't=' + t.slice(0, 8));
+                assert.ok(!r.headers['set-cookie']);
+                assert.strictEqual(r.json.auth, true);
+            }
+        });
+
+        await test('lintas-origin tetap 403 (diperiksa sebelum token), juga dengan token benar', async () => {
+            assert.strictEqual((await R({ origin: 'http://evil.example' })).status, 403);
+            assert.strictEqual((await R({ host: 'evil.example:' + port, path: '/?t=' + TOKEN })).status, 403);
+        });
+
         await test('Host 127.0.0.1:<port> dan localhost:<port> diterima (tanpa Origin: MCP, main.js, curl)', async () => {
             assert.strictEqual((await R({})).status, 200);
             assert.strictEqual((await R({ host: 'localhost:' + port })).status, 200);
@@ -105,8 +173,8 @@ async function test(name, fn) {
             assert.strictEqual(ev.status, 200); assert.ok(/connected/.test(ev.text));
         });
 
-        await test('fetch() biasa dari Node (tanpa Origin) tetap jalan', async () => {
-            const r = await fetch('http://127.0.0.1:' + port + '/api/version');
+        await test('fetch() biasa dari Node (tanpa Origin, dengan Bearer) tetap jalan', async () => {
+            const r = await fetch('http://127.0.0.1:' + port + '/api/version', { headers: { Authorization: 'Bearer ' + TOKEN } });
             assert.strictEqual(r.status, 200); assert.ok((await r.json()).version);
         });
 

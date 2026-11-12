@@ -55,7 +55,6 @@ process.on('uncaughtException', (err) => {
     try { require('./lib/log').log('Uncaught exception (diabaikan, proses tetap jalan): ' + (err && err.stack || err)); } catch (e) { console.error(err); }
 });
 
-const http = require('http');
 const { log, showNativePopup } = require('./lib/log');
 // Before the dashboard exists there is no window to show a notice in: these use a message box.
 const showErrorPopup = (msg) => showNativePopup(msg, 'Taxio Pilot Error', 'Error');
@@ -63,18 +62,42 @@ const state = require('./lib/state');
 const sessionStore = require('./lib/session-store');
 const connection = require('./lib/connection');
 const deeplink = require('./lib/deeplink');
-const { createGuiServer } = require('./gui/server');
+const { createGuiServer, setLaunchInfo } = require('./gui/server');
 const { openWindow } = require('./gui/window');
 const tray = require('./lib/tray');
 const updater = require('./lib/updater');
 const runcontrol = require('./lib/runcontrol');
+const paths = require('./lib/paths');
+const runtime = require('./lib/runtime');
+const doctor = require('./lib/doctor');
 
-const GUI_PORT = 51733;
+/* Port & token (Tahap 1, see lib/runtime.js): the dashboard server tries 51733 first and falls back
+ * to a free port when 51733 belongs to something that is not this user's Taxio Pilot. Every
+ * /api/* and /events call needs this launch's random token; runtime.json under the data root
+ * ({ port, pid, token, version, startedAt }) is how a second launch, the MCP server and other local
+ * helpers find both. TAXIO_PILOT_PORT overrides the preferred port (smoke runs / dev).
+ *
+ * TAXIO_PILOT_SMOKE=1 (developer smoke run, always together with TAXIO_PILOT_DATA_DIR=<temp dir>):
+ * starts the server, migration and the background health check, but opens no dashboard window,
+ * no tray icon, registers no taxio-coretax:// handler, starts no auto-update and does not download
+ * the bundled Chrome; /api/quit, /api/tray/open and deep links never touch windows either (gui/
+ * window.js finds the dashboard by title and would hit a real instance's window). Stop it with
+ * POST /api/quit (Bearer token from runtime.json). Example (PowerShell):
+ *   $env:TAXIO_PILOT_DATA_DIR="$env:TEMP\tp-smoke"; $env:TAXIO_PILOT_SMOKE='1'; $env:TAXIO_PILOT_PORT='0'; node main.js */
+const PREFERRED_PORT = process.env.TAXIO_PILOT_PORT !== undefined && /^\d+$/.test(process.env.TAXIO_PILOT_PORT)
+    ? parseInt(process.env.TAXIO_PILOT_PORT, 10) : runtime.PREFERRED_PORT;
+const SMOKE = process.env.TAXIO_PILOT_SMOKE === '1';
+const TOKEN = runtime.newToken();
+let guiPort = null; // set once listen() succeeded
 
 // Best-effort safety net: if the process exits WITHOUT going through /api/quit's handleQuit
 // (crash, Task Manager kill, etc), still take the tray helper process down with it rather than
-// leaving an orphaned icon whose menu silently does nothing forever.
-process.on('exit', () => tray.stop());
+// leaving an orphaned icon whose menu silently does nothing forever. runtime.json is removed only
+// if it still names this process (a newer instance may already own it).
+process.on('exit', () => {
+    tray.stop();
+    if (guiPort !== null) runtime.remove(process.pid);
+});
 
 async function tryRestoreSessions() {
     const restoredByProject = await sessionStore.restoreAllSessions();
@@ -93,94 +116,77 @@ async function tryRestoreSessions() {
     }
 }
 
-/** True if some process is already listening on GUI_PORT and answering as this app's own
- *  dashboard (not just "something" bound to the port). */
-function isPrimaryRunning() {
-    return new Promise((resolve) => {
-        const req = http.request({ host: '127.0.0.1', port: GUI_PORT, path: '/api/session', method: 'GET', timeout: 2000 }, (res) => {
-            res.resume();
-            resolve(res.statusCode === 200);
-        });
-        req.on('error', () => resolve(false));
-        req.on('timeout', () => { req.destroy(); resolve(false); });
-        req.end();
-    });
-}
-
-/** isPrimaryRunning(), retried for a few seconds - used after losing the listen() race, when the
- *  winning instance may have bound the port a moment before it starts answering. */
-async function waitForPrimary() {
-    for (let i = 0; i < 5; i++) {
-        if (await isPrimaryRunning()) return true;
-        await new Promise((r) => setTimeout(r, 1000));
-    }
-    return false;
-}
-
-/** Asks an already-running PRIMARY instance to open/focus its own dashboard window, via the
- *  same `/api/tray/open` endpoint the tray icon's "Buka Dashboard" uses. This process (a fresh
- *  double-click launch that found the port already bound) has no idea whether a window is
- *  already open - only the PRIMARY's own gui/window.js module state knows that. Calling
- *  openWindow() directly from HERE (the old behavior) always spawned a brand new Chrome window
- *  on every double-click, even with one already open - forwarding the request instead lets the
- *  primary's own isWindowOpen() check decide, so double-clicking the icon repeatedly reuses the
- *  same single window instead of piling up duplicates. */
-function forwardOpenToRunningInstance() {
-    return new Promise((resolve) => {
-        const req = http.request({ host: '127.0.0.1', port: GUI_PORT, path: '/api/tray/open', method: 'POST', timeout: 3000 }, (res) => {
-            res.resume();
-            resolve(res.statusCode >= 200 && res.statusCode < 500);
-        });
-        req.on('error', () => resolve(false));
-        req.on('timeout', () => { req.destroy(); resolve(false); });
-        req.end();
-    });
-}
-
-/** POSTs a taxio-coretax:// URL to an already-running instance's dashboard server. Resolves
- *  true if an instance answered (this process's job is done, whoever is listening will handle
- *  it), false if nothing is listening on GUI_PORT (this process should become the primary
- *  instance itself instead) - mirrors coretax-helper/run.js's own forwardToPrimary(), just over
- *  this app's existing HTTP dashboard server instead of a separate named pipe. */
-function forwardDeepLinkToRunningInstance(url) {
-    return new Promise((resolve) => {
-        const req = http.request({ host: '127.0.0.1', port: GUI_PORT, path: '/api/deeplink', method: 'POST', timeout: 3000 }, (res) => {
-            res.resume();
-            resolve(res.statusCode >= 200 && res.statusCode < 500);
-        });
-        req.on('error', () => resolve(false));
-        req.on('timeout', () => { req.destroy(); resolve(false); });
-        req.end(JSON.stringify({ url }));
-    });
-}
+/* Forwarding to an already-running PRIMARY instance (lib/runtime.js findPrimary: runtime.json +
+ * live pid + an authenticated /api/session answer, or - during an update hand-off from an older
+ * version - an untokened answer on 51733).
+ *
+ * "Open": asks the primary to open/focus its own dashboard window, via the same `/api/tray/open`
+ * endpoint the tray icon's "Buka Dashboard" uses. This process (a fresh double-click launch) has no
+ * idea whether a window is already open - only the PRIMARY's own gui/window.js module state knows
+ * that. Calling openWindow() directly from HERE (the old behavior) always spawned a brand new
+ * Chrome window on every double-click, even with one already open - forwarding the request instead
+ * lets the primary's own isWindowOpen() check decide, so double-clicking the icon repeatedly reuses
+ * the same single window instead of piling up duplicates.
+ *
+ * "Deep link": POSTs a taxio-coretax:// URL to the primary - mirrors coretax-helper/run.js's own
+ * forwardToPrimary(), just over this app's existing HTTP dashboard server instead of a named pipe.
+ * Both resolve true if the primary answered (this process's job is done). */
+// The untokened fallback probe targets the PREFERRED port (51733 unless TAXIO_PILOT_PORT says
+// otherwise), so a smoke run on another port can never mistake - and forward to - a real instance.
+// A smoke run never forwards anything at all.
+function findOwnPrimary() { return runtime.findPrimary({ legacyPort: PREFERRED_PORT || null }); }
+function forwardOpenToRunningInstance(primary) { return SMOKE ? Promise.resolve(false) : runtime.forward(primary, '/api/tray/open'); }
+function forwardDeepLinkToRunningInstance(primary, url) { return SMOKE ? Promise.resolve(false) : runtime.forward(primary, '/api/deeplink', { url }); }
 
 async function main(deepLinkUrl) {
-    log('Taxio Pilot memulai...' + (deepLinkUrl ? ' (dipanggil dari taxio-coretax://)' : ''));
+    if (SMOKE && !process.env.TAXIO_PILOT_DATA_DIR) {
+        // A smoke run must never migrate / read the real data of this PC.
+        console.error('TAXIO_PILOT_SMOKE=1 butuh TAXIO_PILOT_DATA_DIR=<folder sementara>.');
+        process.exit(2);
+    }
+    log('Taxio Pilot memulai...' + (deepLinkUrl ? ' (dipanggil dari taxio-coretax://)' : '') + (SMOKE ? ' [SMOKE: tanpa jendela/tray/update]' : ''));
+    // Before anything reads data (sessions, local entities, Chrome profiles): one-time move of the
+    // old scattered folders into %LOCALAPPDATA%\TaxioPilot (lib/paths.js). Never fatal.
+    try { const line = paths.migrationSummaryLine(paths.migrate()); if (line) log(line); }
+    catch (e) { log('Migrasi folder data gagal (diabaikan, folder lama tetap dipakai): ' + e.message); }
     try { require('./lib/chrome').clearDownloadTemp(); } catch (e) {}
     await tryRestoreSessions();
+    let started;
     try {
-        await createGuiServer(GUI_PORT);
-        log('Dashboard lokal aktif di http://127.0.0.1:' + GUI_PORT + '/');
+        started = await runtime.listenPreferred((port) => createGuiServer(port, { token: TOKEN }), PREFERRED_PORT, { findPrimary: findOwnPrimary });
     } catch (e) {
-        // Two near-simultaneous launches (double double-click, or two taxio-coretax:// clicks)
-        // can both pass the "is a primary running?" check before either binds the port; the
-        // loser lands here. If the winner is answering as this app, hand the request to it like
-        // any other second launch instead of showing an error popup.
-        if (e && e.code === 'EADDRINUSE' && await waitForPrimary()) {
-            const forwarded = deepLinkUrl ? await forwardDeepLinkToRunningInstance(deepLinkUrl) : await forwardOpenToRunningInstance();
-            log('Taxio Pilot ternyata sudah dijalankan bersamaan - ' + (forwarded ? 'permintaan diteruskan ke instance yang sudah berjalan.' : 'instance itu tidak menjawab penerusan.'));
-            process.exit(0);
-        }
-        log('Gagal membuka server GUI di port ' + GUI_PORT + ': ' + e.message);
-        showErrorPopup('Taxio Pilot gagal membuka dashboard lokal (port ' + GUI_PORT + ' mungkin dipakai aplikasi lain): ' + e.message);
+        log('Gagal membuka server GUI: ' + e.message);
+        showErrorPopup('Taxio Pilot gagal membuka dashboard lokal: ' + e.message);
         process.exit(1);
     }
-    tray.start(GUI_PORT);
+    if (started.primary) {
+        // Two near-simultaneous launches (double double-click, or two taxio-coretax:// clicks)
+        // can both pass the "is a primary running?" check before either binds the port; the
+        // loser lands here. Hand the request to the winner like any other second launch.
+        const forwarded = deepLinkUrl ? await forwardDeepLinkToRunningInstance(started.primary, deepLinkUrl) : await forwardOpenToRunningInstance(started.primary);
+        log('Taxio Pilot ternyata sudah dijalankan bersamaan - ' + (forwarded ? 'permintaan diteruskan ke instance yang sudah berjalan.' : 'instance itu tidak menjawab penerusan.'));
+        process.exit(0);
+    }
+    guiPort = started.port;
+    setLaunchInfo({ preferredPort: PREFERRED_PORT, fellBack: started.fellBack });
+    try { runtime.write({ port: guiPort, pid: process.pid, token: TOKEN, version: updater.currentVersion() }); }
+    catch (e) { log('Gagal menulis runtime.json (' + e.message + ') - peluncuran berikutnya / server MCP tidak bisa menemukan instance ini.'); }
+    log('Dashboard lokal aktif di http://127.0.0.1:' + guiPort + '/' + (started.fellBack ? ' (port ' + PREFERRED_PORT + ' dipakai aplikasi lain)' : '') + ' - port dan token di ' + paths.runtimeFile());
+    const dashboardUrl = 'http://127.0.0.1:' + guiPort + '/?t=' + TOKEN;
+    // Startup health check in the background: only problems are logged (full list: Settings ->
+    // Pemeriksaan sistem / GET /api/health). TAXIO_PILOT_STARTUP_HEALTH=0 skips it (offline tests).
+    if (process.env.TAXIO_PILOT_STARTUP_HEALTH !== '0') setTimeout(() => {
+        doctor.runChecks({ server: { port: guiPort, preferredPort: PREFERRED_PORT, fellBack: started.fellBack, tokenRequired: true } })
+            .then((report) => { for (const line of doctor.problemLines(report)) log(line); })
+            .catch((e) => log('Pemeriksaan sistem gagal: ' + e.message));
+    }, SMOKE ? 500 : 10000);
+    if (SMOKE) return;
+    tray.start(guiPort, TOKEN);
     // Idempotent - safe (and cheap) to re-assert this on every normal startup; a genuine no-op
     // in dev (`node main.js`, no process.pkg) since there's no self-contained exe path to point
     // the registry at yet - see the function's own header comment.
     deeplink.registerProtocolHandler();
-    openWindow('http://127.0.0.1:' + GUI_PORT + '/');
+    openWindow(dashboardUrl);
     if (deepLinkUrl) deeplink.dispatch(deepLinkUrl).catch((e) => log('Deep link gagal: ' + e.message));
     // Chrome bawaan disiapkan di latar sejak awal (sekali saja), supaya biasanya sudah siap sebelum
     // otomasi pertama; otomasi yang lebih dulu jalan menunggu unduhan yang sama, bukan mengunduh ulang.
@@ -204,7 +210,7 @@ async function main(deepLinkUrl) {
     updater.startAutoUpdate({
         isRunActive: () => runcontrol.anyActive(),
         onBeforeRestart: async () => {
-            try { await fetch('http://127.0.0.1:' + GUI_PORT + '/api/quit', { method: 'POST' }); } catch (e) {}
+            try { await fetch('http://127.0.0.1:' + guiPort + '/api/quit', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN } }); } catch (e) {}
         }
     }, { initialDelayMs: 4000 });
 }
@@ -228,8 +234,8 @@ if (finishUpdateIdx !== -1) {
     if (rawArg) {
         // Another Coretax Agent window may already be open (the common case: the user already
         // has the dashboard running and just clicked another button in Taxio) - forward to it
-        // instead of trying to bind GUI_PORT a second time and failing.
-        forwardDeepLinkToRunningInstance(rawArg).then((forwarded) => {
+        // instead of starting a second primary.
+        findOwnPrimary().then((primary) => primary ? forwardDeepLinkToRunningInstance(primary, rawArg) : false).then((forwarded) => {
             if (forwarded) { log('Diteruskan ke instance Taxio Pilot yang sudah berjalan.'); process.exit(0); }
             main(rawArg).catch((e) => {
                 log('Fatal error saat memulai (deep link): ' + (e.stack || e.message));
@@ -244,10 +250,10 @@ if (finishUpdateIdx !== -1) {
         // trying to bring the dashboard back. Just open another window onto the SAME
         // already-running server instead (the dashboard is stateless/reconnectable - a fresh tab
         // is all that's needed) rather than trying to become a second primary instance.
-        isPrimaryRunning().then(async (already) => {
-            if (already) {
+        findOwnPrimary().then(async (primary) => {
+            if (primary) {
                 log('Taxio Pilot sudah berjalan - membawa jendela dashboard yang ada ke depan (atau membukanya jika belum ada).');
-                await forwardOpenToRunningInstance();
+                await forwardOpenToRunningInstance(primary);
                 process.exit(0);
             }
             main().catch((e) => {
