@@ -32,7 +32,7 @@
         for (const seg of segs) {
             const range = seg.match(/^(\d{4})\s*-\s*(\d{4})$/);
             if (range) {
-                if (!isValidMasa(range[1]) || !isValidMasa(range[2])) return { set: new Set(), error: 'Invalid period: "' + seg + '"' };
+                if (!isValidMasa(range[1]) || !isValidMasa(range[2])) return { set: new Set(), error: 'Invalid Masa Pajak: "' + seg + '"' };
                 let a = toIndex(range[1]); let b = toIndex(range[2]);
                 if (a > b) [a, b] = [b, a];
                 for (let i = a; i <= b; i++) set.add(fromIndex(i));
@@ -43,7 +43,7 @@
                 for (let m = 1; m <= 12; m++) set.add(mmYY(m, parseInt(seg, 10)));
                 continue;
             }
-            if (!isValidMasa(seg)) return { set: new Set(), error: 'Invalid period: "' + seg + '"' };
+            if (!isValidMasa(seg)) return { set: new Set(), error: 'Invalid Masa Pajak: "' + seg + '"' };
             set.add(seg);
         }
         return { set, error: null };
@@ -65,13 +65,13 @@
         for (const seg of segs) {
             const range = seg.match(/^(\d{4})\s*-\s*(\d{4})$/);
             if (range) {
-                if (!isValidYear(range[1]) || !isValidYear(range[2])) return { set: new Set(), error: 'Invalid year: "' + seg + '"' };
+                if (!isValidYear(range[1]) || !isValidYear(range[2])) return { set: new Set(), error: 'Invalid Tahun Pajak: "' + seg + '"' };
                 let a = parseInt(range[1], 10); let b = parseInt(range[2], 10);
                 if (a > b) [a, b] = [b, a];
                 for (let y = a; y <= b; y++) set.add(y);
                 continue;
             }
-            if (!isValidYear(seg)) return { set: new Set(), error: 'Invalid year: "' + seg + '"' };
+            if (!isValidYear(seg)) return { set: new Set(), error: 'Invalid Tahun Pajak: "' + seg + '"' };
             set.add(parseInt(seg, 10));
         }
         return { set, error: null };
