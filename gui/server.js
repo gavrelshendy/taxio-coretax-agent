@@ -1021,6 +1021,24 @@ async function handleImportUpload(req, res) {
     sendJson(res, 202, { started: true, session: runSessionKey(), type: prepared.type, count: prepared.count });
     try {
         const page = await target.open();
+        const tins = prepared.rows ? prepared.rows.map((x) => x.CounterpartTin) : [...String(prepared.xml).matchAll(/<CounterpartTin>\s*(\d+)\s*<\/CounterpartTin>/g)].map((m) => m[1]);
+        const temp = tins.filter((t) => String(t) === '9990000000999000').length;
+        if (temp) log('PERHATIAN: ' + temp + ' baris memakai NIK sementara 9990000000999000 - bukti potongnya akan terbit dengan NIK sementara.');
+        const uniq = [...new Set(tins.map(String).filter((t) => /^\d{16}$/.test(t) && t !== '9990000000999000'))];
+        if (uniq.length && uniq.length <= 300 && !body.allowUnregistered) {
+            log('Cek ' + uniq.length + ' NIK / NPWP penerima ke Coretax sebelum upload...');
+            const ed = require('../lib/ebupot-edit');
+            const s = await require('../automation/bpmp-amend').openSession(page.context(), entity.project === 'manual' ? null : entity.npwp, { type: prepared.type });
+            let checked;
+            try { checked = await ed.checkIds(s, uniq); } finally { await s.close(); }
+            const bad = checked.filter((x) => x.status === 'tidak ditemukan'), unk = checked.filter((x) => x.status === 'tidak bisa dicek');
+            if (unk.length) log('  ' + unk.length + ' tidak bisa dicek (koneksi Coretax) - tetap dilanjutkan: ' + unk.slice(0, 10).map((x) => x.id).join(', '));
+            if (bad.length) {
+                log('GAGAL: upload ' + prepared.label + ' DIBATALKAN - ' + bad.length + ' NIK / NPWP tidak dikenal Coretax: ' + bad.slice(0, 20).map((x) => x.id).join(', ') + (bad.length > 20 ? ' ...' : '') + '. Coretax akan menggantinya dengan NIK sementara 9990000000999000 (nama "PENERIMA PENGHASILAN#NIK"). Perbaiki NIK di file (cek KTP), atau upload dengan allowUnregistered bila memang disengaja. Tidak ada yang di-upload.');
+                return;
+            }
+            log('  Semua NIK / NPWP penerima terdaftar di Coretax.');
+        }
         const base = String(name).replace(/\.(xlsx|xml)$/i, '').replace(/[^\w .()-]/g, '').slice(0, 60) || prepared.label;
         const r = await imp.upload(page, prepared, { fileName: base + ' - Pilot ' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12) + '.xml', emit: (m) => log(m) });
         if (r.ok) {
@@ -1164,10 +1182,58 @@ async function handleKonsepDownload(req, res) {
 
 /** BPMP Telah Terbit: cari, ubah isian (PTKP / bruto / tarif / posisi), batalkan - lib/ebupot-edit.js. Cari dan pratinjau
  *  menjawab langsung (hanya membaca); kirim dan batal berjalan di latar dan hanya dengan kode konfirmasi pratinjau. */
+// Pratinjau terakhir per kode konfirmasi: kirim / batal memakai jenis, masa, nomor dan perubahan DARI pratinjau, jadi tidak
+// bisa tersasar ke jenis lain bila pemanggil (mis. Claude lewat MCP) lupa menyebut type - dulu batal BP21 jatuh ke BPMP.
+const ebupotPreviews = new Map();
+function rememberPreview(token, data) {
+    if (!token) return;
+    ebupotPreviews.set(token, { ...data, at: Date.now() });
+    for (const k of [...ebupotPreviews.keys()].slice(0, Math.max(0, ebupotPreviews.size - 100))) ebupotPreviews.delete(k);
+}
+/** Batas waktu + tombol Stop untuk langkah yang hanya membaca (cari / pratinjau): dulu satu permintaan Coretax yang menggantung
+ *  menahan sesi entitas beberapa menit dan Stop tidak berpengaruh. */
+function guarded(promise, ms) {
+    let timer, poll;
+    const run = runcontrol.current();
+    const stop = new Promise((_, rej) => {
+        timer = setTimeout(() => rej(new Error('tidak selesai dalam ' + Math.round(ms / 60000) + ' menit - dihentikan. Coba lagi; bila berulang, muat ulang jendela Coretax PIC.')), ms);
+        poll = setInterval(() => { if (run && run.stopRequested) rej(Object.assign(new Error('dihentikan oleh pengguna.'), { isStop: true })); }, 500);
+    });
+    return Promise.race([promise, stop]).finally(() => { clearTimeout(timer); clearInterval(poll); });
+}
+/** Cek NIK / NPWP di Coretax (terdaftar + nama resmi) - hanya membaca. */
+async function handleCheckNik(req, res) {
+    if (rejectIfOutdated(res)) return;
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const { entity, ids } = body || {};
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    try { runcontrol.start('Check NIK · ' + target.label, target.session); }
+    catch (e) { return sendJson(res, 409, { error: e.message }); }
+    try {
+        const page = await guarded(target.open(), 180000);
+        const r = await guarded(require('../lib/ebupot-edit').checkNik(page, { npwp: entity.project === 'manual' ? null : entity.npwp, ids }), 240000);
+        log('Cek NIK: ' + r.filter((x) => x.status === 'terdaftar').length + ' terdaftar, ' + r.filter((x) => x.status === 'tidak ditemukan').length + ' tidak ditemukan, ' + r.filter((x) => x.status === 'tidak bisa dicek').length + ' tidak bisa dicek.');
+        return sendJson(res, 200, { results: r });
+    } catch (e) { log('Cek NIK gagal: ' + e.message); if (!res.headersSent) sendJson(res, 400, { error: e.message }); }
+    finally { runcontrol.finish(); }
+}
 async function handleEbupotEdit(req, res, kind) {
     if (rejectIfOutdated(res)) return;
     let body;
     try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    if (body && (kind === 'amend' || kind === 'cancel') && body.token) {
+        const pv = ebupotPreviews.get(String(body.token));
+        if (pv) {
+            if (pv.kind !== kind) return sendJson(res, 400, { error: 'Kode ' + body.token + ' berasal dari pratinjau ' + (pv.kind === 'amend' ? 'pembetulan' : 'pembatalan') + ', bukan ' + (kind === 'amend' ? 'pembetulan' : 'pembatalan') + '.' });
+            if (body.type && body.type !== pv.type) return sendJson(res, 400, { error: 'Jenis "' + body.type + '" berbeda dengan pratinjau (' + pv.type + ') untuk kode ' + body.token + ' - tidak dikirim.' });
+            if (pv.entityId && body.entity && body.entity.entity_id !== pv.entityId) return sendJson(res, 400, { error: 'Kode ' + body.token + ' milik pratinjau entitas ' + pv.entityId + ' - tidak dikirim.' });
+            // Isian yang tidak disebut diambil dari pratinjau.
+            for (const k of ['type', 'period', 'numbers', 'changes', 'filePath']) if (body[k] == null && pv[k] != null) body[k] = pv[k];
+        } else if (!body.type) return sendJson(res, 400, { error: 'Pratinjau untuk kode ' + body.token + ' tidak ditemukan (Pilot dimulai ulang?) - sebutkan jenisnya (type) atau jalankan pratinjau lagi.' });
+    }
     const { entity } = body || {};
     if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
     if (state.connectedProjectIds().some(isProjectRestricted)) return sendJson(res, 403, { error: 'Ubah / batal BPMP tidak tersedia untuk pengguna Restricted.' });
@@ -1188,13 +1254,14 @@ async function handleEbupotEdit(req, res, kind) {
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     if (kind === 'find' || kind === 'amend-preview' || kind === 'cancel-preview') {
         try {
-            const page = await target.open();
-            if (kind === 'find') { const r = await ed.find(page, input); log('Cari ' + L + ' ' + r.state + ' ' + r.period + ': ' + r.total + ' bukti potong.'); return sendJson(res, 200, r); }
-            if (kind === 'cancel-preview') { const r = await ed.previewCancel(page, input); log('Pratinjau batal ' + L + ' ' + r.period + ': ' + r.slips.length + ' bukti potong, PPh ' + r.totals.tax.toLocaleString('id-ID') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.'); return sendJson(res, 200, r); }
-            const r = await ed.previewAmend(page, input);
+            const page = await guarded(target.open(), 180000);
+            if (kind === 'find') { const r = await guarded(ed.find(page, input), 240000); log('Cari ' + L + ' ' + r.state + ' ' + r.period + ': ' + r.total + ' bukti potong.'); return sendJson(res, 200, r); }
+            if (kind === 'cancel-preview') { const r = await guarded(ed.previewCancel(page, input), 240000); rememberPreview(r.token, { kind: 'cancel', type, period: input.period, numbers: input.numbers, entityId: entity.entity_id }); log('Pratinjau batal ' + L + ' ' + r.period + ': ' + r.slips.length + ' bukti potong, PPh ' + r.totals.tax.toLocaleString('id-ID') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.'); return sendJson(res, 200, r); }
+            const r = await guarded(ed.previewAmend(page, input), 480000);
+            rememberPreview(r.token, { kind: 'amend', type, changes: input.changes, filePath: input.filePath, entityId: entity.entity_id });
             log('Pratinjau pembetulan ' + L + ': ' + r.items.length + ' bukti potong, PPh ' + r.totals.taxBefore.toLocaleString('id-ID') + ' -> ' + r.totals.taxAfter.toLocaleString('id-ID') + (r.notes.length ? ', ' + r.notes.length + ' dilewati' : '') + (r.token ? ' · kode konfirmasi ' + r.token : '') + '.');
             return sendJson(res, 200, r);
-        } catch (e) { log(title + ' gagal: ' + e.message); return sendJson(res, 400, { error: e.message }); }
+        } catch (e) { log(title + ' gagal: ' + e.message); if (!res.headersSent) sendJson(res, 400, { error: title + ' ' + e.message }); return; }
         finally { runcontrol.finish(); }
     }
     sendJson(res, 202, { started: true, session: runSessionKey() });
@@ -1202,13 +1269,15 @@ async function handleEbupotEdit(req, res, kind) {
         const signer = needsSigner ? await target.signer() : null;
         const page = await target.open();
         if (kind === 'cancel') {
-            const r = await ed.cancel(page, { ...input, signer, emit: (m) => log(m) });
-            const ok = r.done.filter((x) => x.ok).length;
-            log('SELESAI: ' + ok + ' ' + L + ' dibatalkan' + (r.done.length > ok ? ', 1 gagal (proses berhenti) - batalkan manual di e-Bupot' : '') + '.' + (r.reported ? ' Ada yang sudah dilaporkan di SPT - SPT Masa perlu dibetulkan.' : ''));
+            const run = runcontrol.current();
+            const r = await ed.cancel(page, { ...input, signer, emit: (m) => log(m), shouldStop: () => !!(run && run.stopRequested) });
+            const ok = r.done.filter((x) => x.ok).length, pend = r.done.filter((x) => x.pending).length, bad = r.done.length - ok - pend;
+            log('SELESAI: ' + ok + ' ' + L + ' dibatalkan' + (pend ? ', ' + pend + ' masih diproses Coretax (cek lagi beberapa menit lagi dengan find_ebupot sebelum upload pengganti diterbitkan)' : '') + (bad ? ', 1 gagal (proses berhenti) - batalkan manual di e-Bupot' : '') + '.' + (r.reported ? ' Ada yang sudah dilaporkan di SPT - SPT Masa perlu dibetulkan.' : ''));
         } else {
             const outDir = path.join(body.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'), target.folder || 'Manual', 'Pembetulan ' + L, new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19));
             log('Pembetulan ' + L + (ed.SPEC[type].sign ? ' (ditandatangani passphrase PIC)' : '') + ' - cadangan di ' + outDir);
-            const r = await ed.amend(page, { ...input, signer, outDir, emit: (m) => log(m) });
+            const run = runcontrol.current();
+            const r = await ed.amend(page, { ...input, signer, outDir, emit: (m) => log(m), shouldStop: () => !!(run && run.stopRequested) });
             const spt = ['bpu', 'bpnr'].includes(type) ? 'SPT Masa PPh Unifikasi' : 'SPT Masa PPh 21/26';
             log('SELESAI: ' + r.results.filter((x) => x.status === 'DIBETULKAN').length + ' ' + L + ' dibetulkan.' + (r.periodsReported.length ? ' Sudah dilaporkan di SPT masa ' + r.periodsReported.join(', ') + ' - buat pembetulan ' + spt + '.' : ' Posting ulang Konsep SPT sebelum lapor.'));
         }
@@ -1551,6 +1620,7 @@ function createGuiServer(port) {
             if (pathname === '/api/actions/konsep-download' && req.method === 'POST') return handleKonsepDownload(req, res);
             if (pathname === '/api/ebupot/issue-preview' && req.method === 'POST') return handleIssuePreview(req, res);
             if (pathname === '/api/ebupot/find' && req.method === 'POST') return handleEbupotEdit(req, res, 'find');
+            if (pathname === '/api/ebupot/check-nik' && req.method === 'POST') return handleCheckNik(req, res);
             if (pathname === '/api/ebupot/amend-preview' && req.method === 'POST') return handleEbupotEdit(req, res, 'amend-preview');
             if (pathname === '/api/ebupot/cancel-preview' && req.method === 'POST') return handleEbupotEdit(req, res, 'cancel-preview');
             if (pathname === '/api/actions/ebupot-amend' && req.method === 'POST') return handleEbupotEdit(req, res, 'amend');
