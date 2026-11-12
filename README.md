@@ -305,3 +305,17 @@ node scripts/test-run-wrappers.js     # batas waktu / Stop: sesi tetap sibuk sam
 node scripts/test-chrome-front.js     # jendela Chrome otomasi ke depan lewat pid; cache status jendela; kabar /events
 node scripts/test-profile-housekeeping.js # pemilihan & penghapusan profil Chrome PIC yang lama
 ```
+
+## Sesi paralel (beberapa jendela per PIC)
+
+Setiap perintah otomasi bisa berjalan bersamaan (`lib/runcontrol.js`). Satu PIC boleh punya beberapa jendela Chrome
+(Coretax mengizinkan akun yang sama login dari beberapa browser): jendela pertama tetap memakai kunci dan folder
+profil lama (`<pic>`), berikutnya `<pic>~2`, `<pic>~3` (folder profil sendiri, dikenali perawatan profil). Proses baru
+memakai jendela bebas yang sudah mengimpersonate entitasnya, lalu jendela bebas lain, lalu jendela baru - sampai batas
+Pengaturan > "Parallel sessions" (`data\parallel-sessions.json`: bawaan 3 jendela per PIC, 6 jendela berjalan
+bersamaan; jendela yang diam tidak dihitung; sesi manual tetap satu jendela). Yang tidak mendapat jendela ANTRE (202
+`queued: true, position`, kunci `run:<id>`; Stop membatalkannya), bukan 409. Route yang menjawab langsung (cari /
+pratinjau / cek NIK) menunggu antrean maks. 30 detik lalu 409 dengan pesan lama. Keamanan keluaran (`gui/server.js`
+`withRules`): perintah IDENTIK yang masih antre/berjalan ditolak 409, fitur yang sama untuk entitas yang sama antre di
+belakangnya, fitur lain paralel; penulis Excel bersama dikunci per berkas (`lib/file-lock.js`). Deep link memakai
+antrean yang sama. Tes: `node scripts/test-parallel-runs.js`, `node scripts/test-runcontrol-sessions.js`.

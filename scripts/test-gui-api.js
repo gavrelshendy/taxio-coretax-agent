@@ -316,7 +316,8 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
             const sa = (await GET('/api/run/status?session=' + encodeURIComponent(a.json.session))).json;
             assert.strictEqual(sa.active, true); assert.strictEqual(sa.key, a.json.session); assert.ok(/^Coretax login/.test(sa.label));
             const c = await POST('/api/actions/login-entity', { entity: e1 });
-            assert.strictEqual(c.status, 409); assert.ok(/Sesi ini masih menjalankan "Coretax login/.test(c.json.error), c.json.error);
+            // Perintah IDENTIK (login entitas yang sama) selagi yang pertama berjalan: ditolak (aturan keluaran, gui/server.js withRules).
+            assert.strictEqual(c.status, 409); assert.ok(/Perintah yang sama untuk entitas ini sudah berjalan \("Coretax login/.test(c.json.error), c.json.error);
             const idle = (await GET('/api/run/status?session=' + encodeURIComponent('p-tidak-ada'))).json;
             assert.strictEqual(idle.active, false, 'sesi tanpa proses tampil idle walau sesi lain sibuk');
         } finally { loginDelay = 0; }
