@@ -852,7 +852,8 @@ const handleImportUpload = action({ body: 'large', restricted: 'Upload impor e-B
         const temp = tins.filter((t) => String(t) === '9990000000999000').length;
         if (temp) log('PERHATIAN: ' + temp + ' baris memakai NIK sementara 9990000000999000 - bukti potongnya akan terbit dengan NIK sementara.');
         const uniq = [...new Set(tins.map(String).filter((t) => /^\d{16}$/.test(t) && t !== '9990000000999000'))];
-        if (uniq.length && uniq.length <= 300 && !body.allowUnregistered) {
+        if (uniq.length > 30 && !body.skipNikCheck) log('Cek NIK dilewati: ' + uniq.length + ' NIK / NPWP (lebih dari 30, terlalu lama dicek satu per satu). NIK yang tidak dikenal Coretax akan diganti NIK sementara.');
+        if (uniq.length && uniq.length <= 30 && !body.skipNikCheck && !body.allowUnregistered) {
             log('Cek ' + uniq.length + ' NIK / NPWP penerima ke Coretax sebelum upload...');
             const ed = require('../lib/ebupot-edit');
             const s = await require('../automation/bpmp-amend').openSession(page.context(), entity.project === 'manual' ? null : entity.npwp, { type: prepared.type });
@@ -860,11 +861,8 @@ const handleImportUpload = action({ body: 'large', restricted: 'Upload impor e-B
             try { checked = await ed.checkIds(s, uniq); } finally { await s.close(); }
             const bad = checked.filter((x) => x.status === 'tidak ditemukan'), unk = checked.filter((x) => x.status === 'tidak bisa dicek');
             if (unk.length) log('  ' + unk.length + ' tidak bisa dicek (koneksi Coretax) - tetap dilanjutkan: ' + unk.slice(0, 10).map((x) => x.id).join(', '));
-            if (bad.length) {
-                log('GAGAL: upload ' + prepared.label + ' DIBATALKAN - ' + bad.length + ' NIK / NPWP tidak dikenal Coretax: ' + bad.slice(0, 20).map((x) => x.id).join(', ') + (bad.length > 20 ? ' ...' : '') + '. Coretax akan menggantinya dengan NIK sementara 9990000000999000 (nama "PENERIMA PENGHASILAN#NIK"). Perbaiki NIK di file (cek KTP), atau upload dengan allowUnregistered bila memang disengaja. Tidak ada yang di-upload.');
-                return;
-            }
-            log('  Semua NIK / NPWP penerima terdaftar di Coretax.');
+            if (bad.length) log('PERHATIAN (upload tetap dilanjutkan): ' + bad.length + ' NIK / NPWP tidak dikenal Coretax: ' + bad.slice(0, 20).map((x) => x.id).join(', ') + (bad.length > 20 ? ' ...' : '') + ' - bukti potongnya akan memakai NIK sementara 9990000000999000 (nama "PENERIMA PENGHASILAN#NIK"); betulkan kemudian (Mode A1 / pembetulan).');
+            else log('  Semua NIK / NPWP penerima terdaftar di Coretax.');
         }
         const base = String(name).replace(/\.(xlsx|xml)$/i, '').replace(/[^\w .()-]/g, '').slice(0, 60) || prepared.label;
         const r = await imp.upload(page, prepared, { fileName: base + ' - Pilot ' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12) + '.xml', emit: (m) => log(m) });
@@ -991,6 +989,27 @@ function guarded(promise, ms) {
     });
     return Promise.race([promise, stop]).finally(() => { clearTimeout(timer); clearInterval(poll); });
 }
+/** NIK / NPWP penerima di file impor dicek ke Coretax sebelum upload (MCP upload_ebupot): bila ada yang tidak dikenal,
+ *  pengguna ditanya lanjut atau tidak. Maks 30 nomor (lebih dari itu: tidak dicek - terlalu lama). Hanya membaca. */
+const handleImportCheckNik = action({ body: 'large', restricted: 'Upload impor e-Bupot tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+    const { entity } = body;
+    let prepared;
+    try { const f = await readImportFile(body); prepared = await require('../lib/coretax-import').prepare(f.buf, f.name, entity.project === 'manual' ? '' : entity.npwp); }
+    catch (e) { return sendJson(res, 400, { error: e.message }); }
+    const tins = prepared.rows ? prepared.rows.map((x) => x.CounterpartTin) : [...String(prepared.xml).matchAll(/<CounterpartTin>\s*(\d+)\s*<\/CounterpartTin>/g)].map((m) => m[1]);
+    const temp = tins.filter((t) => String(t) === '9990000000999000').length;
+    const uniq = [...new Set(tins.map(String).filter((t) => /^\d{16}$/.test(t) && t !== '9990000000999000'))];
+    if (!uniq.length || uniq.length > 30) return sendJson(res, 200, { checked: false, count: uniq.length, tempRows: temp, unknown: [], note: uniq.length ? 'Lebih dari 30 NIK / NPWP - tidak dicek (terlalu lama). NIK yang tidak dikenal Coretax akan diganti NIK sementara.' : 'Tidak ada NIK / NPWP 16 digit untuk dicek.' });
+    const target = await prepareEntityPage(res, entity);
+    if (!target) return;
+    return runForResult(res, { label: 'Check NIK before upload · ' + target.label, session: target.session }, async () => {
+        const page = await guarded(target.open(), 180000);
+        const r = await guarded(require('../lib/ebupot-edit').checkNik(page, { npwp: entity.project === 'manual' ? null : entity.npwp, ids: uniq }), 300000);
+        const unknown = r.filter((x) => x.status === 'tidak ditemukan');
+        log('Cek NIK file impor: ' + r.filter((x) => x.status === 'terdaftar').length + ' terdaftar, ' + unknown.length + ' tidak dikenal Coretax' + (unknown.length ? ' (' + unknown.map((x) => x.id).join(', ') + ')' : '') + '.');
+        return { checked: true, count: uniq.length, tempRows: temp, unknown, results: r };
+    }, { failPrefix: 'Cek NIK file impor gagal: ' });
+});
 /** Cek NIK / NPWP di Coretax (terdaftar + nama resmi) - hanya membaca. */
 const handleCheckNik = action({ restricted: 'Cek NIK tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
     const { entity, ids } = body;
@@ -1360,6 +1379,7 @@ const ROUTES = {
     'POST /api/ebupot/issue-preview': handleIssuePreview,
     'POST /api/ebupot/find': ebupotEdit('find'),
     'POST /api/ebupot/check-nik': handleCheckNik,
+    'POST /api/import/check-nik': handleImportCheckNik,
     'POST /api/ebupot/amend-preview': ebupotEdit('amend-preview'),
     'POST /api/ebupot/cancel-preview': ebupotEdit('cancel-preview'),
     'POST /api/actions/ebupot-amend': ebupotEdit('amend'),
