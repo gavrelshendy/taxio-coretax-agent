@@ -85,8 +85,8 @@ const read = (p) => fs.readFileSync(p, 'utf8');
     let first;
     await test('migrate: data COPIED (old kept, newer kept), profiles MOVED, locked profile kept at legacy path', () => {
         first = paths.migrate({ _fs: lockedFs });
-        assert.deepStrictEqual(first.copied.sort(), ['pending-signup.json', 'session.json', 'sub']);
-        assert.strictEqual(read(path.join(ROOT, 'data', 'session.json')), '{"sb-x":"lama"}');
+        assert.deepStrictEqual(first.copied.sort(), ['pending-signup.json', 'sub']);
+        assert.ok(!fs.existsSync(path.join(ROOT, 'data', 'session.json')), 'session.json sengaja tidak disalin (token refresh berotasi)');
         assert.strictEqual(read(path.join(ROOT, 'data', 'sub', 'nested.json')), '1');
         assert.strictEqual(read(path.join(ROOT, 'data', 'local-entities.json')), '{"entities":"baru"}', 'newer data never overwritten');
         assert.ok(!fs.existsSync(path.join(ROOT, 'data', 'session.json.tmp-123-1')), 'temp leftovers not copied');
@@ -101,7 +101,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
         assert.ok(first.keptLegacy.some((x) => x.startsWith('bawaan/pic-c') && /EBUSY/.test(x)));
         assert.deepStrictEqual(first.errors, []);
         const line = paths.migrationSummaryLine(first);
-        assert.ok(/3 berkas data disalin/.test(line) && /1 profil Chrome dipindah/.test(line) && /bawaan\/pic-c/.test(line), line);
+        assert.ok(/2 berkas data disalin/.test(line) && /1 profil Chrome dipindah/.test(line) && /bawaan\/pic-c/.test(line), line);
     });
 
     await test('resolver: new if present, else legacy if present, else new', () => {

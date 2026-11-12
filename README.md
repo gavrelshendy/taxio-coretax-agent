@@ -11,7 +11,7 @@ Semua lokasi ditentukan `lib/paths.js`, di bawah satu akar `%LOCALAPPDATA%\Taxio
 
 | Folder / berkas | Isi | Dulu |
 |---|---|---|
-| `data\` | session.json, local-entities.json, pending-signup.json | `~/.coretax-agent` (disalin sekali, yang lama dibiarkan) |
+| `data\` | session.json, local-entities.json, pending-signup.json | `~/.coretax-agent` (disalin sekali, yang lama dibiarkan; session.json tidak disalin: masuk Taxio Hub sekali di v4, sesi v3 tetap utuh) |
 | `logs\coretax-agent.log` | log (+ `.1`/`.2` rotasi) | di samping exe (tidak dipindah) |
 | `profiles\terpasang\`, `profiles\bawaan\` | profil Chrome per PIC | `~/.coretax-agent-profile`, `~/.taxio-pilot-profile` (dipindah; yang gagal dipindah tetap dipakai dari lokasi lama) |
 | `chrome\`, `unduhan-sementara\` | Chrome bawaan, transit unduhan otomatis | sama |
