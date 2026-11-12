@@ -170,7 +170,20 @@ async function openSession(context, npwp, { type = 'mp', timeoutMs = 90000 } = {
         } catch (e) { /* jatuh ke daftar lengkap */ }
         return (await list(endpoint, code)).find((x) => x.WithholdingSlipsNumber === number) || null;
     };
-    const lookup = (nik) => page.evaluate(`(${LOOKUP_IN_PAGE})(${JSON.stringify([API, auth, auth.claims.identifier, nik])})`);
+    const lookupOnce = (nik) => Promise.race([
+        page.evaluate(`(${LOOKUP_IN_PAGE})(${JSON.stringify([API, auth, auth.claims.identifier, nik])})`),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('cek NIK ' + nik + ' tidak dijawab Coretax dalam 60 detik')), 60000))
+    ]);
+    // Halaman Coretax kadang berpindah sendiri (uji live 2026-11-12): ulang sekali sesudah halaman stabil.
+    const lookup = async (nik) => {
+        try { return await lookupOnce(nik); }
+        catch (e) {
+            if (!/Execution context was destroyed|Target closed|navigation/i.test(e.message)) throw e;
+            await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+            await page.waitForTimeout(1500);
+            return lookupOnce(nik);
+        }
+    };
     return { page, auth, post, list, find, lookup, close };
 }
 
