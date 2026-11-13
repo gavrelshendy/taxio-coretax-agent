@@ -94,6 +94,16 @@ onLogLine((entry) => {
  *   3. `entity` (bawaan: wajib) -> 400 'Entitas belum dipilih.' (`entity: false` bila opsional);
  *   4. `restricted: '<pesan>'` -> 403 untuk pengguna Restricted Editor.
  *  Lalu memanggil fn(req, res, body, ctx) dengan body yang selalu berupa objek. */
+/** Validasi `batch` ({ id, label, index, total }) dari body aksi. Mengembalikan { batch } atau { error }. */
+function parseBatch(b) {
+    if (typeof b !== 'object' || Array.isArray(b)) return { error: 'Batch tidak valid.' };
+    if (typeof b.id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(b.id)) return { error: 'ID batch tidak valid (1-64 karakter huruf, angka, _ atau -).' };
+    const label = b.label === undefined || b.label === null ? '' : b.label;
+    if (typeof label !== 'string' || label.length > 120) return { error: 'Label batch tidak valid (teks, maks. 120 karakter).' };
+    const total = b.total, index = b.index;
+    if (!Number.isInteger(total) || total < 1 || total > 10000 || !Number.isInteger(index) || index < 0 || index >= total) return { error: 'Urutan batch tidak valid (total 1 sampai 10000, index 0 sampai total-1).' };
+    return { batch: { id: b.id, label: label.trim(), index, total } };
+}
 function action(opts, fn) {
     return async (req, res, ctx) => {
         if (opts.outdated !== false && rejectIfOutdated(res)) return;
@@ -111,6 +121,11 @@ function action(opts, fn) {
         await sessionRestore.waitIfRestoring();
         if (opts.entity !== false && !(body.entity && body.entity.project)) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
         if (opts.restricted && rejectIfRestricted(res, opts.restricted)) return;
+        if (body.batch !== undefined && body.batch !== null) {
+            const b = parseBatch(body.batch);
+            if (b.error) return sendJson(res, 400, { error: b.error });
+            res.taxioBatch = b.batch; // dipakai runInBackground (gui/run-wrappers.js): hanya unduhan hanya-baca
+        }
         return fn(req, res, body, ctx);
     };
 }
@@ -1532,6 +1547,17 @@ function handleRunsClearDone(req, res) {
     return sendJson(res, 200, { ok: true, cleared: ids.length });
 }
 
+/** POST /api/runs/stop-batch { id }: Stop untuk semua proses aktif / antre dalam satu batch. */
+async function handleRunsStopBatch(req, res) {
+    let body;
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    const id = body && body.id;
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return sendJson(res, 400, { error: 'ID batch tidak valid.' });
+    const n = runcontrol.stopBatch(id);
+    if (n === null) return sendJson(res, 404, { error: 'Batch tidak ditemukan.' });
+    return sendJson(res, 200, { ok: true, stopped: n });
+}
+
 /** Pengaturan > Parallel sessions (lib/parallel-settings.js). */
 function parallelSettingsReply() {
     const ps = require('../lib/parallel-settings');
@@ -1602,7 +1628,7 @@ const ROUTE_FEATURES = {
     'POST /api/session/status': [], 'POST /api/sessions/front': [], 'POST /api/sessions/close': [], 'POST /api/settings/parallel': [],
     'POST /api/run/pause': [], 'POST /api/run/resume': [], 'POST /api/run/skip': [], 'POST /api/run/retry': [], 'POST /api/run/back': [],
     'POST /api/run/stop': [], 'POST /api/run/pagesize': [],
-    'POST /api/runs/open-folder': [], 'POST /api/runs/clear-done': [],
+    'POST /api/runs/open-folder': [], 'POST /api/runs/clear-done': [], 'POST /api/runs/stop-batch': [],
     'POST /api/quit': [], 'POST /api/check-update': [], 'POST /api/tray/open': [], 'POST /api/log/clear': [],
     'POST /api/diagnostics/export': [], 'POST /api/profiles/stale': [], 'POST /api/profiles/delete': [], 'POST /api/notices/ack': []
 };
@@ -1674,6 +1700,7 @@ const ROUTES = {
     'GET /api/runs/detail': handleRunsDetail,
     'POST /api/runs/open-folder': handleRunsOpenFolder,
     'POST /api/runs/clear-done': handleRunsClearDone,
+    'POST /api/runs/stop-batch': handleRunsStopBatch,
     'GET /api/settings/parallel': (req, res) => sendJson(res, 200, parallelSettingsReply()),
     'POST /api/settings/parallel': handleParallelSettings,
     'POST /api/run/pause': runControl((s) => runcontrol.pause(s)),

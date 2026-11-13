@@ -24,6 +24,7 @@
 const { log } = require('../lib/log');
 const runcontrol = require('../lib/runcontrol');
 const runContext = require('../lib/run-context');
+const runControls = require('../lib/run-controls');
 const { sendJson } = require('./http-util');
 
 const limits = { LINGER_MAX_MS: 10 * 60 * 1000, STOP_POLL_MS: 500, RESULT_QUEUE_MS: 30 * 1000 };
@@ -60,6 +61,11 @@ function releaseRun(run) {
  *  mengikat proses ke konteks AsyncLocalStorage permintaan itu (runcontrol.isolate). */
 async function runInBackground(res, { label, session, extra, onStart }, work, { stopMsg, failPrefix, quiet, cleanup } = {}) {
     let run, ready;
+    // Batch ("unduh untuk banyak klien", divalidasi action() di gui/server.js): hanya fitur hanya-baca.
+    if (res.taxioBatch) {
+        if (runControls.changesCoretax(session && session.feature, session && session.changesCoretax)) return sendJson(res, 400, { error: 'Batch hanya boleh untuk unduhan yang hanya membaca. Perintah yang mengubah data di Coretax harus dijalankan satu per satu.' });
+        session = Object.assign({}, session, { batch: res.taxioBatch });
+    }
     try { ({ run, ready } = runcontrol.enqueue(label, session)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     if (onStart) onStart();
