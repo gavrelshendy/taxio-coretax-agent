@@ -269,14 +269,25 @@ function main() {
             try { Object.defineProperty(autoUpdater.app, 'baseCachePath', { get: () => cacheBase, configurable: true }); }
             catch (e) { log('[update] cache uji tidak bisa dipindah: ' + e.message); }
         }
-        autoUpdater.logger = { info: () => {}, debug: () => {}, warn: (m) => log('[update] ' + String(m).split('\n')[0]), error: (m) => log('[update] ' + String(m).split('\n')[0]) };
+        // Kanal yang belum punya rilis (latest.yml 404) = "belum ada update", bukan galat: dicatat SEKALI, bukan baris
+        // merah tiap 15 menit di log pengguna (temuan uji pasang 2026-11-13).
+        const noRelease = (m) => /Cannot find channel|HttpError: 404/i.test(String((m && m.message) || m));
+        let noReleaseLogged = false;
+        const quiet = (m) => { if (!noRelease(m)) log('[update] ' + String(m).split('\n')[0]); };
+        autoUpdater.logger = { info: () => {}, debug: () => {}, warn: quiet, error: quiet };
         autoUpdater.on('error', () => { /* dilaporkan lewat promise check/download - lib/updater.js */ });
         let onProgress = null;
         autoUpdater.on('download-progress', (p) => { if (onProgress) onProgress(p); });
         let checked = null;
         const engine = {
             check: async () => {
-                const r = await autoUpdater.checkForUpdates();
+                let r;
+                try { r = await autoUpdater.checkForUpdates(); }
+                catch (e) {
+                    if (!noRelease(e)) throw e;
+                    if (!noReleaseLogged) { noReleaseLogged = true; log('Kanal update belum punya rilis - tidak ada update untuk dipasang.'); }
+                    return null;
+                }
                 if (!r || !r.updateInfo) return null;
                 checked = r.updateInfo;
                 const f = (r.updateInfo.files || [])[0];
