@@ -125,9 +125,25 @@
             return '<span class="' + cls + '">' + P.icon(t.ok > 0 ? 'check' : t.fail > 0 ? 'x' : (st.active ? 'loader' : 'warn'), 13, !t.ok && !t.fail && st.active ? 'spin' : '', 2.4) + P.esc(names[k] || k) + (t.ok || t.fail ? ' · ' + t.ok + ' ok' + (t.fail ? ', ' + t.fail + ' failed' : '') : (st.active ? '' : ' · no data')) + '</span>';
         }).join('') + '</div></div>';
     }
-    function holdBanner(st) {
+    /** Kontrol yang benar-benar dikerjakan fitur proses ini (server: lib/run-controls.js). Server lama tanpa `controls`:
+     *  Stop + Jeda + pilihan saat ditahan (perilaku lama). Dashboard hanya menawarkan Stop dan Jeda/Lanjut selama proses
+     *  berjalan; Coba lagi / Lewati hanya muncul saat proses DITAHAN karena gagal (keputusan pemilik 2026-11-13). Mundur
+     *  dan ukuran halaman tetap ada di server (MCP / tes) tetapi tidak ditawarkan di sini. */
+    const controlsOf = (st) => st.controls || { stop: true, pause: true, skip: true, retry: true };
+    function holdBanner(st, cur) {
+        const c = controlsOf(st);
+        const what = cur ? cur.label : 'this combination';
         return '<div class="banner warn"><span class="ico">' + P.icon('warn', 20, '', 2) + '</span><div class="body"><b>Process on hold — your decision needed</b><span>' + P.esc(String(st.holdReason || 'The current combination has a problem').replace(/[.\s]+$/, '')) + '. Nothing is skipped automatically; or fix it yourself in the Coretax window, then press Resume.</span>'
-            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm" style="background:var(--ink);color:#fff;border-color:var(--ink)" data-run="retry">' + P.icon('retry', 15) + 'Retry</button><button type="button" class="btn btn-sm" data-run="skip">' + P.icon('skipF', 15) + 'Skip</button><button type="button" class="btn btn-sm" data-run="back">' + P.icon('skipB', 15) + 'Back</button></div></div></div>';
+            + '<div class="row" style="gap:8px;margin-top:8px">'
+            + (c.retry ? '<button type="button" class="btn btn-sm" style="background:var(--ink);color:#fff;border-color:var(--ink)" data-run="retry">' + P.icon('retry', 15) + 'Try again</button>' : '')
+            + (c.skip ? '<button type="button" class="btn btn-sm" data-run="skip" title="' + P.esc(what) + '">' + P.icon('skipF', 15) + 'Skip ' + P.esc(what) + '</button>' : '')
+            + '<button type="button" class="btn btn-sm" data-run="stop">' + P.icon('stop', 15) + 'Stop</button></div></div></div>';
+    }
+    /** Stop / Jeda sudah diminta tetapi proses belum sampai di titik aman berikutnya. */
+    function pendingBanner(st) {
+        if (st.stopRequested) return '<div class="banner info"><span class="ico">' + P.icon('loader', 20, 'spin') + '</span><div class="body"><b>Stopping…</b><span>The current step finishes first (nothing is cut off halfway), then the process stops. The activity log says what was and was not done.</span></div></div>';
+        if (st.pauseRequested) return '<div class="banner info"><span class="ico">' + P.icon('loader', 20, 'spin') + '</span><div class="body"><b>Pausing…</b><span>The current step finishes first; after that nothing more is sent to Coretax until you press Resume.</span></div></div>';
+        return '';
     }
     /** Proses yang menunggu jendela bebas: posisi antrean + alasannya, hanya Stop (= batalkan). */
     const WAIT_TEXT = {
@@ -157,18 +173,20 @@
         const cur = prog && st.plan.index >= 0 ? st.plan.items[st.plan.index] : null;
         const left = '<section class="card"><div class="queue-head"><h2>' + (prog ? (String(st.label || '').indexOf('Bupot') !== -1 || String(st.label || '').indexOf('Bukti') !== -1 ? 'Download' : 'Masa Pajak') + ' queue' : 'Process running') + '</h2>'
             + (prog ? '<span class="hint">' + prog.finished + ' done' + (prog.hold ? ' · ' + prog.hold + ' need a decision' : '') + ' · ' + (prog.wait + prog.run) + ' waiting</span>' : '') + '</div>'
-            + (held ? holdBanner(st) : (st.paused ? '<div class="banner info"><span class="ico">' + P.icon('pause', 20) + '</span><div class="body"><b>Process paused</b><span>Press Resume to continue.</span></div></div>' : ''))
+            + (pendingBanner(st) || (held ? holdBanner(st, cur) : (st.paused ? '<div class="banner info"><span class="ico">' + P.icon('pause', 20) + '</span><div class="body"><b>Process paused</b><span>Nothing is sent to Coretax while paused. Press Resume to continue where it stopped.</span></div></div>' : '')))
             + (prog ? pillsHtml(st.plan) : '<div class="hint" style="font-size:13.5px">This process is not split by period. Follow its progress in the activity log below.</div>')
             + tallyHtml(st) + '</section>';
         const bar = prog ? '<div class="bar"><span class="ok" style="width:' + prog.pct + '%"></span><span class="hold" style="width:' + prog.holdPct + '%"></span></div>' : '<div class="bar indet"><span class="ok"></span></div>';
-        const sizes = [10, 25, 50, 100];
+        const c = controlsOf(st);
+        const pauseBtn = c.pause || st.paused
+            ? '<button type="button" class="btn ' + (st.paused ? 'btn-primary' : '') + '" data-run="pause"' + (st.pauseRequested ? ' title="Click to cancel the pause"' : '') + '>' + P.icon(st.paused ? 'play' : 'pause', 16) + (st.pauseRequested ? 'Pausing…' : st.paused ? 'Resume' : 'Pause') + '</button>' : '';
+        const stopBtn = c.stop === false ? '' : '<button type="button" class="btn btn-danger btn-block" data-run="stop"' + (st.stopRequested ? ' disabled' : '') + '>' + P.icon('stop', 15) + (st.stopRequested ? 'Stopping…' : 'Stop this session\'s process') + '</button>';
         const rail = '<div class="card"><div class="row" style="justify-content:space-between"><div class="eyebrow">Progress</div>' + (st.currentPageSize ? '<span class="mono muted" style="font-size:12px">' + st.currentPageSize + ' rows/page</span>' : '') + '</div>'
             + (prog ? '<div class="big-num"><b>' + prog.finished + '</b><small>/ ' + prog.total + '</small></div>' : '<div class="big-num"><span style="font-size:15px;color:var(--ink);font-weight:600">' + P.esc(st.label || 'Running…') + '</span></div>') + bar
             + '<div class="divider"></div><div class="stack-lg" style="gap:12px"><div class="hint">' + (prog ? 'Now' : 'Process') + '</div><div style="font-size:15px;font-weight:700;color:var(--ink);margin-top:-8px">' + P.esc(cur ? cur.label : (st.label || '')) + '</div>'
             + (st.coretaxAs ? '<div class="hint">Coretax login: ' + P.esc(st.coretaxAs) + '</div>' : '') + '</div>'
-            + '<div class="divider"></div><div class="stack" style="gap:8px"><div class="eyebrow">Rows per page</div><div class="seg">' + sizes.map((n) => '<button type="button" data-run-size="' + n + '" aria-pressed="' + (st.currentPageSize === n) + '">' + n + '</button>').join('') + '</div></div>'
-            + '<div class="ctl-grid"><button type="button" class="btn ' + (st.paused ? 'btn-primary' : '') + '" data-run="pause">' + P.icon(st.paused ? 'play' : 'pause', 16) + (st.paused ? 'Resume' : 'Pause') + '</button><button type="button" class="btn" data-run="back">' + P.icon('skipB', 16) + 'Back</button><button type="button" class="btn" data-run="retry">' + P.icon('retry', 16) + 'Retry</button><button type="button" class="btn" data-run="skip">' + P.icon('skipF', 16) + 'Skip</button></div>'
-            + '<button type="button" class="btn btn-danger btn-block" data-run="stop">' + P.icon('stop', 15) + 'Stop this session\'s process</button>'
+            + (pauseBtn ? '<div class="ctl-grid">' + pauseBtn + '</div>' : '')
+            + stopBtn
             + '<button type="button" class="btn btn-block" data-run-hide style="margin-top:8px">' + P.icon('plus', 15) + 'Start another command</button></div>';
         return '<div class="cols"><div class="col-main">' + left + '</div><aside class="rail">' + rail + '</aside></div>';
     };
