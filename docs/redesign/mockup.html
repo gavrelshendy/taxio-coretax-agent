@@ -1,0 +1,1407 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taxio Pilot Redesign</title>
+<script>
+/* Runs before first paint: resolve the saved theme (System / Light / Dark) so there is no flash. */
+(function () {
+  var pref = 'system';
+  try { pref = JSON.parse(localStorage.getItem('tpm.theme')) || 'system'; } catch (e) {}
+  if (/[?&]theme=(light|dark)/.test(location.search)) pref = RegExp.$1;
+  var dark = pref === 'dark' || (pref === 'system' && !(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches));
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  document.documentElement.classList.add('preload');
+})();
+</script>
+<style>
+/* Static click-through mockup of the proposed Taxio Pilot v4 dashboard ("Graphite"). Dummy data only.
+   No external requests: system fonts approximate Geist / Geist Mono. */
+
+/* ---------- Tokens: scale, shape, motion (theme-independent) ---------- */
+:root {
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+  --r1: 6px; --r2: 8px; --r3: 10px; --r-pill: 999px;
+  --fs-xs: 11.5px; --fs-sm: 12.5px; --fs-md: 13.5px; --fs-lg: 15px; --fs-xl: 19px;
+  --d1: 120ms; --d2: 180ms; --d3: 240ms; --ease: cubic-bezier(.2, .8, .2, 1);
+  --font: "Geist", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Geist", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --mono: "Geist Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --sb-open: 224px; --sb-rail: 56px; --mock-h: 36px;
+}
+/* ---------- Colour tokens: Graphite dark (default) ---------- */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #101114; --sidebar: #0B0C0E; --surface: #17191D; --surface-2: #1C1F24; --surface-3: #252830;
+  --line: #22252B; --line-2: #30343C;
+  --text-1: #F2F3F5; --text-2: #B9BDC7; --text-3: #8E939F; --text-4: #5F646E;
+  --accent: #8EA2FF; --accent-hover: #A5B5FF; --on-accent: #0B0C0E; --accent-soft: #1E2440; --accent-text: #AEBBFF;
+  --warn: #F2C063; --warn-soft: #33290F; --warn-text: #F2C063;
+  --ok: #5FD3A3; --ok-soft: #10291F; --ok-text: #5FD3A3;
+  --danger: #FF8F8A; --danger-soft: #3A1618; --danger-text: #FF9D98; --danger-line: #5C2A2C;
+  --pop-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+  --scrim: rgba(4, 5, 7, .62);
+}
+/* ---------- Colour tokens: Graphite light ---------- */
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F7F8FA; --sidebar: #EEEFF2; --surface: #FFFFFF; --surface-2: #F2F3F6; --surface-3: #E6E8ED;
+  --line: #E4E6EB; --line-2: #D3D6DD;
+  --text-1: #15171B; --text-2: #3D424C; --text-3: #626874; --text-4: #A0A5AF;
+  --accent: #4A5FD9; --accent-hover: #3B4FC2; --on-accent: #FFFFFF; --accent-soft: #ECEFFD; --accent-text: #3346B8;
+  --warn: #B07A10; --warn-soft: #FBF1D8; --warn-text: #7A5200;
+  --ok: #138A5C; --ok-soft: #E1F4EB; --ok-text: #0B6B46;
+  --danger: #C8323C; --danger-soft: #FCE9EA; --danger-text: #A82630; --danger-line: #F1C2C5;
+  --pop-shadow: 0 18px 48px rgba(20, 22, 30, .16);
+  --scrim: rgba(22, 24, 30, .30);
+}
+html.rm { --d1: 0ms; --d2: 0ms; --d3: 0ms; }
+@media (prefers-reduced-motion: reduce) { :root { --d1: 0ms; --d2: 0ms; --d3: 0ms; } }
+html.rm *, html.rm *::before, html.rm *::after { animation-duration: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 0ms !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 0ms !important; } }
+html.preload *, html.preload *::before, html.preload *::after { transition: none !important; animation: none !important; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--d3); animation-timing-function: var(--ease); }
+
+/* ---------- Base ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text-2); font: var(--fs-md)/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+input { font: inherit; color: var(--text-1); }
+h1, h2, h3, p { margin: 0; }
+svg { flex: none; display: block; }
+[hidden] { display: none !important; }
+.mono { font-family: var(--mono); font-size: .94em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grow { flex: 1; min-width: 0; }
+.row { display: flex; align-items: center; gap: var(--s2); }
+.wrap { flex-wrap: wrap; }
+.t3 { color: var(--text-3); }
+.t1 { color: var(--text-1); }
+.ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+kbd { font: 500 11px/1 var(--mono); color: var(--text-3); border: 1px solid var(--line-2); border-radius: 5px; padding: 3px 5px; background: var(--surface-2); }
+
+/* ---------- Buttons ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: var(--r2); border: 1px solid var(--line-2); background: transparent; color: var(--text-1); font-weight: 550; font-size: var(--fs-md); white-space: nowrap; transition: background var(--d1) var(--ease), border-color var(--d1), color var(--d1), transform var(--d1) var(--ease), opacity var(--d1); }
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:active:not(:disabled) { transform: scale(.97); }
+.btn:disabled { opacity: .45; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-danger { color: var(--danger-text); border-color: var(--danger-line); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
+.btn-danger-solid { background: var(--danger); border-color: var(--danger); color: var(--on-accent); }
+html[data-theme="light"] .btn-danger-solid { color: #fff; }
+.btn-ghost { border-color: transparent; color: var(--text-2); }
+.btn-ghost:hover:not(:disabled) { color: var(--text-1); }
+.btn-lg { height: 38px; padding: 0 16px; font-size: 14px; }
+.btn-sm { height: 28px; padding: 0 10px; font-size: var(--fs-sm); gap: 6px; }
+.ib { width: 30px; height: 30px; border-radius: 7px; border: 0; background: transparent; color: var(--text-3); display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background var(--d1), color var(--d1), transform var(--d1) var(--ease); }
+.ib:hover:not(:disabled) { background: var(--surface-3); color: var(--text-1); }
+.ib:active:not(:disabled) { transform: scale(.92); }
+.ib:disabled { opacity: .35; }
+.link { border: 0; background: none; padding: 0; color: var(--accent-text); font-weight: 550; font-size: inherit; }
+.link:hover { text-decoration: underline; }
+.note .link { white-space: nowrap; }
+
+/* ---------- Tags (status pills) ---------- */
+.tag { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; flex: none; }
+.tag i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.tag.read { color: var(--text-3); background: var(--surface-2); }
+.tag.write { color: var(--warn-text); background: var(--warn-soft); }
+.tag.ok { color: var(--ok-text); background: var(--ok-soft); }
+.tag.warn { color: var(--warn-text); background: var(--warn-soft); }
+.tag.danger { color: var(--danger-text); background: var(--danger-soft); }
+.tag.acc { color: var(--accent-text); background: var(--accent-soft); }
+.tag.local { color: var(--text-2); background: var(--surface-3); }
+
+/* ---------- Shell ---------- */
+#app { position: relative; height: calc(100vh - var(--mock-h)); overflow: clip; }
+.sb { position: absolute; left: 0; top: 0; bottom: 0; width: var(--sb-open); z-index: 30; }
+#app.sb-collapsed .sb { width: var(--sb-rail); }
+.sb-bg { position: absolute; top: 0; bottom: 0; left: 0; width: var(--sb-open); background: var(--sidebar); transform-origin: 0 0; transition: transform var(--d3) var(--ease); }
+#app.sb-collapsed .sb-bg { transform: scaleX(.25); }
+.sb-edge { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: var(--line); transform: translateX(223px); transition: transform var(--d3) var(--ease); }
+#app.sb-collapsed .sb-edge { transform: translateX(55px); }
+#app.sb-overlay .sb-bg { box-shadow: var(--pop-shadow); }
+.sb-in { position: relative; height: 100%; display: flex; flex-direction: column; padding: 12px 8px; }
+.brand { display: flex; align-items: center; gap: 10px; height: 36px; padding-left: 6px; margin-bottom: 8px; white-space: nowrap; }
+.logo { width: 28px; height: 28px; border-radius: 8px; border: 0; padding: 0; background: var(--text-1); color: var(--bg); display: flex; align-items: center; justify-content: center; flex: none; position: relative; transition: transform var(--d1) var(--ease); }
+.logo:active { transform: scale(.94); }
+.logo svg { position: absolute; transition: opacity var(--d1); }
+.logo .lg-side { opacity: 0; }
+#app.sb-collapsed .logo:hover .lg-side, #app.sb-collapsed .logo:focus-visible .lg-side { opacity: 1; }
+#app.sb-collapsed .logo:hover .lg-mark, #app.sb-collapsed .logo:focus-visible .lg-mark { opacity: 0; }
+.brand .ib { margin-right: 2px; }
+#nav { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+#app.sb-collapsed #nav { overflow: visible; }
+.brand b { display: block; color: var(--text-1); font: 650 14px/1.1 var(--font-display); letter-spacing: -.01em; }
+.brand span { font: 11px var(--mono); color: var(--text-3); }
+.fade-l { transition: opacity var(--d2) var(--ease) 70ms; }
+#app.sb-collapsed .fade-l { opacity: 0; pointer-events: none; transition-delay: 0ms; }
+.ng { position: relative; font-size: var(--fs-xs); color: var(--text-3); padding: 9px 0 3px 11px; white-space: nowrap; font-weight: 550; }
+.ng::before { content: ""; position: absolute; left: 10px; width: 20px; top: 50%; height: 1px; background: var(--line-2); opacity: 0; transition: opacity var(--d2); }
+#app.sb-collapsed .ng::before { opacity: 1; }
+.ni { position: relative; display: flex; align-items: center; gap: 11px; height: 30px; padding: 0 0 0 11px; border-radius: var(--r2); border: 0; background: transparent; color: var(--text-2); width: 100%; text-align: left; white-space: nowrap; font-weight: 500; font-size: var(--fs-md); transition: background var(--d1), color var(--d1); }
+.ni svg { color: var(--text-3); transition: color var(--d1); }
+.ni:hover { background: var(--surface-2); color: var(--text-1); }
+.ni[aria-current="page"] { background: var(--surface-3); color: var(--text-1); }
+.ni[aria-current="page"] svg { color: var(--text-1); }
+.ni .lbl { flex: 1; min-width: 0; }
+.nb { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; font-weight: 700; margin-right: 6px; flex: none; transition: transform var(--d2) var(--ease); }
+.nb.warn { background: var(--warn); color: #1A1404; }
+.nb.n { background: var(--surface-3); color: var(--text-1); }
+.nb + .nb { margin-left: -2px; }
+#app.sb-collapsed .ni .nb.n { display: none; }
+#app.sb-collapsed .ni .nb.warn { position: absolute; left: 22px; top: 2px; min-width: 15px; height: 15px; font-size: 10px; padding: 0 4px; margin: 0; }
+#app.sb-collapsed .ni .dot-run { opacity: 1; }
+.dot-run { position: absolute; left: 25px; bottom: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: 0; transition: opacity var(--d2); }
+#app.sb-collapsed .ni[data-tip]:hover::after, #app.sb-collapsed .ni[data-tip]:focus-visible::after { opacity: 1; transform: translate(0, -50%); }
+.ni[data-tip]::after { content: attr(data-tip); position: absolute; left: 50px; top: 50%; transform: translate(-4px, -50%); opacity: 0; pointer-events: none; background: var(--surface-3); color: var(--text-1); border: 1px solid var(--line-2); padding: 4px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; transition: opacity var(--d1), transform var(--d1) var(--ease); z-index: 50; }
+.sb-foot { margin-top: auto; display: flex; flex-direction: column; gap: 1px; }
+.user { display: flex; align-items: center; gap: 10px; padding: 8px 0 0 6px; margin-top: 6px; border-top: 1px solid var(--line); white-space: nowrap; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-3); color: var(--text-1); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; }
+.user b { display: block; color: var(--text-1); font-size: 12.5px; font-weight: 550; }
+.user span { font-size: 11.5px; color: var(--text-3); }
+.sb-scrim { position: absolute; inset: 0; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity var(--d3) var(--ease); z-index: 25; }
+#app.sb-overlay .sb-scrim { opacity: 1; pointer-events: auto; }
+
+.main { position: absolute; top: 0; bottom: 0; right: 0; left: var(--sb-open); display: flex; flex-direction: column; transition: transform var(--d3) var(--ease); }
+#app.sb-collapsed .main, #app.sb-overlay .main { left: var(--sb-rail); }
+.top { height: 56px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+.top h1 { font: 650 var(--fs-lg)/1.2 var(--font-display); color: var(--text-1); letter-spacing: -.01em; white-space: nowrap; }
+.top .crumb { color: var(--text-3); font-size: var(--fs-sm); white-space: nowrap; }
+.cmdk { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border-radius: var(--r2); border: 1px solid var(--line-2); background: var(--surface); color: var(--text-3); min-width: 240px; transition: border-color var(--d1), background var(--d1); }
+.cmdk:hover { border-color: var(--text-4); color: var(--text-2); }
+.cmdk span { flex: 1; text-align: left; }
+.meter { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: var(--r2); border: 1px solid transparent; background: transparent; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; transition: background var(--d1); }
+.meter:hover { background: var(--surface-2); }
+.meter .segs { display: flex; gap: 2px; }
+.meter .segs i { width: 5px; height: 14px; border-radius: 2px; background: var(--surface-3); transition: background var(--d2); }
+.meter .segs i.on { background: var(--accent); }
+.meter .segs i.hold { background: var(--warn); }
+.content { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; scrollbar-gutter: stable; }
+.page { max-width: 920px; margin: 0 auto; padding: 28px 32px 32px; }
+.view { animation: viewIn var(--d3) var(--ease) both; }
+@keyframes viewIn { from { opacity: 0; transform: translateY(6px); } }
+.lead { color: var(--text-3); max-width: 640px; margin: 2px 0 6px; }
+.ph { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 18px; }
+.ph h2 { font: 650 var(--fs-xl)/1.25 var(--font-display); color: var(--text-1); letter-spacing: -.015em; }
+
+/* ---------- Segmented control ---------- */
+.seg { display: inline-flex; padding: 2px; border-radius: var(--r2); background: var(--surface-2); gap: 2px; position: relative; }
+.seg button { position: relative; z-index: 1; height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); font-weight: 550; font-size: var(--fs-sm); white-space: nowrap; transition: color var(--d1); }
+.seg button[aria-pressed="true"] { color: var(--text-1); }
+.seg .thumb { position: absolute; z-index: 0; top: 2px; left: 0; height: 28px; border-radius: 6px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-2); transition: transform var(--d3) var(--ease), width var(--d3) var(--ease); }
+html[data-theme="dark"] .seg .thumb { background: var(--surface-3); box-shadow: none; }
+
+/* ---------- Forms ---------- */
+.frow { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 24px; padding: 18px 0; border-top: 1px solid var(--line); }
+.frow:first-child { border-top: 0; padding-top: 4px; }
+.fl { color: var(--text-1); font-weight: 550; }
+.fl small { display: block; color: var(--text-3); font-weight: 400; font-size: var(--fs-sm); margin-top: 2px; }
+.tg { height: 30px; padding: 0 12px; border-radius: var(--r2); border: 1px solid var(--line-2); background: transparent; color: var(--text-2); font-weight: 500; font-size: var(--fs-md); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; transition: background var(--d1), color var(--d1), border-color var(--d1), transform var(--d1) var(--ease); }
+.tg:hover:not(:disabled) { border-color: var(--text-4); color: var(--text-1); }
+.tg:active:not(:disabled) { transform: scale(.96); }
+.tg[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.tg:disabled { color: var(--text-4); border-style: dashed; }
+.tgs { display: flex; flex-wrap: wrap; gap: 6px; }
+.cap { font-size: var(--fs-xs); color: var(--text-3); margin: 0 0 6px; font-weight: 550; }
+.cap + .tgs + .cap { margin-top: 12px; }
+.months { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; max-width: 480px; }
+.months .tg { justify-content: center; padding: 0; }
+.input { height: 32px; padding: 0 10px; border-radius: var(--r2); border: 1px solid var(--line-2); background: var(--surface); color: var(--text-1); outline: none; transition: border-color var(--d1); min-width: 0; }
+.input:focus { border-color: var(--accent); }
+.yr { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; color: var(--text-1); font-weight: 600; }
+.quick { display: flex; gap: 2px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+.note { font-size: var(--fs-sm); color: var(--text-3); margin-top: 8px; display: flex; gap: 6px; align-items: flex-start; }
+.note svg { margin-top: 2px; }
+.cchips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cchip { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px 0 10px; border-radius: var(--r2); background: var(--surface-2); color: var(--text-1); font-weight: 500; max-width: 100%; animation: popIn var(--d2) var(--ease) both; }
+.cchip .code { font: 600 11px var(--mono); color: var(--text-3); }
+.cchip .pic { font-size: 11.5px; color: var(--text-3); border: 0; background: none; padding: 0 2px; }
+.cchip .pic.multi { color: var(--accent-text); text-decoration: underline dotted; }
+.cchip.out { animation: popOut var(--d2) var(--ease) both; }
+@keyframes popIn { from { opacity: 0; transform: scale(.94); } }
+@keyframes popOut { to { opacity: 0; transform: scale(.94); } }
+.drop { border: 1px dashed var(--line-2); border-radius: var(--r3); padding: 18px; display: flex; align-items: center; gap: 12px; color: var(--text-3); }
+.file { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r3); background: var(--surface-2); animation: popIn var(--d2) var(--ease) both; }
+.file b { color: var(--text-1); font-weight: 550; }
+.file .t3 { font-size: var(--fs-sm); }
+.abar { position: sticky; bottom: 0; z-index: 5; margin-top: 12px; display: flex; align-items: center; gap: 16px; padding: 14px 0 16px; background: var(--bg); border-top: 1px solid var(--line); }
+.abar .sum { flex: 1; min-width: 0; }
+.abar .sum b { color: var(--text-1); font-weight: 600; }
+.abar .sum div { font-size: var(--fs-sm); color: var(--text-3); }
+
+/* ---------- Collapsible (progressive disclosure) ---------- */
+.coll { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--d3) var(--ease); }
+.coll.open { grid-template-rows: 1fr; }
+.coll > div { overflow: hidden; min-height: 0; }
+.coll > div > .ci { opacity: 0; transform: translateY(-4px); transition: opacity var(--d2) var(--ease), transform var(--d2) var(--ease); padding-top: 10px; }
+.coll.open > div > .ci { opacity: 1; transform: none; }
+.disc { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0; color: var(--text-2); font-weight: 550; }
+.disc:hover { color: var(--text-1); }
+.disc svg { transition: transform var(--d2) var(--ease); }
+.disc[aria-expanded="true"] svg { transform: rotate(90deg); }
+
+/* ---------- Runs ---------- */
+.filters { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-bottom: 4px; }
+.fchip { height: 28px; padding: 0 10px; border-radius: var(--r-pill); border: 1px solid transparent; background: transparent; color: var(--text-3); font-weight: 550; font-size: var(--fs-sm); display: inline-flex; gap: 6px; align-items: center; transition: background var(--d1), color var(--d1), transform var(--d1) var(--ease); }
+.fchip b { font-weight: 650; color: var(--text-2); }
+.fchip:hover { color: var(--text-1); background: var(--surface-2); }
+.fchip:active { transform: scale(.96); }
+.fchip[aria-pressed="true"] { background: var(--surface-3); color: var(--text-1); }
+.fchip.warn b { color: var(--warn-text); }
+.fchip.danger b { color: var(--danger-text); }
+.sec { margin-top: 26px; }
+.sec-h { display: flex; align-items: baseline; gap: 8px; color: var(--text-1); font-weight: 600; margin: 0 0 6px 10px; font-size: var(--fs-md); }
+.sec-h .n { color: var(--text-3); font-weight: 500; }
+.sec-h .hint { color: var(--text-3); font-weight: 400; font-size: var(--fs-sm); }
+.rr { display: grid; grid-template-columns: 20px minmax(0, 1fr) 170px 68px; align-items: center; gap: 14px; padding: 11px 10px; border-radius: var(--r2); cursor: pointer; position: relative; transition: transform var(--d3) var(--ease), background var(--d2) var(--ease); }
+.rr::before { content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 1px; background: var(--line); }
+.list > .rr:first-child::before, .rr.hold::before, .rr.hold + .rr::before, .kids .rr:first-child::before { display: none; }
+.rr:hover { background: var(--surface); }
+.rr:hover::before, .rr:hover + .rr::before { opacity: 0; }
+.rr.hold { background: var(--warn-soft); margin-bottom: 4px; }
+.rr .t { color: var(--text-1); font-weight: 550; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rr .t span.ell { min-width: 0; }
+.rr .s { color: var(--text-3); font-size: var(--fs-sm); }
+.rr.hold .s.reason { color: var(--warn-text); white-space: normal; }
+.rr .acts { display: flex; justify-content: flex-end; gap: 2px; }
+.rr .dec { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.rr.enter-row { animation: rowIn var(--d3) var(--ease) both; }
+.rr.out { animation: rowOut var(--d2) var(--ease) both; }
+@keyframes rowIn { from { opacity: 0; transform: translateY(6px); } }
+@keyframes rowOut { to { opacity: 0; transform: translateX(12px); } }
+.pc { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pc .pl { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.pc .pl span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.bar { height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); transition: transform 600ms var(--ease); border-radius: 2px; }
+.bar.hold i { background: var(--warn); }
+.bar.ok i { background: var(--ok); }
+.bar.ind i { width: 35%; transform: none; animation: ind 1.4s var(--ease) infinite; }
+@keyframes ind { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.si { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--surface-3); border-top-color: var(--accent); animation: rot .9s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+.si.ok { color: var(--ok); } .si.warn { color: var(--warn); } .si.danger { color: var(--danger); } .si.q { color: var(--text-3); } .si.pause { color: var(--text-2); }
+.chev { transition: transform var(--d2) var(--ease); }
+.open > .chev, [aria-expanded="true"] > .chev { transform: rotate(90deg); }
+.kids { margin-left: 34px; }
+.kids .rr { grid-template-columns: 20px minmax(0, 1fr) 150px 68px; padding-top: 8px; padding-bottom: 8px; }
+.empty { text-align: center; padding: 64px 16px 24px; }
+.empty h2 { font: 650 var(--fs-xl)/1.3 var(--font-display); color: var(--text-1); margin: 16px 0 6px; }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; max-width: 680px; margin: 32px auto 28px; text-align: left; }
+.steps div { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.steps b { display: block; color: var(--text-1); margin-bottom: 4px; }
+.steps span { font-size: var(--fs-sm); color: var(--text-3); }
+.steps i { font: 600 11px var(--mono); color: var(--accent-text); font-style: normal; display: block; margin-bottom: 6px; }
+.wins .pic-h { display: flex; align-items: baseline; gap: 10px; margin: 24px 0 4px 10px; color: var(--text-1); font-weight: 600; }
+.wins .pic-h span { color: var(--text-3); font-weight: 400; font-size: var(--fs-sm); }
+.wrow { display: grid; grid-template-columns: 20px 90px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px; border-top: 1px solid var(--line); }
+.wrow .t3 { font-size: var(--fs-sm); }
+
+/* ---------- Drawer, dialogs, palette, toasts ---------- */
+.scrim { position: absolute; inset: 0; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity var(--d3) var(--ease); z-index: 39; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+#drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(460px, 94%); background: var(--surface); border-left: 1px solid var(--line-2); box-shadow: var(--pop-shadow); transform: translateX(104%); transition: transform var(--d3) var(--ease); z-index: 40; display: flex; flex-direction: column; visibility: hidden; }
+#drawer.on { transform: none; visibility: visible; }
+#drawer:not(.on) { transition: transform var(--d3) var(--ease), visibility 0s linear var(--d3); }
+.dw-h { display: flex; align-items: flex-start; gap: 10px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
+.dw-h h2 { font: 650 16px/1.3 var(--font-display); color: var(--text-1); }
+.dw-h .s { color: var(--text-3); font-size: var(--fs-sm); margin-top: 2px; }
+.dw-b { flex: 1; overflow-y: auto; padding: 18px 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+.dw-f { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.box { border-radius: var(--r3); padding: 14px; display: flex; gap: 12px; }
+.box .b { flex: 1; min-width: 0; }
+.box b { display: block; color: var(--text-1); margin-bottom: 2px; }
+.box.warn { background: var(--warn-soft); } .box.warn > svg { color: var(--warn); } .box.warn b { color: var(--warn-text); }
+.box.ok { background: var(--ok-soft); } .box.ok > svg { color: var(--ok); } .box.ok b { color: var(--ok-text); }
+.box.danger { background: var(--danger-soft); } .box.danger > svg { color: var(--danger); } .box.danger b { color: var(--danger-text); }
+.box.info { background: var(--surface-2); } .box.info > svg { color: var(--text-3); }
+.box .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.choices { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 12px; align-items: center; margin-top: 10px; }
+.choices > span { font-size: var(--fs-sm); color: var(--text-2); }
+/* Docked run-log strip: part of the layout (pushes content up), never an overlay. */
+.strip { flex: none; border-top: 1px solid var(--line); background: var(--bg); }
+.strip-bar { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 16px; }
+.strip-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 30px; border: 0; background: transparent; padding: 0 8px; border-radius: 6px; color: var(--text-2); font-size: var(--fs-sm); text-align: left; transition: background var(--d1); }
+.strip-main:hover { background: var(--surface-2); }
+.strip-main b { color: var(--text-1); font-weight: 550; white-space: nowrap; }
+.strip-main .ln { font: 12px var(--mono); color: var(--text-2); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip-main .ln em { font-style: normal; color: var(--text-3); margin-right: 8px; }
+.strip-main .si { width: 16px; height: 16px; }
+.strip-main .spin { width: 12px; height: 12px; }
+.strip .ci { padding: 0 16px 12px 24px; }
+.strip .log { max-height: none; height: 150px; }
+.strip .runsel { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.big { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }
+.big b { font: 650 26px/1 var(--font-display); color: var(--text-1); }
+.big span { color: var(--text-3); }
+.pills { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 4px; margin-top: 12px; }
+.pill { height: 26px; border-radius: 6px; font: 500 11.5px/26px var(--mono); text-align: center; background: var(--surface-2); color: var(--text-3); transition: background var(--d2), color var(--d2); }
+.pill.ok { background: var(--ok-soft); color: var(--ok-text); }
+.pill.skip { background: var(--surface-3); color: var(--text-2); text-decoration: line-through; }
+.pill.run { background: var(--accent-soft); color: var(--accent-text); }
+.pill.hold { background: var(--warn-soft); color: var(--warn-text); box-shadow: inset 0 0 0 1px var(--warn); }
+.dl { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px 12px; font-size: var(--fs-md); }
+.dl dt { color: var(--text-3); }
+.dl dd { margin: 0; color: var(--text-1); min-width: 0; overflow-wrap: anywhere; }
+.eyebrow { font-size: var(--fs-xs); color: var(--text-3); font-weight: 600; margin-bottom: 8px; }
+.log { background: var(--sidebar); border-radius: var(--r2); padding: 10px 12px; font: 12px/1.65 var(--mono); color: var(--text-2); max-height: 190px; overflow: auto; }
+.log div { white-space: pre-wrap; animation: rowIn var(--d2) var(--ease) both; }
+.log em { color: var(--text-3); font-style: normal; margin-right: 8px; }
+.log .w { color: var(--warn-text); } .log .e { color: var(--danger-text); } .log .k { color: var(--ok-text); }
+.files div { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); color: var(--text-2); font-size: var(--fs-sm); }
+.files div:first-child { border-top: 0; }
+
+#layer { position: absolute; inset: 0; z-index: 60; pointer-events: none; display: flex; justify-content: center; align-items: flex-start; padding-top: 9vh; }
+.dlg { pointer-events: auto; width: min(560px, calc(100% - 32px)); max-height: calc(100% - 12vh); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: var(--pop-shadow); opacity: 0; transform: translateY(8px) scale(.98); transition: opacity var(--d2) var(--ease), transform var(--d2) var(--ease); }
+.dlg.in { opacity: 1; transform: none; }
+.dlg.wide { width: min(680px, calc(100% - 32px)); }
+.dlg-h { display: flex; align-items: center; gap: 10px; padding: 16px 18px 6px; }
+.dlg-h h2 { font: 650 16px/1.3 var(--font-display); color: var(--text-1); flex: 1; }
+.dlg-b { padding: 6px 18px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.dlg-f { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding: 12px 18px; border-top: 1px solid var(--line); }
+.ack { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r2); background: var(--surface-2); color: var(--text-1); cursor: pointer; }
+.ack input { margin: 3px 0 0; accent-color: var(--accent); width: 15px; height: 15px; }
+table.tb { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+.tb th { text-align: left; font-weight: 550; color: var(--text-3); font-size: var(--fs-sm); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tb td { padding: 8px; border-bottom: 1px solid var(--line); color: var(--text-1); vertical-align: middle; }
+.tb td.t3 { color: var(--text-3); }
+.tb .num { text-align: right; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+.tb tr.rowin td { animation: rowIn var(--d3) var(--ease) both; }
+.tb tfoot td { border-bottom: 0; font-weight: 600; }
+.tb input { accent-color: var(--accent); }
+.sk { position: relative; overflow: hidden; background: var(--surface-2); border-radius: 5px; height: 12px; }
+.sk::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--surface-3), transparent); transform: translateX(-100%); animation: shimmer 1.1s var(--ease) infinite; }
+@keyframes shimmer { to { transform: translateX(100%); } }
+.pal { width: min(620px, calc(100% - 32px)); }
+.pal-q { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--text-3); }
+.pal-q input { flex: 1; border: 0; outline: none; background: transparent; font-size: 15px; height: 28px; }
+.pal-l { overflow-y: auto; padding: 6px; max-height: 420px; }
+.pal-g { font-size: var(--fs-xs); color: var(--text-3); font-weight: 600; padding: 10px 10px 4px; }
+.po { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--r2); cursor: pointer; color: var(--text-1); transition: background var(--d1); }
+.po.act { background: var(--surface-3); }
+.po .s { font-size: var(--fs-sm); color: var(--text-3); }
+.po .ic { width: 28px; height: 28px; border-radius: 7px; background: var(--surface-2); display: flex; align-items: center; justify-content: center; color: var(--text-3); font: 600 10px var(--mono); }
+.po .ck { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--line-2); display: flex; align-items: center; justify-content: center; color: var(--on-accent); transition: background var(--d1), border-color var(--d1); }
+.po.sel .ck { background: var(--accent); border-color: var(--accent); }
+.pal-f { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--text-3); }
+#toasts { position: absolute; right: 16px; bottom: 52px; z-index: 70; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; max-width: 420px; padding: 10px 12px 10px 14px; border-radius: var(--r3); background: var(--surface-3); border: 1px solid var(--line-2); color: var(--text-1); box-shadow: var(--pop-shadow); opacity: 0; transform: translateY(8px); transition: opacity var(--d2) var(--ease), transform var(--d2) var(--ease); }
+.toast.in { opacity: 1; transform: none; }
+.toast svg { color: var(--ok); }
+.toast.err svg { color: var(--danger); }
+
+/* ---------- Settings ---------- */
+.set { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; padding: 18px 0; border-top: 1px solid var(--line); align-items: center; }
+.set:first-child { border-top: 0; }
+.set .fl small { max-width: 460px; }
+.stepper { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line-2); border-radius: var(--r2); padding: 2px; }
+.stepper b { min-width: 28px; text-align: center; color: var(--text-1); font-family: var(--mono); }
+.stepper .ib { width: 26px; height: 26px; }
+.hrow { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.hrow:first-child { border-top: 0; }
+.hdot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+
+/* ---------- Mockup toolbar (not part of the design) ---------- */
+.mock { position: fixed; left: 0; right: 0; bottom: 0; height: var(--mock-h); display: flex; align-items: center; gap: 6px; padding: 0 10px; background: #000; color: #9EA3AD; font-size: 12px; z-index: 100; overflow-x: auto; white-space: nowrap; border-top: 1px solid #2A2D33; }
+html[data-theme="light"] .mock { background: #23252B; }
+.mock b { color: #E9EAEE; font-weight: 600; margin-right: 2px; }
+.mock button { height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid #3A3E46; background: transparent; color: #C9CCD3; font-size: 12px; }
+.mock button[aria-pressed="true"] { background: #E9EAEE; color: #0B0C0E; border-color: #E9EAEE; }
+.mock .sep { width: 1px; height: 16px; background: #3A3E46; margin: 0 4px; flex: none; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1100px) {
+  .cmdk { min-width: 0; }
+  .cmdk span { display: none; }
+}
+@media (max-width: 900px) {
+  .frow { grid-template-columns: 1fr; gap: 10px; }
+  .page { padding: 22px 20px 24px; }
+  .top { padding: 0 16px; }
+  .rr { grid-template-columns: 20px minmax(0, 1fr) 120px 68px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside class="sb" aria-label="Main navigation">
+    <div class="sb-bg"></div><div class="sb-edge"></div>
+    <div class="sb-in">
+      <div class="brand"><button type="button" class="logo" data-a="sb-toggle" title="Expand or collapse the sidebar (Ctrl+B)" aria-label="Toggle sidebar"><svg class="lg-mark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><svg class="lg-side" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M9 3v18"/></svg></button><div class="fade-l grow"><b>Taxio Pilot</b><span>v4.0.0 · mockup</span></div><button type="button" class="ib fade-l" data-a="sb-toggle" title="Collapse sidebar (Ctrl+B)" aria-label="Collapse sidebar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M9 3v18"/><path d="M16 9l-3 3 3 3"/></svg></button></div>
+      <nav id="nav"></nav>
+      <div class="sb-foot" id="sbfoot"></div>
+    </div>
+  </aside>
+  <div class="sb-scrim" data-a="sb-close"></div>
+  <div class="main">
+    <header class="top" id="top"></header>
+    <div class="content" id="content"></div>
+    <div class="strip" id="strip"></div>
+  </div>
+  <div class="scrim" id="scrim" data-a="close-top"></div>
+  <aside id="drawer" aria-label="Run details"></aside>
+  <div id="layer"></div>
+  <div id="toasts" aria-live="polite"></div>
+</div>
+<div class="mock" id="mock"></div>
+
+<script>
+(function () {
+'use strict';
+const root = document.documentElement;
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const STATIC = /[?&]static=1/.test(location.search);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('tpm.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('tpm.' + k, JSON.stringify(v)); } catch (e) { /* storage blocked: state just is not remembered */ } }
+};
+const rm = () => root.classList.contains('rm') || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+/* ---------- Icons (stroke, 24 grid) ---------- */
+const IC = {
+  runs: 'M22 12h-4l-3 9L9 3l-3 9H2', file: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z M14 3v6h6',
+  fileCheck: 'M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z M14 3v6h6 M9 15l2 2 4-4',
+  inbox: 'M22 12h-6l-2 3h-4l-2-3H2 M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z',
+  receipt: 'M5 2v20l2.5-1.5L10 22l2-1.5 2 1.5 2.5-1.5L19 22V2l-2.5 1.5L14 2l-2 1.5L10 2 7.5 3.5z M9 8h6 M9 12h6 M9 16h4',
+  upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12',
+  wrench: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z',
+  clip: 'M9 2h6v4H9z M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M9 13h6 M9 17h4',
+  badge: 'M22 11.1V12a10 10 0 1 1-5.9-9.1 M22 4 12 14l-3-3', bank: 'M3 21h18 M3 10h18 M5 6l7-3 7 3 M5 10v11 M19 10v11 M9 14v3 M12 14v3 M15 14v3',
+  coins: 'M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12z M18.1 10.4A6 6 0 1 1 10.3 18 M7 6h1v4', cal: 'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z M21 21l-4.3-4.3', side: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M9 3v18',
+  play: 'M7 4l12 8-12 8z', pause: 'M8 5v14 M16 5v14', stop: 'M7 7h10v10H7z', retry: 'M3 12a9 9 0 1 0 3-6.7L3 8 M3 3v5h5',
+  skip: 'M5 5l9 7-9 7z M19 5v14', back: 'M19 5l-9 7 9 7z M5 5v14', x: 'M18 6 6 18 M6 6l12 12', check: 'M20 6 9 17l-5-5',
+  folder: 'M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z',
+  alert: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z M12 9v4 M12 17h.01',
+  plus: 'M12 5v14 M5 12h14', right: 'M9 18l6-6-6-6', down: 'M6 9l6 6 6-6', win: 'M3 4h18v13H3z M8 21h8 M12 17v4',
+  lock: 'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4', users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M22 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8',
+  clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 6v6l4 2', down2: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3',
+  pen: 'M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z', eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  term: 'M4 17l6-6-6-6 M12 19h8', ext: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6 M15 3h6v6 M10 14 21 3',
+  shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z', sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M12 1v2 M12 21v2 M4.2 4.2l1.4 1.4 M18.4 18.4l1.4 1.4 M1 12h2 M21 12h2 M4.2 19.8l1.4-1.4 M18.4 5.6l1.4-1.4',
+  moon: 'M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z', info: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 16v-4 M12 8h.01', copy: 'M9 9h11v11H9z M5 15H4V4h11v1'
+};
+const ic = (n, s) => '<svg width="' + (s || 18) + '" height="' + (s || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + IC[n].split(' M').map((d, i) => '<path d="' + (i ? 'M' + d : d) + '"/>').join('') + '</svg>';
+
+/* ---------- Dummy data ---------- */
+const PICS = { ANDI: 'ANDI PRATAMA', DEWI: 'DEWI LESTARI', RINA: 'RINA WIJAYA', SARI: 'SARI CONTOH', own: 'own login' };
+const CL = [
+  ['CSA', 'PT Contoh Sejahtera Abadi', ['ANDI']], ['MKF', 'PT Mitra Karya Fiktif', ['ANDI', 'DEWI']], ['SNM', 'CV Sample Niaga Mandiri', ['RINA']],
+  ['UCN', 'PT Uji Coba Nusantara', ['RINA']], ['DLP', 'PT Dummy Logistik Prima', ['ANDI']], ['TFJ', 'CV Teladan Fiktif Jaya', ['DEWI']],
+  ['STI', 'PT Simulasi Tekstil Indo', ['DEWI']], ['IAL', 'PT Ilustrasi Agro Lestari', ['ANDI']], ['RMS', 'PT Rekaan Medika Sentosa', ['RINA']],
+  ['MPR', 'PT Maket Properti Raya', ['DEWI']], ['CPS', 'PT Contoh Pangan Sejati', ['RINA']], ['GKU', 'PT Graha Kertas Ujicoba', ['ANDI']],
+  ['BCS', 'Budi Contoh Santoso', ['own'], 'op'], ['LKT', 'PT Lokal Klien Tiruan', ['SARI'], 'local']
+].map((a, i) => ({ c: a[0], n: a[1], p: a[2], kind: a[3] || 'badan', npwp: '0000 0000 0000 ' + String(101 + i).padStart(4, '0') }));
+const cl = (c) => CL.find((x) => x.c === c) || { c, n: c, p: ['ANDI'], npwp: '0000 0000 0000 0000' };
+const GROUPS = [
+  { n: 'Monthly SPT clients', c: ['CSA', 'MKF', 'SNM', 'UCN', 'DLP', 'TFJ', 'STI', 'IAL', 'RMS', 'MPR', 'CPS', 'GKU'] },
+  { n: 'PPN clients', c: ['CSA', 'MKF', 'SNM', 'STI', 'MPR', 'CPS'] }
+];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const mm = (m) => String(m).padStart(2, '0');
+const rp = (n) => 'Rp' + Number(n).toLocaleString('id-ID');
+
+/* ---------- App state ---------- */
+const S = {
+  role: 'editor', data: 'busy', view: 'runs', runsTab: 'runs', filter: 'all', openBatch: { b1: true },
+  sbPref: store.get('sb', 'expanded'), sbOverlay: false, theme: store.get('theme', 'system'),
+  drawer: null, sim: false, clock: 9 * 60 + 41, limits: { pic: 3, total: 6 }, picSel: { MKF: 'DEWI' }, showAllFor: {}
+};
+let RUNS = [], BATCHES = {}, NID = 100;
+const now = () => mm(Math.floor(S.clock / 60)) + ':' + mm(S.clock % 60);
+function lg(r, msg, cls) { r.log.push({ t: now(), m: msg, c: cls || '' }); if (r.log.length > 40) r.log.shift(); }
+function run(o) {
+  const r = Object.assign({ id: 'r' + (++NID), state: 'queued', done: 0, total: 0, items: [], skipped: [], log: [], paused: false, kind: 'read', pic: cl(o.client).p[0], win: 0, started: now(), folder: '', files: [] }, o);
+  if (!r.log.length) lg(r, r.state === 'queued' ? 'Queued: waiting for a free Coretax window.' : 'Started in Coretax window ' + r.pic + ' #' + r.win + '.');
+  return r;
+}
+const monthItems = (a, b, yy) => { const out = []; for (let m = a; m <= b; m++) out.push(mm(m) + (yy || '26')); return out; };
+function seed() {
+  NID = 100; BATCHES = {}; S.drawer = null;
+  if (S.data === 'first') { RUNS = []; return; }
+  BATCHES.b1 = { id: 'b1', feat: 'e-Bupot', params: 'BP21, BPPU · 10/2026', folder: 'D:\\Contoh\\CoretaxAgent\\<client>\\e-Bupot' };
+  RUNS = [
+    run({ id: 'r1', client: 'CSA', feat: 'SPT', params: 'PPh 21/26 · 01–10/2026', state: 'hold', done: 3, total: 10, items: monthItems(1, 10), win: 1, reason: 'The Lampiran table for 04/2026 could not be read before the time limit.', folder: 'D:\\Contoh\\CoretaxAgent\\CSA\\SPT', started: '09:12' }),
+    run({ id: 'r2', client: 'MKF', pic: 'DEWI', batch: 'b1', feat: 'e-Bupot', params: 'BP21, BPPU · 10/2026', state: 'done', done: 2, total: 2, items: ['BP21', 'BPPU'], win: 1, started: '09:31' }),
+    run({ id: 'r3', client: 'TFJ', batch: 'b1', feat: 'e-Bupot', params: 'BP21, BPPU · 10/2026', state: 'done', done: 2, total: 2, items: ['BP21', 'BPPU'], win: 1, started: '09:31' }),
+    run({ id: 'r4', client: 'STI', batch: 'b1', feat: 'e-Bupot', params: 'BP21, BPPU · 10/2026', state: 'running', done: 1, total: 2, items: ['BP21', 'BPPU'], win: 1, started: '09:35' }),
+    run({ id: 'r5', client: 'DLP', batch: 'b1', feat: 'e-Bupot', params: 'BP21, BPPU · 10/2026', state: 'running', done: 0, total: 2, items: ['BP21', 'BPPU'], win: 2, holdAt: 1, holdReason: 'Coretax did not return the BPPU list for 10/2026 within 60 seconds.', started: '09:38' }),
+    run({ id: 'r6', client: 'RMS', batch: 'b1', feat: 'e-Bupot', params: 'BP21, BPPU · 10/2026', state: 'queued', total: 2, items: ['BP21', 'BPPU'], wait: 'total' }),
+    run({ id: 'r7', client: 'MPR', batch: 'b1', feat: 'e-Bupot', params: 'BP21, BPPU · 10/2026', state: 'queued', total: 2, items: ['BP21', 'BPPU'], wait: 'total', failAt: 0, failError: 'Coretax could not switch to this entity: PIC DEWI LESTARI is not in its impersonation list.' }),
+    run({ id: 'r8', client: 'UCN', feat: 'Annual PPh 21 Recap', params: 'Full-year download · 2026', state: 'running', paused: true, done: 6, total: 12, items: monthItems(1, 12), win: 1, started: '09:02', folder: 'D:\\Contoh\\CoretaxAgent\\UCN\\A1 2026' }),
+    run({ id: 'r9', client: 'SNM', feat: 'e-Bupot Upload', params: 'Upload to Belum Terbit · 42 BPMP · 10/2026', kind: 'write', state: 'running', win: 2, notes: ['Uploading the file', 'Coretax is validating the file', 'Reading the Monitoring XML'], ind: 1, started: '09:39', result: '42 Bukti Potong created in Belum Terbit. Nothing was issued or signed.' }),
+    run({ id: 'r10', client: 'MKF', pic: 'DEWI', feat: 'Credit Faktur Masukan', params: '18 Faktur Masukan · Masa 10/2026', kind: 'write', state: 'running', done: 11, total: 18, items: Array.from({ length: 18 }, (_, i) => '#' + (i + 1)), win: 2, started: '09:28' }),
+    run({ id: 'r11', client: 'CSA', feat: 'e-Bupot', params: 'BPMP · Telah Terbit · 01–10/2026', state: 'queued', total: 10, items: monthItems(1, 10), wait: 'total' }),
+    run({ id: 'r12', client: 'IAL', feat: 'SPT', params: 'PPh Unifikasi · 09/2026', state: 'done', done: 1, total: 1, items: ['0926'], win: 1, started: '08:51', ended: '08:54', folder: 'D:\\Contoh\\CoretaxAgent\\IAL\\SPT', files: ['SPT PPh Unifikasi 09-2026.pdf', 'BPE 09-2026.pdf', 'Lampiran 09-2026.pdf'] }),
+    run({ id: 'r13', client: 'CPS', feat: 'Bukti Potong Saya', params: 'BPPU · 01–09/2026', state: 'done', done: 9, total: 9, items: monthItems(1, 9), win: 1, started: '08:40', ended: '08:47', folder: 'D:\\Contoh\\CoretaxAgent\\CPS\\Bukti Potong Saya', files: ['BPPU 01-09 2026.xlsx', '27 PDF files'] }),
+    run({ id: 'r14', client: 'BCS', feat: 'SPT', params: 'PPh Orang Pribadi · 2025', state: 'done', done: 1, total: 1, items: ['2025'], win: 1, started: '08:30', ended: '08:33', folder: 'D:\\Contoh\\CoretaxAgent\\BCS\\SPT', files: ['SPT 1770 S 2025.pdf', 'BPE 2025.pdf'] }),
+    run({ id: 'r15', client: 'LKT', feat: 'PPh 25 Kode Billing', params: 'Masa Pajak 10/2026 · Rp1.500.000', kind: 'write', state: 'failed', win: 1, started: '09:20', error: 'Coretax rejected the sign-in: the password saved for PIC SARI CONTOH is no longer valid. Update it in the client details, then run again. Nothing was created in Coretax.' }),
+    run({ id: 'r16', client: 'TFJ', feat: 'Credit Faktur Masukan', params: '40 Faktur Masukan · Masa 09/2026', kind: 'write', state: 'stopped', done: 14, total: 40, items: Array.from({ length: 40 }, (_, i) => '#' + (i + 1)), win: 1, started: '08:58', ended: '09:16', folder: 'D:\\Contoh\\CoretaxAgent\\TFJ\\Credit Faktur Masukan', files: ['Kredit Faktur Masukan 09-2026.xlsx (sheet Hasil)'] })
+  ];
+  RUNS.forEach((r) => {
+    if (r.state === 'done' && !r.folder) r.folder = 'D:\\Contoh\\CoretaxAgent\\' + r.client + '\\e-Bupot';
+    if (r.state === 'done' && !r.files.length) r.files = ['BP21 10-2026 (14 PDF).zip', 'BPPU 10-2026 (6 PDF).zip', 'Rekap e-Bupot 10-2026.xlsx'];
+    if (r.done) lg(r, 'Done: ' + r.items.slice(0, r.done).join(', '), 'k');
+    if (r.state === 'hold') lg(r, 'On hold: ' + r.reason, 'w');
+    if (r.state === 'failed') lg(r, r.error, 'e');
+    if (r.state === 'stopped') { r.error = stopSummary(r); lg(r, 'Stopped by you. ' + r.error, 'e'); }
+    if (r.paused) lg(r, 'Paused by you. Nothing happens in Coretax until you resume.');
+    if (r.state === 'done') lg(r, 'Finished. Files saved to ' + r.folder, 'k');
+  });
+}
+const active = (r) => r.state === 'running' || r.state === 'hold';
+const winsInUse = (pic) => RUNS.filter((r) => active(r) && (!pic || r.pic === pic));
+function freeWin(pic) { const used = winsInUse(pic).map((r) => r.win); for (let n = 1; n <= S.limits.pic; n++) if (used.indexOf(n) < 0) return n; return 0; }
+function canStart(r) { return winsInUse().length < S.limits.total && winsInUse(r.pic).length < S.limits.pic && !RUNS.some((x) => x !== r && active(x) && x.client === r.client && x.feat === r.feat); }
+function promote() {
+  RUNS.filter((r) => r.state === 'queued').forEach((r) => {
+    if (!canStart(r)) { r.wait = RUNS.some((x) => active(x) && x.client === r.client && x.feat === r.feat) ? 'lock' : winsInUse(r.pic).length >= S.limits.pic ? 'pic' : 'total'; return; }
+    r.state = 'running'; r.win = freeWin(r.pic); r.started = now(); lg(r, 'Started in Coretax window ' + r.pic + ' #' + r.win + '.');
+  });
+}
+const queuePos = (r) => RUNS.filter((x) => x.state === 'queued').indexOf(r) + 1;
+const WAIT = {
+  total: (r) => 'All ' + S.limits.total + ' automation windows are in use. Starts by itself when one is free.',
+  pic: (r) => 'All ' + S.limits.pic + ' Coretax windows of PIC ' + PICS[r.pic] + ' are in use. Starts when one is free.',
+  lock: (r) => 'Waits for the running ' + r.feat + ' run of this client, then starts right after it.'
+};
+/* Controls each feature really honours. Today only SPT, e-Bupot download and Bukti Potong Saya handle
+   skip / retry / back (runcontrol.checkpoint); after the engine fix every feature honours Stop and Pause at safe
+   points and GET /api/run/status reports run.controls - the UI shows only those. */
+const FULL = ['stop', 'pause', 'skip', 'retry']; // skip / retry are offered only while a run is on hold
+const CAPS = { 'SPT': FULL, 'e-Bupot': FULL, 'Bukti Potong Saya': FULL };
+const caps = (r) => r.controls || CAPS[r.feat] || ['stop', 'pause'];
+const can = (r, c) => caps(r).indexOf(c) >= 0;
+const unitOf = (it) => /^\d{4}$/.test(String(it)) ? 'Masa Pajak ' + it : String(it);
+const cur = (r) => unitOf(r.items[r.done] || 'this step');
+const prevItem = (r) => unitOf(r.items[Math.max(0, r.done - 1)] || '');
+/* After a stop the run says what was done and what was not, in the feature's own words. */
+const UNIT = { 'SPT': ['Masa Pajak', 'downloaded'], 'Annual PPh 21 Recap': ['Masa Pajak', 'downloaded'], 'Bukti Potong Saya': ['Masa Pajak', 'downloaded'], 'e-Bupot': ['Bukti Potong lists', 'downloaded'],
+  'Credit Faktur Masukan': ['Faktur Masukan', 'credited'], 'e-Bupot Issue & sign': ['Bukti Potong', 'issued'], 'Fix Bukti Potong': ['Bukti Potong', 'changed'], 'e-Reporting': ['rows', 'processed'] };
+function stopSummary(r) {
+  if (!r.total) return 'Stopped before Coretax confirmed the result. Check Belum Terbit in Coretax before uploading again.';
+  const u = UNIT[r.feat] || ['steps', 'done'];
+  return r.done + ' of ' + r.total + ' ' + u[0] + ' ' + u[1] + '; ' + (r.total - r.done) + ' not processed.' + (r.kind === 'write' && r.done ? ' What was done in Coretax stays done.' : '');
+}
+function requestStop(r) {
+  if (r.state === 'hold') r.state = 'running';
+  r.stopping = true; r.paused = false; r.pausing = false;
+  lg(r, 'Stop requested: stopping after the current ' + (r.kind === 'write' ? 'step' : 'file') + '…', 'w'); refresh();
+  setTimeout(() => {
+    if (!r.stopping) return; r.stopping = false; r.state = 'stopped'; r.ended = now(); if (!r.folder) r.folder = 'D:\\Contoh\\CoretaxAgent\\' + r.client + '\\' + r.feat;
+    r.error = stopSummary(r);
+    lg(r, 'Stopped.', 'e'); promote(); refresh();
+  }, STATIC ? 2500 : 1300);
+}
+function requestPause(r) {
+  if (r.paused) { r.paused = false; lg(r, 'Resumed by you.'); refresh(); return; }
+  r.pausing = true; lg(r, 'Pause requested: pausing after the current step…'); refresh();
+  setTimeout(() => { if (!r.pausing) return; r.pausing = false; r.paused = true; lg(r, 'Paused. Nothing happens in Coretax until you resume.'); refresh(); }, STATIC ? 2500 : 1100);
+}
+function finish(r) {
+  r.state = 'done'; r.ended = now();
+  if (!r.folder) r.folder = 'D:\\Contoh\\CoretaxAgent\\' + r.client + '\\' + r.feat;
+  if (!r.files.length) r.files = r.result ? ['Monitoring 10-2026.xml'] : r.items.slice(0, 3).map((i) => r.feat + ' ' + i + '.pdf');
+  lg(r, r.result || ('Finished. Files saved to ' + r.folder), 'k');
+}
+function tick() {
+  S.clock++;
+  RUNS.forEach((r) => {
+    if (r.state !== 'running' || r.paused || r.pausing || r.stopping || r._new) { r._new = false; return; }
+    if (r.failAt != null && r.done === r.failAt) { r.state = 'failed'; r.error = r.failError; r.failAt = null; lg(r, r.error, 'e'); return; }
+    if (!r.total) { r.ind = (r.ind || 0) + 1; if (r.ind >= r.notes.length) finish(r); else lg(r, r.notes[r.ind] + '…'); return; }
+    if (r.holdAt != null && r.done === r.holdAt) { r.state = 'hold'; r.reason = r.holdReason; r.holdAt = null; lg(r, 'On hold: ' + r.reason, 'w'); toast(cl(r.client).n + ' needs your decision', 'alert', true); return; }
+    lg(r, 'Downloaded ' + r.items[r.done] + '.'); r.done++;
+    if (r.done >= r.total) finish(r);
+  });
+  promote(); refresh();
+}
+
+/* ---------- Pages ---------- */
+const PAGES = {
+  runs: { label: 'Runs', icon: 'runs' },
+  spt: { label: 'SPT', icon: 'file', grp: 'Download', kind: 'read' },
+  ebupot: { label: 'e-Bupot', icon: 'fileCheck', grp: 'Download', kind: 'read' },
+  bpsaya: { label: 'Bukti Potong Saya', icon: 'inbox', grp: 'Download', kind: 'read' },
+  faktur: { label: 'e-Faktur', icon: 'receipt', grp: 'Download', kind: 'read' },
+  upload: { label: 'e-Bupot Upload & Issue', icon: 'upload', grp: 'Change in Coretax', kind: 'write', hideR: true },
+  fix: { label: 'Fix Bukti Potong', icon: 'wrench', grp: 'Change in Coretax', kind: 'write', hideR: true },
+  konsep: { label: 'Konsep SPT', icon: 'clip', grp: 'Change in Coretax', kind: 'write', hideR: true },
+  kredit: { label: 'Credit Faktur Masukan', icon: 'badge', grp: 'Change in Coretax', kind: 'write' },
+  billing: { label: 'PPh 25 Kode Billing', icon: 'bank', grp: 'Change in Coretax', kind: 'write' },
+  dividen: { label: 'e-Reporting', full: 'e-Reporting · Laporan Realisasi Investasi (Dividen)', icon: 'coins', grp: 'Change in Coretax', kind: 'write' },
+  a1: { label: 'Annual PPh 21 Recap', icon: 'cal', grp: 'Year-End', kind: 'mixed', hideR: true },
+  settings: { label: 'Settings', icon: 'gear' }
+};
+const visiblePage = (id) => !(S.role === 'restricted' && PAGES[id].hideR);
+const counts = () => {
+  const c = { hold: 0, running: 0, queued: 0, failed: 0, done: 0 };
+  RUNS.forEach((r) => { const k = r.state === 'stopped' ? 'failed' : r.state; c[k] = (c[k] || 0) + 1; });
+  return c;
+};
+
+/* ---------- Sidebar ---------- */
+function renderNav() {
+  const c = counts(); const act = c.running + c.hold + c.queued;
+  let html = '', grp = null;
+  Object.keys(PAGES).forEach((id) => {
+    const p = PAGES[id]; if (id === 'settings' || !visiblePage(id)) return;
+    if (p.grp && p.grp !== grp) { grp = p.grp; html += '<div class="ng"><span class="fade-l">' + grp + '</span></div>'; }
+    let badges = '';
+    if (id === 'runs') badges = (c.hold ? '<span class="nb warn" title="Needs your decision">' + c.hold + '</span>' : '') + (act ? '<span class="nb n fade-l" title="Running or queued">' + act + '</span>' : '') + (c.running ? '<i class="dot-run"></i>' : '');
+    const tip = p.label + (id === 'runs' && act ? ' · ' + c.running + ' running, ' + c.queued + ' queued' + (c.hold ? ', ' + c.hold + ' need a decision' : '') : '');
+    html += '<button type="button" class="ni" data-nav="' + id + '" data-tip="' + esc(tip) + '"' + (S.view === id ? ' aria-current="page"' : '') + '>' + ic(p.icon) + '<span class="lbl fade-l">' + esc(p.label) + '</span>' + badges + '</button>';
+  });
+  $('#nav').innerHTML = html;
+  const collapsed = $('#app').classList.contains('sb-collapsed');
+  const dark = root.getAttribute('data-theme') === 'dark';
+  $('#sbfoot').innerHTML =
+    '<button type="button" class="ni" data-a="theme-quick" data-tip="' + (dark ? 'Switch to light theme' : 'Switch to dark theme') + '">' + ic(dark ? 'sun' : 'moon') + '<span class="lbl fade-l">' + (dark ? 'Light theme' : 'Dark theme') + '</span></button>'
+    + '<button type="button" class="ni" data-nav="settings" data-tip="Settings"' + (S.view === 'settings' ? ' aria-current="page"' : '') + '>' + ic('gear') + '<span class="lbl fade-l">Settings</span></button>'
+    + '<div class="user"><span class="avatar">' + (S.role === 'restricted' ? 'ST' : 'KO') + '</span><div class="fade-l" style="min-width:0"><b class="ell">' + (S.role === 'restricted' ? 'staf@contoh.com' : 'konsultan@contoh.com') + '</b><span>' + (S.role === 'restricted' ? 'Restricted Editor' : 'Editor') + ' · Taxio Hub</span></div></div>';
+}
+function applySidebar(animate) {
+  const app = $('#app'), main = $('.main');
+  const before = main.getBoundingClientRect().left;
+  const narrow = window.innerWidth < 1100;
+  if (!narrow) S.sbOverlay = false;
+  const collapsed = narrow ? !S.sbOverlay : S.sbPref === 'collapsed';
+  app.classList.toggle('sb-collapsed', collapsed);
+  app.classList.toggle('sb-overlay', narrow && S.sbOverlay);
+  if (animate && !rm()) {
+    const after = main.getBoundingClientRect().left;
+    if (Math.abs(before - after) > 1) { main.style.transition = 'none'; main.style.transform = 'translateX(' + (before - after) + 'px)'; void main.offsetWidth; main.style.transition = ''; main.style.transform = ''; }
+  }
+  renderNav();
+}
+function toggleSidebar() {
+  if (window.innerWidth < 1100) S.sbOverlay = !S.sbOverlay;
+  else { S.sbPref = S.sbPref === 'collapsed' ? 'expanded' : 'collapsed'; store.set('sb', S.sbPref); }
+  applySidebar(true);
+}
+
+/* ---------- Theme ---------- */
+const sysDark = () => !(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
+function setTheme(pref, persist) {
+  S.theme = pref; if (persist !== false) store.set('theme', pref);
+  const want = pref === 'dark' || (pref === 'system' && sysDark()) ? 'dark' : 'light';
+  if (root.getAttribute('data-theme') === want) { refreshChrome(); return; }
+  const apply = () => { root.setAttribute('data-theme', want); refreshChrome(); };
+  if (document.startViewTransition && !rm() && !STATIC) document.startViewTransition(apply); else apply();
+}
+if (window.matchMedia) matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (S.theme === 'system') setTheme('system', false); });
+
+/* ---------- Top bar ---------- */
+function renderTop() {
+  const p = PAGES[S.view];
+  const used = winsInUse(); const hold = used.filter((r) => r.state === 'hold').length;
+  let segs = ''; for (let i = 0; i < S.limits.total; i++) segs += '<i class="' + (i < hold ? 'hold' : i < used.length ? 'on' : '') + '"></i>';
+  const kindTag = p.kind === 'read' ? '<span class="tag read">Read-only</span>' : p.kind === 'write' ? '<span class="tag write"><i></i>Changes data in Coretax</span>' : '';
+  $('#top').innerHTML = '<div class="row" style="gap:10px;min-width:0"><h1>' + esc(p.full || p.label) + '</h1>' + (p.grp ? '<span class="crumb">' + esc(p.grp) + '</span>' : '') + kindTag + '</div><span class="grow"></span>'
+    + '<button type="button" class="cmdk" data-a="palette" aria-label="Search clients, pages and runs">' + ic('search', 15) + '<span>Search clients, pages, runs</span><kbd>Ctrl K</kbd></button>'
+    + '<button type="button" class="meter" data-a="windows" title="Coretax windows in use (limit ' + S.limits.total + ')"><span class="segs">' + segs + '</span>' + used.length + '/' + S.limits.total + '</button>';
+}
+function refreshChrome() { renderNav(); renderTop(); renderStrip(); }
+
+/* ---------- FLIP list rendering (transform/opacity only) ---------- */
+function flip(container, html) {
+  const old = new Map(), bars = new Map();
+  $$('[data-k]', container).forEach((el) => old.set(el.dataset.k, el.getBoundingClientRect().top));
+  $$('[data-bar]', container).forEach((el) => bars.set(el.dataset.bar, el.style.getPropertyValue('--p')));
+  container.innerHTML = html;
+  if (rm()) return;
+  $$('[data-k]', container).forEach((el) => {
+    const k = el.dataset.k;
+    if (old.has(k)) {
+      const dy = old.get(k) - el.getBoundingClientRect().top;
+      if (Math.abs(dy) > 1) { el.style.transition = 'none'; el.style.transform = 'translateY(' + dy + 'px)'; void el.offsetWidth; el.style.transition = ''; el.style.transform = ''; }
+    } else if (old.size) el.classList.add('enter-row');
+  });
+  $$('[data-bar]', container).forEach((el) => {
+    const p = bars.get(el.dataset.bar), np = el.style.getPropertyValue('--p');
+    if (p != null && p !== np) { el.style.transition = 'none'; el.style.setProperty('--p', p); void el.offsetWidth; el.style.transition = ''; el.style.setProperty('--p', np); }
+  });
+}
+
+/* ---------- Runs view ---------- */
+function stateIcon(r) {
+  if (r.state === 'running' && r.paused) return '<span class="si pause">' + ic('pause', 16) + '</span>';
+  return { running: '<span class="si"><span class="spin"></span></span>', hold: '<span class="si warn">' + ic('alert', 17) + '</span>', queued: '<span class="si q">' + ic('clock', 16) + '</span>', done: '<span class="si ok">' + ic('check', 17) + '</span>', failed: '<span class="si danger">' + ic('x', 17) + '</span>', stopped: '<span class="si danger">' + ic('stop', 15) + '</span>' }[r.state];
+}
+function progCell(r, key) {
+  if (r.state === 'queued') return '<div class="pc"><div class="pl"><span>Queued</span><span>#' + queuePos(r) + ' in line</span></div></div>';
+  if (r.state === 'failed' || r.state === 'stopped') return '<div class="pc"><div class="pl"><span style="color:var(--danger-text)">' + (r.state === 'stopped' ? 'Stopped' : 'Failed') + '</span><span>' + (r.ended || '') + '</span></div></div>';
+  if (r.state === 'done') return '<div class="pc"><div class="pl"><span style="color:var(--ok-text)">Finished</span><span>' + (r.ended || '') + '</span></div></div>';
+  const pend = r.stopping ? 'Stopping…' : r.pausing ? 'Pausing…' : r.paused ? 'Paused' : '';
+  if (!r.total) return '<div class="pc"><div class="pl"><span class="ell"' + (pend ? ' style="color:var(--text-1)"' : '') + '>' + esc(pend || r.notes[r.ind] || 'Working') + '</span></div><div class="bar ind"><i></i></div></div>';
+  const p = r.done / r.total;
+  return '<div class="pc"><div class="pl"><span>' + r.done + ' of ' + r.total + '</span><span class="mono"' + (pend ? ' style="color:var(--text-1)"' : '') + '>' + esc(pend || r.items[Math.min(r.done, r.total - 1)]) + '</span></div><div class="bar' + (r.state === 'hold' ? ' hold' : '') + '"><i data-bar="' + key + '" style="--p:' + p.toFixed(3) + '"></i></div></div>';
+}
+function actsCell(r) {
+  if (r.state === 'running') return '<div class="acts">' + (can(r, 'pause') ? '<button type="button" class="ib" data-a="pause" data-id="' + r.id + '" aria-label="' + (r.paused ? 'Resume' : 'Pause after the current step') + '" title="' + (r.paused ? 'Resume' : 'Pause after the current step') + '"' + (r.stopping || r.pausing ? ' disabled' : '') + '>' + ic(r.paused ? 'play' : 'pause', 16) + '</button>' : '') + '<button type="button" class="ib" data-a="stop" data-id="' + r.id + '" aria-label="Stop" title="Stop after the current ' + (r.kind === 'write' ? 'step' : 'file') + '"' + (r.stopping ? ' disabled' : '') + '>' + ic('stop', 15) + '</button></div>';
+  if (r.state === 'hold') return '<div class="acts"><button type="button" class="ib" data-a="stop" data-id="' + r.id + '" aria-label="Stop" title="Stop this run">' + ic('stop', 15) + '</button></div>';
+  if (r.state === 'queued') return '<div class="acts"><button type="button" class="ib" data-a="cancel-q" data-id="' + r.id + '" aria-label="Cancel queued run" title="Cancel queued run">' + ic('x', 16) + '</button></div>';
+  if (r.state === 'done') return '<div class="acts"><button type="button" class="ib" data-a="folder" data-id="' + r.id + '" aria-label="Open result folder" title="Open result folder">' + ic('folder', 16) + '</button></div>';
+  return '<div class="acts">' + (r.state === 'stopped' && r.folder ? '<button type="button" class="ib" data-a="folder" data-id="' + r.id + '" aria-label="Open result folder" title="Open ' + (r.kind === 'write' ? 'report' : 'result folder') + '">' + ic('folder', 16) + '</button>' : '') + '<button type="button" class="ib" data-a="again" data-id="' + r.id + '" aria-label="Run again" title="Run again">' + ic('retry', 16) + '</button></div>';
+}
+function runRow(r, key, opts) {
+  opts = opts || {};
+  const c = cl(r.client);
+  const meta = (opts.child ? '' : esc(r.feat) + ' · ' + esc(r.params) + ' · ') + (r.state === 'queued' ? 'PIC ' + r.pic : 'PIC ' + r.pic + ' #' + r.win) + (r.batch && !opts.child ? ' · in a batch' : '');
+  let sub = '<div class="s ell">' + meta + '</div>';
+  let dec = '';
+  if (r.state === 'hold') {
+    sub = '<div class="s ell">' + esc(r.feat) + ' · ' + esc(r.params) + ' · PIC ' + r.pic + ' #' + r.win + '</div><div class="s reason">' + esc(r.reason) + '</div>';
+    dec = '<div class="dec"><button type="button" class="btn btn-sm btn-primary" data-a="retry" data-id="' + r.id + '">' + ic('retry', 14) + 'Try again</button><button type="button" class="btn btn-sm" data-a="skip" data-id="' + r.id + '">' + ic('skip', 14) + 'Skip ' + esc(cur(r)) + '</button><button type="button" class="btn btn-sm btn-ghost" data-a="stop" data-id="' + r.id + '">' + ic('stop', 13) + 'Stop</button></div>';
+  }
+  if (r.state === 'failed') sub = '<div class="s ell">' + esc(r.feat) + ' · ' + esc(r.params) + '</div><div class="s ell" style="color:var(--danger-text)">' + esc(r.error) + '</div>';
+  if (r.state === 'stopped') sub = '<div class="s ell">' + esc(r.feat) + ' · ' + esc(r.params) + '</div><div class="s ell" style="color:var(--text-2)">Stopped by you · ' + esc(r.error) + '</div>';
+  const tag = r.kind === 'write' ? '<span class="tag write" title="Changes data in Coretax"><i></i>Changes Coretax</span>' : '';
+  return '<div class="rr ' + r.state + '" data-k="' + key + '" data-a="open" data-id="' + r.id + '" role="button" tabindex="0">' + stateIcon(r)
+    + '<div style="min-width:0"><div class="t"><span class="ell">' + esc(c.n) + '</span>' + (r.paused ? '<span class="tag read">Paused</span>' : '') + tag + '</div>' + sub + dec + '</div>'
+    + progCell(r, key) + actsCell(r) + '</div>';
+}
+function batchRow(b, kids) {
+  const n = { done: 0, running: 0, queued: 0, hold: 0, failed: 0 };
+  kids.forEach((k) => { n[k.state === 'stopped' ? 'failed' : k.state]++; });
+  const fin = n.done + n.failed, p = fin / kids.length;
+  const open = !!S.openBatch[b.id];
+  const parts = [n.done && n.done + ' finished', n.running && n.running + ' running', n.hold && n.hold + ' on hold', n.queued && n.queued + ' queued', n.failed && n.failed + ' failed'].filter(Boolean).join(' · ');
+  const allDone = !n.running && !n.queued && !n.hold;
+  return '<div class="rr batch" data-k="b:' + b.id + '" data-a="toggle-batch" data-id="' + b.id + '" role="button" tabindex="0" aria-expanded="' + open + '"><span class="si chev">' + ic('right', 16) + '</span>'
+    + '<div style="min-width:0"><div class="t"><span class="ell">' + esc(b.feat) + ' for ' + kids.length + ' clients</span>' + (n.hold ? '<span class="tag warn">' + n.hold + ' on hold</span>' : '') + '</div><div class="s ell">' + esc(b.params) + ' · ' + parts + '</div></div>'
+    + '<div class="pc"><div class="pl"><span>' + fin + ' of ' + kids.length + ' clients</span></div><div class="bar' + (allDone ? ' ok' : '') + '"><i data-bar="b:' + b.id + '" style="--p:' + p.toFixed(3) + '"></i></div></div>'
+    + '<div class="acts">' + (allDone ? '<button type="button" class="ib" data-a="folder-b" data-id="' + b.id + '" title="Open result folders" aria-label="Open result folders">' + ic('folder', 16) + '</button>' : '<button type="button" class="ib" data-a="stop-b" data-id="' + b.id + '" title="Stop the whole batch" aria-label="Stop the whole batch">' + ic('stop', 15) + '</button>') + '</div></div>'
+    + '<div class="coll' + (open ? ' open' : '') + '" data-coll="' + b.id + '"><div><div class="ci kids">' + kids.map((k) => runRow(k, 'c:' + k.id, { child: true })).join('') + '</div></div></div>';
+}
+function runsListHtml() {
+  if (!RUNS.length) return emptyRunsHtml();
+  const f = S.filter, c = counts();
+  const stand = RUNS.filter((r) => !r.batch);
+  const bIds = Object.keys(BATCHES);
+  const bActive = bIds.filter((id) => RUNS.some((r) => r.batch === id && (r.state === 'running' || r.state === 'queued' || r.state === 'hold')));
+  const bDone = bIds.filter((id) => bActive.indexOf(id) < 0);
+  const kidsOf = (id) => RUNS.filter((r) => r.batch === id);
+  const sec = (key, title, hint, rows) => rows ? '<section class="sec" data-k="sec:' + key + '"><div class="sec-h">' + title + '<span class="n">' + hint[0] + '</span>' + (hint[1] ? '<span class="hint">' + hint[1] + '</span>' : '') + '</div><div class="list">' + rows + '</div></section>' : '';
+  let html = '';
+  const holds = RUNS.filter((r) => r.state === 'hold');
+  if ((f === 'all' || f === 'hold') && holds.length) html += sec('hold', 'Needs Your Decision', [holds.length, 'Each keeps its Coretax window and waits for you. Other runs continue.'], holds.map((r) => runRow(r, 'h:' + r.id)).join(''));
+  if (f === 'all' || f === 'running') {
+    const rows = bActive.map((id) => batchRow(BATCHES[id], kidsOf(id))).join('') + stand.filter((r) => r.state === 'running').map((r) => runRow(r, r.id)).join('');
+    html += sec('running', 'Running', [c.running, c.hold ? 'Runs on hold are listed above.' : ''], rows);
+  }
+  if (f === 'queued') { const q = RUNS.filter((r) => r.state === 'queued'); html += sec('queued', 'Queued', [q.length, 'Start by themselves, in this order.'], q.map((r) => runRow(r, r.id)).join('')); }
+  else if (f === 'all') { const q = stand.filter((r) => r.state === 'queued'); html += sec('queued', 'Queued', [q.length, 'Start by themselves, in this order.'], q.map((r) => runRow(r, r.id)).join('')); }
+  if (f === 'all' || f === 'failed') { const q = RUNS.filter((r) => (r.state === 'failed' || r.state === 'stopped') && (f === 'failed' || !r.batch)); html += sec('failed', 'Failed or Stopped', [q.length, ''], q.map((r) => runRow(r, r.id)).join('')); }
+  if (f === 'all' || f === 'done') {
+    const rows = (f === 'all' ? bDone.map((id) => batchRow(BATCHES[id], kidsOf(id))).join('') : '') + RUNS.filter((r) => r.state === 'done' && (f === 'done' || !r.batch)).slice().reverse().map((r) => runRow(r, r.id)).join('');
+    html += sec('done', 'Finished Today', [c.done, 'Kept until you clear them.'], rows);
+  }
+  return html || '<div class="empty" style="padding-top:40px"><p class="t3">Nothing here right now.</p></div>';
+}
+function emptyRunsHtml() {
+  return '<div class="empty"><div style="display:flex;justify-content:center;color:var(--text-3)">' + ic('runs', 28) + '</div><h2>Nothing Is Running Yet</h2><p class="t3">Everything you start shows up here: progress, decisions Coretax needs from you, and where the files went.</p>'
+    + '<div class="steps"><div><i>1</i><b>Pick clients</b><span>Ctrl K, or the For field on any page. One client or many.</span></div><div><i>2</i><b>Choose what to do</b><span>Download pages only read from Coretax. Pages under Change in Coretax always show a preview first.</span></div><div><i>3</i><b>Follow it here</b><span>Several runs work side by side; the rest wait in the queue.</span></div></div>'
+    + '<button type="button" class="btn btn-primary btn-lg" data-a="first-start">' + ic('down2', 16) + 'Start your first download</button></div>';
+}
+function filtersHtml() {
+  const c = counts(); const all = RUNS.length;
+  const ch = (k, label, n, cls) => '<button type="button" class="fchip ' + (cls || '') + '" data-a="filter" data-v="' + k + '" aria-pressed="' + (S.filter === k) + '">' + label + ' <b>' + n + '</b></button>';
+  return ch('all', 'All', all) + ch('hold', 'Needs decision', c.hold, c.hold ? 'warn' : '') + ch('running', 'Running', c.running) + ch('queued', 'Queued', c.queued) + ch('failed', 'Failed', c.failed + (c.stopped || 0), c.failed ? 'danger' : '') + ch('done', 'Finished', c.done);
+}
+function windowsHtml() {
+  const pics = ['ANDI', 'DEWI', 'RINA', 'SARI'];
+  let html = '<p class="lead">Each PIC can use up to ' + S.limits.pic + ' Coretax windows at once, ' + S.limits.total + ' in total. A window that is idle does not count. <button type="button" class="link" data-nav="settings">Change limits</button></p>';
+  pics.forEach((p) => {
+    const rs = winsInUse(p);
+    const ws = [];
+    for (let n = 1; n <= S.limits.pic; n++) ws.push(rs.find((r) => r.win === n) || null);
+    html += '<div class="pic-h">PIC ' + PICS[p] + '<span>' + rs.length + ' of ' + S.limits.pic + ' windows busy</span></div>';
+    ws.forEach((r, i) => {
+      const n = i + 1;
+      if (!r && n > 1 && !ws.slice(0, i).some((x) => !x)) {
+        html += '<div class="wrow" data-k="w:' + p + n + '"><span class="si q">' + ic('win', 16) + '</span><span class="t1 mono">' + p + ' #' + n + '</span><span class="t3">Idle · signed in, ready for the next run</span><span class="row"><button type="button" class="btn btn-sm btn-ghost" data-a="toast" data-msg="Window ' + p + ' #' + n + ' closed">Close</button></span></div>';
+      } else if (r) {
+        html += '<div class="wrow"><span class="si ' + (r.state === 'hold' ? 'warn' : '') + '">' + (r.state === 'hold' ? ic('alert', 16) : '<span class="spin"></span>') + '</span><span class="t1 mono">' + p + ' #' + n + '</span><span class="ell">' + esc(cl(r.client).n) + ' <span class="t3">· ' + esc(r.feat) + (r.state === 'hold' ? ' · on hold' : '') + '</span></span><span class="row"><button type="button" class="btn btn-sm" data-a="show-win" data-id="' + r.id + '">' + ic('win', 14) + 'Show</button><button type="button" class="btn btn-sm btn-ghost" data-a="open" data-id="' + r.id + '">Run details</button></span></div>';
+      }
+    });
+    if (!rs.length) html += '<div class="wrow"><span class="si q">' + ic('win', 16) + '</span><span class="t1 mono">' + p + ' #1</span><span class="t3">Not open · opens by itself when a run needs it</span><span class="row"><button type="button" class="btn btn-sm btn-ghost" data-a="toast" data-msg="Signing in as PIC ' + PICS[p] + '… (a Coretax window opens)">Sign in now</button></span></div>';
+  });
+  if (S.role !== 'restricted') html += '<div class="pic-h">Manual Session<span>One window; you sign in yourself, nothing is stored</span></div><div class="wrow"><span class="si q">' + ic('win', 16) + '</span><span class="t1 mono">Manual</span><span class="t3">Not open</span><span class="row"><button type="button" class="btn btn-sm" data-a="toast" data-msg="A Coretax window opens. Sign in yourself; every feature can then use this session.">' + ic('ext', 14) + 'Open Coretax</button></span></div>';
+  return html;
+}
+function runsView() {
+  return '<div class="page"><div class="ph"><div class="grow"><h2>Runs</h2><p class="lead">Everything started from this PC today: what needs you, what is running, what is waiting, and where results went.</p></div>'
+    + '<div class="seg" data-seg="runsTab"><span class="thumb"></span><button type="button" data-a="runs-tab" data-v="runs" aria-pressed="' + (S.runsTab === 'runs') + '">Runs</button><button type="button" data-a="runs-tab" data-v="windows" aria-pressed="' + (S.runsTab === 'windows') + '">Coretax windows</button></div></div>'
+    + (S.runsTab === 'runs' ? (RUNS.length ? '<div class="filters" id="filters">' + filtersHtml() + '</div>' : '') + '<div id="runlist"></div>' : '<div class="wins" id="wins">' + windowsHtml() + '</div>') + '</div>';
+}
+function refreshRuns() {
+  const list = $('#runlist'); if (list) flip(list, runsListHtml());
+  const f = $('#filters'); if (f) f.innerHTML = filtersHtml();
+  const w = $('#wins'); if (w) w.innerHTML = windowsHtml();
+}
+
+/* ---------- Drawer (run details) ---------- */
+function drawerHtml(r) {
+  const c = cl(r.client);
+  const tagMap = { running: r.stopping ? ['danger', 'Stopping…'] : r.pausing ? ['read', 'Pausing…'] : r.paused ? ['read', 'Paused'] : ['acc', 'Running'], hold: ['warn', 'Needs your decision'], queued: ['read', 'Queued · #' + queuePos(r)], done: ['ok', 'Finished'], failed: ['danger', 'Failed'], stopped: ['danger', 'Stopped'] };
+  const tg = tagMap[r.state];
+  let top = '';
+  const choice = (a, icon, label, why, primary) => '<button type="button" class="btn btn-sm' + (primary ? ' btn-primary' : '') + '" data-a="' + a + '" data-id="' + r.id + '">' + ic(icon, 14) + esc(label) + '</button><span>' + esc(why) + '</span>';
+  if (r.state === 'hold') top = '<div class="box warn">' + ic('alert', 18) + '<div class="b"><b>Needs your decision</b><div class="t1">' + esc(r.reason) + '</div><div style="margin-top:4px">Nothing is skipped automatically. You can fix it in the Coretax window first, then choose:</div><div class="choices">'
+    + choice('retry', 'retry', 'Try again', 'Repeat ' + cur(r) + ' from the start.', true)
+    + choice('skip', 'skip', 'Skip ' + cur(r), cur(r) + ' is left out, listed as not processed; the run continues.')
+    + choice('stop', 'stop', 'Stop', 'End the run here. What is done so far stays.')
+    + '</div><button type="button" class="link" style="margin-top:10px" data-a="show-win" data-id="' + r.id + '">Show the Coretax window to fix it yourself first</button><div>'
+    + '</div></div></div>';
+  if (r.stopping || r.pausing) top = '<div class="box info"><span class="si"><span class="spin"></span></span><div class="b"><b class="t1">' + (r.stopping ? 'Stopping after the current ' + (r.kind === 'write' ? 'step' : 'file') + '…' : 'Pausing after the current step…') + '</b><div>' + (r.stopping ? 'The run ends as soon as ' + (r.total ? cur(r) : 'this step') + ' is finished safely. Nothing is left half-done in Coretax.' : 'The Coretax window stays signed in. Resume continues where it paused.') + '</div></div></div>';
+  if (r.state === 'queued') top = '<div class="box info">' + ic('clock', 18) + '<div class="b"><b>Waiting for a Coretax window · #' + queuePos(r) + ' in line</b><div>' + esc((WAIT[r.wait] || WAIT.total)(r)) + ' Nothing has been done in Coretax yet.</div><div class="acts"><button type="button" class="btn btn-sm btn-danger" data-a="cancel-q" data-id="' + r.id + '">' + ic('x', 14) + 'Cancel queued run</button></div></div></div>';
+  if (r.state === 'failed') top = '<div class="box danger">' + ic('x', 18) + '<div class="b"><b>This run failed</b><div>' + esc(r.error) + '</div><div class="acts"><button type="button" class="btn btn-sm btn-primary" data-a="again" data-id="' + r.id + '">' + ic('retry', 14) + 'Run again</button></div></div></div>';
+  if (r.state === 'stopped') top = '<div class="box info">' + ic('stop', 18) + '<div class="b"><b class="t1">Stopped by you at ' + esc(r.ended || '') + '</b><div class="t1">' + esc(r.error) + '</div>' + (r.folder ? '<div class="mono" style="margin-top:6px;overflow-wrap:anywhere">' + esc(r.folder) + '</div>' : '') + '<div class="acts">' + (r.folder ? '<button type="button" class="btn btn-sm" data-a="folder" data-id="' + r.id + '">' + ic('folder', 14) + (r.kind === 'write' ? 'Open report' : 'Open folder') + '</button>' : '') + '<button type="button" class="btn btn-sm btn-ghost" data-a="again" data-id="' + r.id + '">' + ic('retry', 14) + 'Run the rest again</button></div></div></div>';
+  if (r.state === 'done') top = '<div class="box ok">' + ic('check', 18) + '<div class="b"><b>Finished at ' + esc(r.ended || '') + '</b><div>' + esc(r.result || (r.done + ' of ' + r.total + ' done' + (r.skipped.length ? ', ' + r.skipped.length + ' skipped' : '') + '.')) + '</div><div class="mono" style="margin-top:6px;color:var(--text-1);overflow-wrap:anywhere">' + esc(r.folder) + '</div><div class="acts"><button type="button" class="btn btn-sm btn-primary" data-a="folder" data-id="' + r.id + '">' + ic('folder', 14) + 'Open folder</button></div></div></div>';
+  let prog = '';
+  if (r.total > 1 || (r.total === 1 && r.state !== 'queued')) {
+    const st = r.items.map((it, i) => r.skipped.indexOf(i) >= 0 ? 'skip' : i < r.done ? 'ok' : i === r.done && r.state === 'hold' ? 'hold' : i === r.done && r.state === 'running' ? 'run' : '');
+    prog = '<div><div class="eyebrow">Progress</div><div class="big"><b>' + r.done + '</b><span>of ' + r.total + '</span></div><div class="bar' + (r.state === 'hold' ? ' hold' : r.state === 'done' ? ' ok' : '') + '"><i data-bar="d" style="--p:' + (r.done / r.total).toFixed(3) + '"></i></div><div class="pills">' + r.items.map((it, i) => '<span class="pill ' + st[i] + '">' + esc(it) + '</span>').join('') + '</div></div>';
+  } else if (!r.total && r.state === 'running') prog = '<div><div class="eyebrow">Progress</div><div style="color:var(--text-1);margin-bottom:8px">' + esc(r.notes[r.ind]) + '…</div><div class="bar ind"><i></i></div></div>';
+  const files = r.files.length ? '<div><div class="eyebrow">Files</div><div class="files">' + r.files.map((f) => '<div>' + ic('file', 14) + '<span class="ell">' + esc(f) + '</span></div>').join('') + '</div></div>' : '';
+  const facts = '<dl class="dl"><dt>Client</dt><dd>' + esc(c.n) + ' <span class="t3 mono">' + c.npwp + '</span></dd><dt>Coretax login</dt><dd>PIC ' + esc(PICS[r.pic]) + (r.win ? ' · window #' + r.win : '') + '</dd><dt>Effect</dt><dd>' + (r.kind === 'write' ? '<span class="tag write"><i></i>Changes data in Coretax</span>' : '<span class="tag read">Read-only download</span>') + '</dd><dt>Started</dt><dd>' + esc(r.started) + (r.ended ? ' · ended ' + esc(r.ended) : '') + '</dd>' + (r.folder ? '<dt>Save to</dt><dd class="mono">' + esc(r.folder) + '</dd>' : '') + (r.batch ? '<dt>Batch</dt><dd>' + esc(BATCHES[r.batch].feat) + ' for ' + RUNS.filter((x) => x.batch === r.batch).length + ' clients</dd>' : '') + '</dl>';
+  const log = '<div><div class="row" style="margin-bottom:8px"><div class="eyebrow grow" style="margin:0">Log of this run</div><button type="button" class="btn btn-sm btn-ghost" data-a="toast" data-msg="Log of this run copied">' + ic('copy', 14) + 'Copy</button></div><div class="log" id="dlog">' + r.log.map((l) => '<div class="' + l.c + '"><em>' + l.t + '</em>' + esc(l.m) + '</div>').join('') + '</div></div>';
+  const adv = ''; // Owner decision: while working only Stop and Pause/Resume; no step buttons, no page-size override.
+  const foot = r.state === 'running' || r.state === 'hold' ? '<div class="dw-f">' + (r.state === 'running' && can(r, 'pause') ? '<button type="button" class="btn" data-a="pause" data-id="' + r.id + '"' + (r.stopping || r.pausing ? ' disabled' : '') + '>' + ic(r.paused ? 'play' : 'pause', 15) + (r.paused ? 'Resume' : r.pausing ? 'Pausing…' : 'Pause') + '</button>' : '') + '<span class="grow"></span><button type="button" class="btn btn-danger" data-a="stop" data-id="' + r.id + '"' + (r.stopping ? ' disabled' : '') + '>' + ic('stop', 15) + (r.stopping ? 'Stopping…' : 'Stop this run') + '</button></div>' : '';
+  return '<div class="dw-h"><div class="grow" style="min-width:0"><div class="row" style="margin-bottom:6px"><span class="tag ' + tg[0] + '">' + tg[1] + '</span></div><h2>' + esc(c.n) + '</h2><div class="s">' + esc(r.feat) + ' · ' + esc(r.params) + '</div></div><button type="button" class="ib" data-a="close-drawer" aria-label="Close">' + ic('x', 18) + '</button></div>'
+    + '<div class="dw-b">' + top + prog + files + facts + log + adv + '</div>' + foot;
+}
+function openDrawer(id) {
+  S.drawer = id; const d = $('#drawer'); d.innerHTML = drawerHtml(RUNS.find((r) => r.id === id)); placeThumbs(d);
+  d.classList.add('on'); $('#scrim').classList.add('on');
+  const l = $('#dlog'); if (l) l.scrollTop = l.scrollHeight;
+}
+function refreshDrawer() {
+  if (!S.drawer) return; const r = RUNS.find((x) => x.id === S.drawer); const d = $('#drawer');
+  if (!r) return closeDrawer();
+  const sc = $('.dw-b', d) ? $('.dw-b', d).scrollTop : 0; const advOpen = $('.dw-b .coll.open', d);
+  const oldP = $('[data-bar="d"]', d) ? $('[data-bar="d"]', d).style.getPropertyValue('--p') : null;
+  const nLog = $$('#dlog > div', d).length;
+  d.innerHTML = drawerHtml(r); placeThumbs(d);
+  if (advOpen) { const c = $('.dw-b .coll', d); if (c) { c.classList.add('open'); $('.disc', d).setAttribute('aria-expanded', 'true'); } }
+  $('.dw-b', d).scrollTop = sc;
+  $$('#dlog > div', d).forEach((el, i) => { if (i < nLog) el.style.animation = 'none'; });
+  const l = $('#dlog'); if (l) l.scrollTop = l.scrollHeight;
+  const bar = $('[data-bar="d"]', d);
+  if (bar && oldP != null && !rm()) { const np = bar.style.getPropertyValue('--p'); bar.style.transition = 'none'; bar.style.setProperty('--p', oldP); void bar.offsetWidth; bar.style.transition = ''; bar.style.setProperty('--p', np); }
+}
+/* ---------- Run-log strip: latest meaningful line of ONE run (decision first, else the latest active run).
+   Global notices (updates, errors not tied to a run) go to Settings / a toast, never here. ---------- */
+S.stripOpen = store.get('strip', false); S.stripRun = null;
+function stripRun() {
+  const pick = RUNS.find((r) => r.id === S.stripRun);
+  if (pick) return pick;
+  return RUNS.find((r) => r.state === 'hold') || RUNS.filter((r) => r.state === 'running').sort((a, b) => (b.log.length ? b.log[b.log.length - 1].t : '').localeCompare(a.log.length ? a.log[a.log.length - 1].t : ''))[0] || RUNS[RUNS.length - 1] || null;
+}
+function renderStrip() {
+  const el = $('#strip');
+  if (!el.firstChild) el.innerHTML = '<div class="strip-bar" id="strip-bar"></div><div class="coll" id="strip-coll"><div><div class="ci" id="strip-body"></div></div></div>';
+  const r = stripRun();
+  $('#strip-coll').classList.toggle('open', !!(S.stripOpen && r));
+  if (!r) { $('#strip-bar').innerHTML = '<span class="strip-main"><span class="t3">No runs yet. The log of each run appears here and in its details.</span></span>'; $('#strip-body').innerHTML = ''; return; }
+  const last = r.log[r.log.length - 1] || { t: '', m: '' };
+  $('#strip-bar').innerHTML = '<button type="button" class="strip-main" data-a="strip-toggle" aria-expanded="' + !!S.stripOpen + '" title="Show or hide the log of this run">' + stateIcon(r).replace('si ', 'si ') + '<b class="ell" style="max-width:240px">' + esc(cl(r.client).n) + '</b><span class="t3" style="white-space:nowrap">' + esc(r.feat) + '</span><span class="ln ' + last.c + '"><em>' + last.t + '</em>' + esc(last.m) + '</span></button>'
+    + '<button type="button" class="btn btn-sm btn-ghost" data-a="open" data-id="' + r.id + '">Details</button><button type="button" class="ib" data-a="strip-toggle" aria-label="' + (S.stripOpen ? 'Hide log' : 'Show log') + '"><span class="chev" style="display:flex;transform:rotate(' + (S.stripOpen ? 90 : -90) + 'deg)">' + ic('right', 15) + '</span></button>';
+  const act = RUNS.filter((x) => x.state === 'hold' || x.state === 'running').slice(0, 8);
+  const body = $('#strip-body'); const n = $$('.log > div', body).length; const same = body.dataset.run === r.id;
+  body.dataset.run = r.id;
+  body.innerHTML = '<div class="runsel"><span class="t3" style="font-size:12px;align-self:center;margin-right:4px">Log of</span>' + act.map((x) => '<button type="button" class="fchip" data-a="strip-run" data-id="' + x.id + '" aria-pressed="' + (x === r) + '">' + (x.state === 'hold' ? '<span style="color:var(--warn)">●</span>' : '') + esc(x.client) + ' · ' + esc(x.feat) + '</button>').join('') + '</div><div class="log">' + r.log.map((l, i) => '<div class="' + l.c + '"' + (same && i < n ? ' style="animation:none"' : '') + '><em>' + l.t + '</em>' + esc(l.m) + '</div>').join('') + '</div>';
+  const lg2 = $('.log', body); lg2.scrollTop = lg2.scrollHeight;
+}
+function closeDrawer() { S.drawer = null; $('#drawer').classList.remove('on'); $('#scrim').classList.remove('on'); }
+
+/* ---------- Toasts and dialogs ---------- */
+function toast(msg, icon, err, action) {
+  const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : '');
+  t.innerHTML = ic(icon || 'check', 16) + '<span class="grow">' + esc(msg) + '</span>' + (action ? '<button type="button" class="btn btn-sm" data-a="' + action[1] + '">' + esc(action[0]) + '</button>' : '');
+  $('#toasts').appendChild(t); requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add('in')));
+  setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 260); }, STATIC ? 60000 : 4200);
+}
+let dlgClose = null;
+function dialog(html, cls, onBind) {
+  closeDialog(true);
+  const d = document.createElement('div'); d.className = 'dlg ' + (cls || ''); d.setAttribute('role', 'dialog'); d.innerHTML = html;
+  $('#layer').appendChild(d); $('#scrim').classList.add('on');
+  requestAnimationFrame(() => requestAnimationFrame(() => d.classList.add('in')));
+  if (onBind) onBind(d);
+  dlgClose = () => { d.classList.remove('in'); setTimeout(() => d.remove(), rm() ? 0 : 200); if (!S.drawer) $('#scrim').classList.remove('on'); dlgClose = null; };
+  const f = $('input[type=text], input:not([type])', d); if (f) setTimeout(() => f.focus({ preventScroll: true }), 30);
+  return d;
+}
+function closeDialog(instant) { if (!dlgClose) return; if (instant) { $$('#layer .dlg').forEach((x) => x.remove()); dlgClose = null; if (!S.drawer) $('#scrim').classList.remove('on'); return; } dlgClose(); }
+/* Confirmation for actions that change data in Coretax. tier 1 = creates drafts / records (one step);
+   tier 2 = irreversible (ack checkbox); typed = also type the client code. */
+function confirmChange(o) {
+  const html = '<div class="dlg-h"><span class="si ' + (o.tier === 2 ? (o.danger ? 'danger' : 'warn') : 'q') + '">' + ic(o.tier === 2 ? 'alert' : 'info', 18) + '</span><h2>' + esc(o.title) + '</h2></div>'
+    + '<div class="dlg-b"><dl class="dl">' + o.facts.map((f) => '<dt>' + esc(f[0]) + '</dt><dd>' + f[1] + '</dd>').join('') + '</dl>'
+    + (o.extra || '') + '<div class="box ' + (o.tier === 2 ? (o.danger ? 'danger' : 'warn') : 'info') + '">' + ic(o.tier === 2 ? 'alert' : 'info', 16) + '<div class="b">' + o.effect + '</div></div>'
+    + (o.tier === 2 && !o.typed ? '<label class="ack"><input type="checkbox" id="ack"><span>' + esc(o.ack) + '</span></label>' : '')
+    + (o.typed ? '<label class="t3" for="typed">Type <b class="mono t1">' + esc(o.typed) + '</b> to confirm</label><input class="input mono" id="typed" autocomplete="off" style="max-width:200px">' : '') + '</div>'
+    + '<div class="dlg-f"><span class="t3 grow" style="font-size:12.5px">' + (o.tier === 2 ? 'Cannot be undone from Taxio Pilot.' : 'You can delete drafts in Coretax.') + '</span><button type="button" class="btn" data-a="close-dialog">' + esc(o.backLabel || 'Back') + '</button><button type="button" class="btn ' + (o.danger ? 'btn-danger-solid' : 'btn-primary') + '" id="dlg-go"' + (o.tier === 2 ? ' disabled' : '') + '>' + esc(o.ok) + '</button></div>';
+  dialog(html, '', (d) => {
+    const go = $('#dlg-go', d);
+    const ack = $('#ack', d), typed = $('#typed', d);
+    if (ack) ack.addEventListener('change', () => { go.disabled = !ack.checked; });
+    if (typed) typed.addEventListener('input', () => { go.disabled = typed.value.trim().toUpperCase() !== o.typed; });
+    go.addEventListener('click', () => { closeDialog(); o.onOk(); });
+  });
+}
+
+/* ---------- Starting runs (dedupe rules from gui/server.js withRules) ---------- */
+function addRun(spec) {
+  const same = RUNS.find((r) => (r.state === 'queued' || active(r)) && r.client === spec.client && r.feat === spec.feat && r.params === spec.params);
+  if (same) return { refused: true };
+  const r = run(Object.assign({ state: 'queued', _new: true }, spec));
+  RUNS.push(r); promote();
+  return r;
+}
+function started(r, label) {
+  if (r.refused) { toast('Not started: an identical ' + label + ' run for this client is already queued or running.', 'alert', true, ['View runs', 'go-runs']); return; }
+  toast(label + ' for ' + cl(r.client).n + (r.state === 'queued' ? ' queued (#' + queuePos(r) + ')' : ' started'), 'check', false, ['View', 'go-runs']);
+  refresh();
+}
+
+/* ---------- Download pages ---------- */
+const DL = {
+  spt: { typeLabel: 'Jenis Pajak', groups: [['SPT Masa', [['pph21', 'PPh 21/26'], ['unifikasi', 'PPh Unifikasi'], ['ppn', 'PPN']]], ['SPT Tahunan', [['badan', 'PPh Badan'], ['op', 'PPh Orang Pribadi']]]], def: ['pph21'], lead: 'Downloads SPT, BPE and Lampiran from Coretax. Nothing is submitted.', folder: 'SPT',
+    adv: '<div class="cap">Documents</div><div class="tgs"><button type="button" class="tg" data-a="tg" aria-pressed="true">BPE</button><button type="button" class="tg" data-a="tg" aria-pressed="true">Induk</button><button type="button" class="tg" data-a="tg" aria-pressed="false">Lampiran</button></div><div class="cap" style="margin-top:12px">PDF layout</div><div class="seg" data-seg="lay"><span class="thumb"></span><button type="button" data-a="segx" aria-pressed="true">Combined</button><button type="button" data-a="segx" aria-pressed="false">One file per document</button></div>' },
+  ebupot: { typeLabel: 'Bukti Potong type', groups: [['', [['bpmp', 'BPMP'], ['bp21', 'BP21'], ['bp26', 'BP26'], ['bpa1', 'BPA1'], ['bppu', 'BPPU'], ['bpnr', 'BPNR'], ['ddp', 'Dokumen yang Dipersamakan']]]], def: ['bpmp'], lead: 'Downloads Bukti Potong you issued as PDF or Excel. Fetches every page, not only what Coretax shows on screen.', folder: 'e-Bupot',
+    adv: '<div class="cap">Status</div><div class="seg" data-seg="st"><span class="thumb"></span><button type="button" data-a="segx" aria-pressed="true">Telah Terbit</button><button type="button" data-a="segx" aria-pressed="false">Belum Terbit</button></div><div class="cap" style="margin-top:12px">Format</div><div class="seg" data-seg="fm"><span class="thumb"></span><button type="button" data-a="segx" aria-pressed="true">PDF</button><button type="button" data-a="segx" aria-pressed="false">Excel</button></div>' },
+  bpsaya: { typeLabel: 'Bukti Potong type', groups: [['', [['bppu', 'BPPU'], ['bpnr', 'BPNR'], ['bp21', 'BP21'], ['bpa1', 'BPA1']]]], def: ['bppu'], lead: 'Downloads Bukti Potong Saya: slips other parties issued to this client.', folder: 'Bukti Potong Saya',
+    adv: '<div class="cap">Format</div><div class="seg" data-seg="fm2"><span class="thumb"></span><button type="button" data-a="segx" aria-pressed="true">PDF and Excel recap</button><button type="button" data-a="segx" aria-pressed="false">Excel recap only</button></div>' },
+  faktur: { typeLabel: 'Document type', groups: [['Faktur', [['pm', 'Pajak Masukan'], ['pk', 'Pajak Keluaran']]], ['Retur and others', [['rpm', 'Retur Pajak Masukan'], ['rpk', 'Retur Pajak Keluaran'], ['dlm', 'Dokumen Lain Masukan'], ['dlk', 'Dokumen Lain Keluaran']]]], def: ['pm', 'pk'], lead: 'Downloads e-Faktur lists as Excel, fetched directly from Coretax.', folder: 'e-Faktur',
+    adv: '<div class="cap">Format</div><div class="seg" data-seg="fm3"><span class="thumb"></span><button type="button" data-a="segx" aria-pressed="true">Excel</button><button type="button" data-a="segx" aria-pressed="false">Excel and PDF</button></div>' }
+};
+const F = {};
+function form(id) { if (!F[id]) F[id] = { for: id === 'faktur' ? ['MKF'] : ['CSA'], types: (DL[id] ? DL[id].def : []).slice(), masa: [10], year: 2026, adv: false }; return F[id]; }
+const typeName = (id, k) => { let n = k; DL[id].groups.forEach((g) => g[1].forEach((t) => { if (t[0] === k) n = t[1]; })); return n; };
+function masaText(f) {
+  const m = f.masa.slice().sort((a, b) => a - b);
+  if (!m.length) return 'no Masa Pajak';
+  if (m.length === 1) return mm(m[0]) + '/' + f.year;
+  const contiguous = m[m.length - 1] - m[0] === m.length - 1;
+  return contiguous ? mm(m[0]) + '–' + mm(m[m.length - 1]) + '/' + f.year : m.map(mm).join(', ') + '/' + f.year;
+}
+function forHtml(page, single) {
+  const f = form(page);
+  const show = S.showAllFor[page] || f.for.length <= 5 ? f.for : f.for.slice(0, 4);
+  const chips = show.map((c) => { const x = cl(c); const pic = S.picSel[c] || x.p[0]; return '<span class="cchip" data-chip="' + c + '"><span class="code">' + c + '</span><span class="ell" style="max-width:210px">' + esc(x.n) + '</span>' + (x.p.length > 1 ? '<button type="button" class="pic multi" data-a="pic-cycle" data-c="' + c + '" title="This client has ' + x.p.length + ' PICs. Click to switch.">PIC ' + pic + '</button>' : '<span class="pic">' + (pic === 'own' ? 'own login' : 'PIC ' + pic) + '</span>') + (x.kind === 'local' ? '<span class="tag local">this PC</span>' : '') + '<button type="button" class="ib" style="width:22px;height:22px" data-a="rm-client" data-page="' + page + '" data-c="' + c + '" aria-label="Remove ' + esc(x.n) + '">' + ic('x', 13) + '</button></span>'; }).join('');
+  const more = f.for.length > 5 && !S.showAllFor[page] ? '<button type="button" class="btn btn-sm btn-ghost" data-a="more-for" data-page="' + page + '">+' + (f.for.length - 4) + ' more</button>' : '';
+  const groups = single ? '' : '<div class="row wrap" style="margin-top:8px;gap:4px"><span class="t3" style="font-size:12.5px;margin-right:4px">Saved groups</span>' + GROUPS.map((g, i) => '<button type="button" class="btn btn-sm btn-ghost" data-a="group" data-page="' + page + '" data-g="' + i + '">' + ic('users', 14) + esc(g.n) + ' <span class="t3">' + g.c.length + '</span></button>').join('') + '</div>';
+  return '<div class="frow"><div class="fl">For<small>' + (single ? 'One client per run here' : 'One client or many. Each client becomes its own run.') + '</small></div><div><div class="cchips">' + chips + more
+    + '<button type="button" class="btn btn-sm" data-a="pick" data-page="' + page + '" data-single="' + (single ? 1 : 0) + '">' + ic(single ? 'search' : 'plus', 14) + (single ? (f.for.length ? 'Change' : 'Choose client') : 'Add clients') + ' <kbd>Ctrl K</kbd></button></div>' + groups + '</div></div>';
+}
+function masaRow(page, single) {
+  const f = form(page);
+  return '<div class="frow"><div class="fl">Masa Pajak<small>' + (single ? 'One Masa Pajak' : 'One or several months') + '</small></div><div>'
+    + (single ? '' : '<div class="quick"><button type="button" class="btn btn-sm btn-ghost" data-a="masa-q" data-page="' + page + '" data-v="year">Full year</button><button type="button" class="btn btn-sm btn-ghost" data-a="masa-q" data-page="' + page + '" data-v="q">Last quarter</button><button type="button" class="btn btn-sm btn-ghost" data-a="masa-q" data-page="' + page + '" data-v="m">Last month</button><span class="grow"></span>')
+    + (single ? '<div class="quick"><span class="grow"></span>' : '') + '<span class="yr"><button type="button" class="ib" data-a="yr" data-page="' + page + '" data-v="-1" aria-label="Previous year">' + ic('back', 13) + '</button><span class="mono">' + f.year + '</span><button type="button" class="ib" data-a="yr" data-page="' + page + '" data-v="1" aria-label="Next year">' + ic('skip', 13) + '</button></span></div>'
+    + '<div class="months">' + MONTHS.map((m, i) => '<button type="button" class="tg" data-a="month" data-page="' + page + '" data-single="' + (single ? 1 : 0) + '" data-v="' + (i + 1) + '" aria-pressed="' + (f.masa.indexOf(i + 1) >= 0) + '">' + m + '</button>').join('') + '</div></div></div>';
+}
+function dlView(id) {
+  const d = DL[id], f = form(id);
+  const types = d.groups.map((g) => (g[0] ? '<div class="cap">' + g[0] + '</div>' : '') + '<div class="tgs">' + g[1].map((t) => {
+    const locked = S.role === 'restricted' && id === 'spt' && t[0] === 'pph21';
+    return '<button type="button" class="tg" data-a="type" data-page="' + id + '" data-v="' + t[0] + '" aria-pressed="' + (!locked && f.types.indexOf(t[0]) >= 0) + '"' + (locked ? ' disabled title="Not available for Restricted Editor"' : '') + '>' + (locked ? ic('lock', 13) : '') + esc(t[1]) + '</button>';
+  }).join('') + '</div>').join('') + (S.role === 'restricted' && id === 'spt' ? '<div class="note">' + ic('lock', 13) + 'SPT PPh 21/26 is not available for Restricted Editor.</div>' : '');
+  return '<div class="page"><p class="lead" style="margin-bottom:18px">' + d.lead + '</p>'
+    + forHtml(id) + '<div class="frow"><div class="fl">' + d.typeLabel + '</div><div>' + types + '</div></div>' + masaRow(id)
+    + '<div class="frow"><div class="fl">Options<small>Rarely changed</small></div><div><button type="button" class="disc" data-a="disc" aria-expanded="' + f.adv + '">' + ic('right', 14) + 'Destination folder, documents and format</button><div class="coll' + (f.adv ? ' open' : '') + '" data-adv="' + id + '"><div><div class="ci"><div class="cap">Save to</div><div class="row wrap" style="margin-bottom:12px"><span class="mono t1">D:\\Contoh\\CoretaxAgent\\&lt;client&gt;\\' + d.folder + '</span><button type="button" class="link" data-a="toast" data-msg="The Windows folder picker opens here">Change</button></div>' + d.adv + '</div></div></div></div></div>'
+    + '<div class="abar" id="abar">' + dlBar(id) + '</div></div>';
+}
+function dlBar(id) {
+  const f = form(id), n = f.for.length, t = f.types.length, m = f.masa.length;
+  const ok = n && t && m;
+  const label = !n ? 'Choose a client first' : n === 1 ? 'Start download' : 'Review ' + n + ' runs';
+  const total = n * t * m;
+  const dest = n === 1 ? 'D:\\Contoh\\CoretaxAgent\\' + f.for[0] + '\\' + DL[id].folder : 'D:\\Contoh\\CoretaxAgent\\<client>\\' + DL[id].folder;
+  const sum = n ? '<b>' + total + ' download' + (total === 1 ? '' : 's') + '</b> · ' + (t ? f.types.map((k) => typeName(id, k)).join(', ') : 'no ' + DL[id].typeLabel) + ' · Masa Pajak ' + masaText(f) + ' · ' + (n === 1 ? esc(cl(f.for[0]).n) : n + ' clients') + ' <span class="t3">→</span> <span class="mono" style="font-size:12px">' + esc(dest) + '</span>' : '<b>No client yet</b> · choose one or more clients above';
+  return '<div class="sum"><div class="ell" style="font-size:var(--fs-md);color:var(--text-2)">' + sum + '</div><div>' + (n > 1 ? n + ' runs, one per client; up to ' + S.limits.total + ' side by side, the rest queue. ' : '') + 'Read-only: nothing is submitted or changed in Coretax.</div></div><button type="button" class="btn btn-primary btn-lg" data-a="dl-start" data-page="' + id + '"' + (ok ? '' : ' disabled') + '>' + ic(n > 1 ? 'users' : 'down2', 16) + label + '</button>';
+}
+function dlParams(id) { const f = form(id); return f.types.map((k) => typeName(id, k)).join(', ') + ' · ' + masaText(f); }
+function startDownload(id) {
+  const f = form(id); const feat = PAGES[id].label;
+  if (f.for.length === 1) {
+    const c = f.for[0];
+    const r = addRun({ client: c, pic: S.picSel[c] || cl(c).p[0], feat, params: dlParams(id), total: f.masa.length * f.types.length, items: f.masa.slice().sort((a, b) => a - b).map((m) => mm(m) + String(f.year).slice(2)).concat([]).slice(0, Math.max(1, f.masa.length)), folder: 'D:\\Contoh\\CoretaxAgent\\' + c + '\\' + DL[id].folder });
+    if (!r.refused) { r.total = r.items.length; }
+    return started(r, feat);
+  }
+  reviewBatch(id);
+}
+function reviewBatch(id) {
+  const f = form(id); const feat = PAGES[id].label; const params = dlParams(id);
+  let used = winsInUse().length; const perPic = {}; winsInUse().forEach((r) => { perPic[r.pic] = (perPic[r.pic] || 0) + 1; });
+  let qpos = RUNS.filter((r) => r.state === 'queued').length;
+  const rows = f.for.map((c) => {
+    const pic = S.picSel[c] || cl(c).p[0];
+    const dup = RUNS.find((r) => (r.state === 'queued' || active(r)) && r.client === c && r.feat === feat && r.params === params);
+    const lock = RUNS.find((r) => active(r) && r.client === c && r.feat === feat);
+    let what;
+    if (dup) what = '<span style="color:var(--warn-text)">Skipped: an identical run is already in progress</span>';
+    else if (lock) { qpos++; what = 'Queued #' + qpos + ': after the running ' + feat + ' run of this client'; }
+    else if (used < S.limits.total && (perPic[pic] || 0) < S.limits.pic) { used++; perPic[pic] = (perPic[pic] || 0) + 1; what = '<span style="color:var(--ok-text)">Starts now</span>'; }
+    else { qpos++; what = 'Queued #' + qpos; }
+    return '<tr><td>' + esc(cl(c).n) + '</td><td class="t3">' + (pic === 'own' ? 'own login' : pic) + '</td><td>' + what + '</td></tr>';
+  }).join('');
+  dialog('<div class="dlg-h"><h2>Review ' + f.for.length + ' Runs</h2><span class="tag read">Read-only</span><button type="button" class="ib" data-a="close-dialog" aria-label="Close">' + ic('x', 18) + '</button></div>'
+    + '<div class="dlg-b"><div><b class="t1">' + esc(feat) + ' · ' + esc(params) + '</b><div class="t3" style="font-size:12.5px;margin-top:2px">One run per client. A run that needs a decision holds only its own window; the others continue.</div></div>'
+    + '<table class="tb"><thead><tr><th>Client</th><th>PIC</th><th>What happens</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+    + '<div class="dlg-f"><span class="t3 grow mono" style="font-size:12px">D:\\Contoh\\CoretaxAgent\\&lt;client&gt;\\' + DL[id].folder + '</span><button type="button" class="btn" data-a="close-dialog">Back to the form</button><button type="button" class="btn btn-primary" data-a="batch-go" data-page="' + id + '">' + ic('play', 14) + 'Start ' + f.for.length + ' runs</button></div>', 'wide');
+}
+function startBatch(id) {
+  const f = form(id); const feat = PAGES[id].label; const params = dlParams(id);
+  const bid = 'b' + (++NID); BATCHES[bid] = { id: bid, feat, params };
+  let n = 0;
+  f.for.forEach((c) => { const r = addRun({ client: c, pic: S.picSel[c] || cl(c).p[0], batch: bid, feat, params, items: f.masa.slice().sort((a, b) => a - b).map((m) => mm(m) + String(f.year).slice(2)), folder: 'D:\\Contoh\\CoretaxAgent\\' + c + '\\' + DL[id].folder }); if (!r.refused) { r.total = r.items.length; n++; } });
+  S.openBatch[bid] = false;
+  toast(n + ' ' + feat + ' runs added. The form stays as it is.', 'check', false, ['View runs', 'go-runs']);
+  refresh();
+}
+
+/* ---------- e-Bupot Upload & Issue ---------- */
+const U = { tab: 'issue', type: 'BPMP', preview: 'none', sel: [true, true, true], file: false };
+const SLIPS = [['0000000000000001', 'CONTOH SATU', 15000000, 750000], ['0000000000000002', 'CONTOH DUA', 20000000, 1000000], ['0000000000000003', 'CONTOH TIGA', 10000000, 500000]];
+function uploadView() {
+  if (!F.upload) F.upload = { for: ['CSA'], masa: [10], year: 2026 };
+  const tabs = '<div class="seg" data-seg="utab" style="margin-bottom:18px"><span class="thumb"></span><button type="button" data-a="utab" data-v="upload" aria-pressed="' + (U.tab === 'upload') + '">Upload to Belum Terbit</button><button type="button" data-a="utab" data-v="issue" aria-pressed="' + (U.tab === 'issue') + '">Issue &amp; sign</button></div>';
+  if (U.tab === 'upload') {
+    const file = U.file ? '<div class="file">' + ic('file', 18) + '<div class="grow"><b>contoh-impor.xlsx</b><div class="t3">BPMP · 42 Bukti Potong · Masa Pajak 10/2026 · NPWP pemotong 0000000000000000 · no problems found</div></div><button type="button" class="btn btn-sm btn-ghost" data-a="upfile">Change file</button></div>'
+      : '<div class="drop">' + ic('upload', 20) + '<div class="grow">Import Excel or XML from Coretax. The Bukti Potong type is detected automatically (BPMP, BP21, BPA1, BPPU).</div><button type="button" class="btn" data-a="upfile">Choose file</button></div>';
+    return '<div class="page">' + tabs + '<p class="lead" style="margin-bottom:18px">Creates draft Bukti Potong in Belum Terbit. Does not issue or sign. If any row is wrong, Coretax creates nothing and the errors appear in the run log.</p>'
+      + forHtml('upload', true) + '<div class="frow"><div class="fl">File</div><div>' + file + '</div></div>'
+      + '<div class="abar"><div class="sum"><b>' + (U.file ? 'Upload 42 BPMP to Belum Terbit' : 'Choose a file') + '</b><div>' + (U.file ? esc(cl(F.upload.for[0]).n) + ' · Masa Pajak 10/2026 · you still issue and sign them yourself' : 'Nothing is uploaded until you confirm.') + '</div></div><button type="button" class="btn btn-primary btn-lg" data-a="up-confirm"' + (U.file && F.upload.for.length ? '' : ' disabled') + '>' + ic('upload', 16) + 'Upload to Belum Terbit…</button></div></div>';
+  }
+  let prev = '';
+  if (U.preview === 'loading') prev = '<table class="tb"><thead><tr><th style="width:28px"></th><th>NIK</th><th>Nama</th><th class="num">Bruto</th><th class="num">PPh</th></tr></thead><tbody>' + [1, 2, 3].map(() => '<tr><td><div class="sk" style="width:14px"></div></td><td><div class="sk" style="width:140px"></div></td><td><div class="sk" style="width:110px"></div></td><td><div class="sk" style="width:80px;margin-left:auto"></div></td><td><div class="sk" style="width:60px;margin-left:auto"></div></td></tr>').join('') + '</tbody></table><div class="note">' + ic('search', 13) + 'Reading Belum Terbit in Coretax… (read-only)</div>';
+  else if (U.preview === 'ready') {
+    const n = U.sel.filter(Boolean).length; const tb = SLIPS.reduce((a, s, i) => a + (U.sel[i] ? s[2] : 0), 0), tt = SLIPS.reduce((a, s, i) => a + (U.sel[i] ? s[3] : 0), 0);
+    prev = '<table class="tb"><thead><tr><th style="width:28px"></th><th>NIK</th><th>Nama</th><th class="num">Bruto</th><th class="num">PPh</th></tr></thead><tbody>' + SLIPS.map((s, i) => '<tr class="rowin" style="animation-delay:' + i * 40 + 'ms"><td><input type="checkbox" data-a="slip" data-i="' + i + '"' + (U.sel[i] ? ' checked' : '') + ' aria-label="Include ' + s[1] + '"></td><td class="mono">' + s[0] + '</td><td>' + s[1] + '</td><td class="num">' + rp(s[2]) + '</td><td class="num">' + rp(s[3]) + '</td></tr>').join('') + '</tbody><tfoot><tr><td></td><td colspan="2" class="t3">' + n + ' of ' + SLIPS.length + ' selected</td><td class="num">' + rp(tb) + '</td><td class="num">' + rp(tt) + '</td></tr></tfoot></table><div class="note">' + ic('info', 13) + 'Only this list is issued. If Belum Terbit changes in Coretax before you confirm, Taxio Pilot stops and asks again.<button type="button" class="link" data-a="ipreview" style="margin-left:6px">Preview again</button></div>';
+  } else prev = '<div class="t3">Read Belum Terbit first. You see exactly which Bukti Potong would be issued before anything changes.</div>';
+  const n = U.sel.filter(Boolean).length;
+  const primary = U.preview === 'ready' ? '<button type="button" class="btn btn-primary btn-lg" data-a="issue-confirm"' + (n ? '' : ' disabled') + '>' + ic('pen', 16) + 'Issue &amp; sign ' + n + ' Bukti Potong…</button>' : '<button type="button" class="btn btn-primary btn-lg" data-a="ipreview"' + (U.preview === 'loading' || !F.upload.for.length ? ' disabled' : '') + '>' + ic('eye', 16) + 'Preview Belum Terbit</button>';
+  return '<div class="page">' + tabs + forHtml('upload', true)
+    + '<div class="frow"><div class="fl">Bukti Potong type</div><div class="tgs">' + ['BPMP', 'BP21', 'BPA1', 'BPPU'].map((t) => '<button type="button" class="tg" data-a="utype" data-v="' + t + '" aria-pressed="' + (U.type === t) + '">' + t + '</button>').join('') + '</div></div>'
+    + masaRow('upload', true) + '<div class="frow"><div class="fl">Preview<small>Step 1 of 2 · read-only</small></div><div id="iprev">' + prev + '</div></div>'
+    + '<div class="abar"><div class="sum"><b>' + (U.preview === 'ready' ? 'Step 2 of 2 · Issue &amp; sign' : 'Step 1 of 2 · Preview') + '</b><div>' + (U.preview === 'ready' ? 'Signed with the passphrase of PIC ' + PICS[cl(F.upload.for[0] || 'CSA').p[0]] + '. Asks for confirmation first.' : 'Nothing changes in Coretax in this step.') + '</div></div>' + primary + '</div></div>';
+}
+
+/* ---------- Fix Bukti Potong (find / amend / cancel; API exists, no dashboard page today) ---------- */
+const X = { res: 'none', q: '' };
+const FOUND = [['2600000101', '0000000000000001', 'CONTOH SATU', 15000000, 750000], ['2600000102', '0000000000000002', 'CONTOH DUA', 20000000, 1000000], ['2600000107', '0000000000000007', 'CONTOH TUJUH', 8000000, 400000]];
+function fixView() {
+  if (!F.fix) F.fix = { for: ['CSA'], masa: [10], year: 2026 };
+  let res = '';
+  if (X.res === 'loading') res = '<div class="frow"><div class="fl">Found</div><div>' + [1, 2, 3].map(() => '<div class="row" style="padding:10px 0;border-top:1px solid var(--line)"><div class="sk" style="width:90px"></div><div class="sk" style="width:150px"></div><div class="sk grow"></div></div>').join('') + '</div></div>';
+  if (X.res === 'ready') res = '<div class="frow"><div class="fl">Found<small>3 in Telah Terbit</small></div><div><table class="tb"><thead><tr><th>Nomor</th><th>Nama</th><th class="num">Bruto</th><th></th></tr></thead><tbody>' + FOUND.map((b, i) => '<tr class="rowin" style="animation-delay:' + i * 40 + 'ms"><td class="mono">' + b[0] + '</td><td>' + b[2] + '<div class="t3 mono" style="font-size:11.5px">' + b[1] + '</div></td><td class="num">' + rp(b[3]) + '</td><td style="text-align:right;white-space:nowrap"><button type="button" class="btn btn-sm" data-a="amend" data-i="' + i + '">Amend…</button> <button type="button" class="btn btn-sm btn-danger" data-a="cancel-bp" data-i="' + i + '">Cancel…</button></td></tr>').join('') + '</tbody></table></div></div>';
+  return '<div class="page"><p class="lead" style="margin-bottom:18px">Find an issued Bukti Potong, then amend it (Pembetulan) or cancel it (Batalkan). Finding is read-only; amending and cancelling ask for confirmation.</p>' + forHtml('fix', true) + masaRow('fix', true)
+    + '<div class="frow"><div class="fl">Search</div><div><input class="input" style="width:100%;max-width:420px" id="fixq" placeholder="NIK, name or Bukti Potong number" value="' + esc(X.q) + '"></div></div>' + res
+    + '<div class="abar"><div class="sum"><b>Find in Telah Terbit</b><div>Read-only. Nothing changes until you choose Amend or Cancel on a result.</div></div><button type="button" class="btn ' + (X.res === 'ready' ? '' : 'btn-primary ') + 'btn-lg" data-a="fix-find">' + ic('search', 16) + 'Find</button></div></div>';
+}
+
+/* ---------- Other "Change in Coretax" pages and Annual PPh 21 Recap ---------- */
+const T = { kredit: { file: false, mode: 0 }, billing: { nominal: '1.500.000' }, dividen: { mode: 0, file: false }, konsep: { spt: 0, act: 0 }, a1: { tab: 0, file: false } };
+function taskShell(id, lead, rows, bar) { return '<div class="page"><p class="lead" style="margin-bottom:18px">' + lead + '</p>' + rows + '<div class="abar">' + bar + '</div></div>'; }
+function segHtml(key, opts, cur) { return '<div class="seg" data-seg="' + key + '"><span class="thumb"></span>' + opts.map((o, i) => '<button type="button" data-a="tseg" data-k="' + key + '" data-v="' + i + '" aria-pressed="' + (cur === i) + '">' + o + '</button>').join('') + '</div>'; }
+function fileRow(id, name, desc, has) {
+  return '<div class="frow"><div class="fl">File</div><div>' + (has ? '<div class="file">' + ic('file', 18) + '<div class="grow"><b>' + name + '</b><div class="t3">' + desc + '</div></div><button type="button" class="btn btn-sm btn-ghost" data-a="tfile" data-page="' + id + '">Change file</button></div>' : '<div class="drop">' + ic('upload', 20) + '<div class="grow">Choose the Excel file.</div><button type="button" class="btn" data-a="tfile" data-page="' + id + '">Choose file</button></div>') + '</div></div>';
+}
+function primaryBar(title, sub, label, act, icon, enabled) { return '<div class="sum"><b>' + title + '</b><div>' + sub + '</div></div><button type="button" class="btn btn-primary btn-lg" data-a="' + act + '"' + (enabled === false ? ' disabled' : '') + '>' + ic(icon, 16) + label + '</button>'; }
+function kreditView() {
+  if (!F.kredit) F.kredit = { for: ['MKF'], masa: [10], year: 2026 };
+  const t = T.kredit;
+  return taskShell('kredit', 'Credits Faktur Masukan in Coretax from an Excel list. Each Faktur is checked in Coretax first; already credited ones are skipped.',
+    forHtml('kredit', true) + fileRow('kredit', 'faktur-masukan-10-2026.xlsx', '18 Faktur Masukan · 2 already credited (skipped)', t.file)
+    + '<div class="frow"><div class="fl">Masa Pengkreditan</div><div>' + segHtml('kmode', ['Follow the Excel column', 'One Masa Pajak: 10/2026'], t.mode) + '</div></div>',
+    primaryBar(t.file ? 'Credit 16 Faktur Masukan' : 'Choose the Excel file', t.file ? 'Changes data in Coretax. You confirm the list first.' : 'Use the template from the Help menu.', 'Credit 16 Faktur Masukan…', 'kredit-go', 'badge', t.file));
+}
+function billingView() {
+  if (!F.billing) F.billing = { for: ['CSA'], masa: [10], year: 2026 };
+  return taskShell('billing', 'Creates a Kode Billing for PPh 25 and saves the billing PDF. It does not pay.',
+    forHtml('billing', true) + masaRow('billing', true) + '<div class="frow"><div class="fl">Nominal</div><div class="row"><span class="t3">Rp</span><input class="input mono" id="nominal" value="' + T.billing.nominal + '" style="width:180px"></div></div>',
+    primaryBar('Create Kode Billing', 'PPh 25 · Masa Pajak ' + masaText(F.billing) + ' · confirm first', 'Create Kode Billing…', 'billing-go', 'bank'));
+}
+function dividenView() {
+  if (!F.dividen) F.dividen = { for: ['IAL'], masa: [10], year: 2026 };
+  const t = T.dividen; const modes = ['Check the Excel', 'Import to Coretax', 'Create case'];
+  const sub = ['Read-only check against Coretax. Nothing is created.', 'Imports the Laporan Realisasi Investasi into the open case. Confirm first.', 'Creates a new e-Reporting case (AS.39-01) in Coretax. Confirm first.'][t.mode];
+  return taskShell('dividen', 'Laporan Realisasi Investasi (Dividen) through e-Reporting.',
+    forHtml('dividen', true) + '<div class="frow"><div class="fl">Step</div><div>' + segHtml('dmode', modes, t.mode) + '</div></div>' + (t.mode < 2 ? fileRow('dividen', 'realisasi-dividen-2026.xlsx', '4 rows · Tahun 2026', t.file) : ''),
+    primaryBar(modes[t.mode], sub, modes[t.mode] + (t.mode ? '…' : ''), 'dividen-go', t.mode ? 'upload' : 'search', t.mode === 2 || t.file));
+}
+function konsepView() {
+  if (!F.konsep) F.konsep = { for: ['CSA'], masa: [10], year: 2026 };
+  const t = T.konsep; const acts = ['Create Konsep SPT', 'Download Konsep SPT', 'Posting'];
+  return taskShell('konsep', 'Konsep SPT for PPh 21/26 and PPh Unifikasi: create the draft, run Posting, or download it for review.',
+    forHtml('konsep', true) + '<div class="frow"><div class="fl">SPT</div><div>' + segHtml('kspt', ['PPh 21/26', 'PPh Unifikasi'], t.spt) + '</div></div>' + masaRow('konsep', true) + '<div class="frow"><div class="fl">Action</div><div>' + segHtml('kact', acts, t.act) + '</div></div>',
+    primaryBar(acts[t.act], t.act === 1 ? 'Read-only download.' : 'Changes data in Coretax. Confirm first.', acts[t.act] + (t.act === 1 ? '' : '…'), 'konsep-go', t.act === 1 ? 'down2' : 'clip'));
+}
+function a1View() {
+  if (!F.a1) F.a1 = { for: ['UCN'], masa: [12], year: 2026 };
+  const t = T.a1; const tabs = segHtml('a1tab', ['Full-year download', 'BPMP NIK Pembetulan', 'December BPA1 XML'], t.tab);
+  const kinds = ['<span class="tag read">Read-only</span>', '<span class="tag write"><i></i>Changes data in Coretax</span>', '<span class="tag read">Local file only</span>'];
+  let rows, bar;
+  if (t.tab === 0) { rows = forHtml('a1', true) + '<div class="frow"><div class="fl">Tahun Pajak</div><div>' + segHtml('a1y', ['2025', '2026'], 1) + '</div></div>'; bar = primaryBar('Download 12 Masa Pajak and build the recap', 'Saves the PDFs and Rekap SPT PPh 21 Setahun (A1).xlsx. Read-only.', 'Start download', 'a1-go', 'down2'); }
+  else if (t.tab === 1) { rows = forHtml('a1', true) + fileRow('a1', '2026 - Rekap SPT PPh 21 Setahun (A1).xlsx', 'Sheet NIK: 5 NIK to correct · sheet Pembetulan: 2 Bukti Potong', t.file); bar = primaryBar('Correct NIK in Coretax', 'Only Bukti Potong whose official name for NIK Baru matches Nama Baru are corrected. Preview first.', 'Correct 7 Bukti Potong…', 'a1-nik', 'pen', t.file); }
+  else { rows = fileRow('a1', '2026 - Rekap SPT PPh 21 Setahun (A1).xlsx', '38 employees · Masa Pajak 12/2026', t.file); bar = primaryBar('Create BPA1 XML', 'Builds the XML on this PC for upload. Nothing is sent to Coretax.', 'Create XML', 'a1-xml', 'file', t.file); }
+  return '<div class="page"><div class="row" style="margin-bottom:18px;gap:12px">' + tabs + kinds[t.tab] + '</div>' + rows + '<div class="abar">' + bar + '</div></div>';
+}
+
+/* ---------- Settings ---------- */
+const ST = { sys: false, prof: false, v3: false, upd: '' };
+function settingsView() {
+  const th = ['system', 'light', 'dark'];
+  const coll = (k, title, sub, body) => '<div class="set" style="grid-template-columns:1fr"><div><button type="button" class="disc" data-a="set-coll" data-k="' + k + '" aria-expanded="' + ST[k] + '">' + ic('right', 14) + '<span class="t1">' + title + '</span></button><div class="t3" style="font-size:12.5px;margin:2px 0 0 20px">' + sub + '</div><div class="coll' + (ST[k] ? ' open' : '') + '"><div><div class="ci" style="margin-left:20px" id="coll-' + k + '">' + body + '</div></div></div></div></div>';
+  return '<div class="page">'
+    + '<div class="set"><div class="fl">Theme<small>System follows the Windows setting.</small></div>' + '<div class="seg" data-seg="theme"><span class="thumb"></span>' + th.map((t) => '<button type="button" data-a="theme" data-v="' + t + '" aria-pressed="' + (S.theme === t) + '">' + t.charAt(0).toUpperCase() + t.slice(1) + '</button>').join('') + '</div></div>'
+    + '<div class="set"><div class="fl">Parallel sessions<small>Commands that do not get a Coretax window wait in the queue and start by themselves.</small></div><div class="row wrap" style="gap:14px"><span class="row"><span class="t3">Windows per PIC</span><span class="stepper"><button type="button" class="ib" data-a="lim" data-k="pic" data-v="-1" aria-label="Fewer">−</button><b>' + S.limits.pic + '</b><button type="button" class="ib" data-a="lim" data-k="pic" data-v="1" aria-label="More">+</button></span></span><span class="row"><span class="t3">Running at once</span><span class="stepper"><button type="button" class="ib" data-a="lim" data-k="total" data-v="-1" aria-label="Fewer">−</button><b>' + S.limits.total + '</b><button type="button" class="ib" data-a="lim" data-k="total" data-v="1" aria-label="More">+</button></span></span></div></div>'
+    + '<div class="set"><div class="fl">Account<small>' + (S.role === 'restricted' ? 'staf@contoh.com · Restricted Editor' : 'konsultan@contoh.com · Editor') + ' · Taxio Hub</small></div><button type="button" class="btn" data-a="toast" data-msg="Disconnected (mockup: nothing happens)">Disconnect</button></div>'
+    + '<div class="set"><div class="fl">App version<small id="upd">Taxio Pilot v4.0.0' + (ST.upd ? ' · ' + ST.upd : '') + '</small></div><button type="button" class="btn" data-a="upd">Check for updates</button></div>'
+    + coll('sys', 'System check', 'Data folder, Chrome, network, Taxio Hub. Export diagnostics for support.', '<div id="sysbody"></div>')
+    + coll('prof', 'Chrome profiles', 'Each PIC window has its own Chrome profile. Old ones can be removed.', '<div class="row wrap"><span class="t3">Unused for</span><input class="input mono" value="60" style="width:64px"><span class="t3">days</span><button type="button" class="btn btn-sm" data-a="toast" data-msg="2 profiles found (1.3 GB). Profiles of open windows are never deleted.">Find old profiles</button></div>')
+    + coll('v3', 'Back to version 3', 'Steps to return to v3.0.50. Your data stays.', '<div class="t3" style="max-width:560px">Click Quit app first (never run both at once), then open the old coretax-agent.exe. Each PIC signs in to Coretax once more there. Opening Taxio Pilot later brings you back to this version.</div>')
+    + '<div class="set"><div class="fl">Quit Taxio Pilot<small>Closes all Coretax windows. Running and queued runs stop.</small></div><button type="button" class="btn btn-danger" data-a="quit">Quit app</button></div></div>';
+}
+function sysBody(loading) {
+  const rows = [['Data folder is writable', 'D:\\Contoh\\TaxioPilot'], ['Bundled Chrome', 'Chrome for Testing 131 · ready'], ['Taxio Hub', 'Connected · 42 ms'], ['Coretax reachable', 'coretaxdjp.pajak.go.id · 180 ms']];
+  return rows.map((r) => '<div class="hrow">' + (loading ? '<div class="sk" style="width:8px;height:8px;border-radius:50%"></div><div><div class="sk" style="width:180px;margin-bottom:5px"></div><div class="sk" style="width:120px;height:10px"></div></div><div class="sk" style="width:24px"></div>' : '<span class="hdot"></span><div><div class="t1">' + r[0] + '</div><div class="t3" style="font-size:12.5px">' + r[1] + '</div></div><span class="tag ok">OK</span>') + '</div>').join('') + (loading ? '' : '<div class="row" style="margin-top:10px"><button type="button" class="btn btn-sm" data-a="sys-again">Check again</button><button type="button" class="btn btn-sm" data-a="toast" data-msg="Saved diagnostics zip to Downloads. It may contain client names and NPWPs.">' + ic('down2', 14) + 'Export diagnostics</button></div>');
+}
+
+/* ---------- Palette (Ctrl+K): clients, saved groups, pages, runs ---------- */
+const PAL = { mode: 'go', page: null, sel: [], q: '', i: 0, items: [] };
+function openPalette(mode, page) {
+  PAL.mode = mode || 'go'; PAL.page = page || null; PAL.q = ''; PAL.i = 0;
+  PAL.sel = mode === 'pick' && page ? form(page).for.slice() : [];
+  dialog('<div class="pal-q">' + ic('search', 18) + '<input id="pal-q" placeholder="' + (PAL.mode === 'go' ? 'Search clients, NPWP, pages or runs…' : 'Search clients or NPWP…') + '" autocomplete="off"><kbd>Esc</kbd></div><div class="pal-l" id="pal-l"></div><div class="pal-f" id="pal-f"></div>', 'pal', (d) => {
+    const q = $('#pal-q', d);
+    q.addEventListener('input', () => { PAL.q = q.value; PAL.i = 0; renderPal(); });
+    q.addEventListener('keydown', palKey);
+  });
+  renderPal();
+}
+function palItems() {
+  const q = PAL.q.trim().toLowerCase(); const m = (s) => !q || s.toLowerCase().indexOf(q) >= 0;
+  const out = [];
+  const clients = CL.filter((c) => !(S.role === 'restricted' && c.kind === 'local')).filter((c) => m(c.n + ' ' + c.c + ' ' + c.npwp.replace(/ /g, '')));
+  if (PAL.mode === 'go' && !q) RUNS.filter((r) => r.state === 'hold').forEach((r) => out.push({ g: 'Needs your decision', k: 'run', id: r.id, t: cl(r.client).n, s: r.feat + ' · ' + r.reason, icon: 'alert' }));
+  if (PAL.mode !== 'one') GROUPS.filter((g) => m(g.n)).forEach((g, i) => out.push({ g: 'Saved groups', k: 'group', id: GROUPS.indexOf(g), t: g.n, s: g.c.length + ' clients', icon: 'users' }));
+  clients.forEach((c) => out.push({ g: 'Clients', k: 'client', id: c.c, t: c.n, s: c.npwp + ' · ' + (c.p.length > 1 ? c.p.length + ' PICs' : c.p[0] === 'own' ? 'own login' : 'PIC ' + PICS[c.p[0]]) + (c.kind === 'local' ? ' · added on this PC' : ''), code: c.c }));
+  if (PAL.mode === 'go') Object.keys(PAGES).filter((id) => visiblePage(id) && m(PAGES[id].label + ' ' + (PAGES[id].grp || ''))).forEach((id) => out.push({ g: 'Go to', k: 'page', id, t: PAGES[id].label, s: PAGES[id].grp || '', icon: PAGES[id].icon }));
+  if (PAL.mode === 'go' && m('collapse sidebar theme')) { out.push({ g: 'Commands', k: 'cmd', id: 'sb', t: 'Collapse or expand sidebar', s: 'Ctrl+B', icon: 'side' }); out.push({ g: 'Commands', k: 'cmd', id: 'theme', t: 'Switch light / dark theme', s: '', icon: 'sun' }); }
+  if (S.role !== 'restricted' && PAL.mode !== 'one' && (!q || m('add client'))) out.push({ g: 'Commands', k: 'cmd', id: 'add', t: 'Add a client on this PC', s: 'Stored Coretax credentials, this PC only', icon: 'plus' });
+  return out;
+}
+function renderPal() {
+  const items = PAL.items = palItems(); let g = '', html = '';
+  items.forEach((it, i) => {
+    if (it.g !== g) { g = it.g; html += '<div class="pal-g">' + g + '</div>'; }
+    const sel = PAL.mode === 'pick' && it.k === 'client' && PAL.sel.indexOf(it.id) >= 0;
+    const lead = PAL.mode === 'pick' && it.k === 'client' ? '<span class="ck">' + (sel ? ic('check', 12) : '') + '</span>' : '<span class="ic">' + (it.code ? it.code : ic(it.icon, 15)) + '</span>';
+    html += '<div class="po' + (i === PAL.i ? ' act' : '') + (sel ? ' sel' : '') + '" data-pi="' + i + '">' + lead + '<div style="min-width:0"><div class="ell">' + esc(it.t) + '</div><div class="s ell">' + esc(it.s) + '</div></div>' + (it.k === 'client' && cl(it.id).p.length > 1 ? '<span class="tag acc">PIC ' + (S.picSel[it.id] || cl(it.id).p[0]) + '</span>' : it.k === 'page' ? '<span class="t3">' + ic('right', 14) + '</span>' : '') + '</div>';
+  });
+  $('#pal-l').innerHTML = html || '<div class="t3" style="padding:18px 12px">No match. NPWP works too, with or without spaces.</div>';
+  $('#pal-f').innerHTML = PAL.mode === 'pick' ? '<span><kbd>Space</kbd> select</span><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span class="grow"></span><button type="button" class="btn btn-primary" data-a="pal-done">' + (PAL.sel.length ? 'Use ' + PAL.sel.length + ' client' + (PAL.sel.length === 1 ? '' : 's') : 'Done') + '</button>'
+    : '<span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> ' + (PAL.mode === 'one' ? 'use this client' : 'open') + '</span><span class="grow"></span><span>' + (PAL.mode === 'go' ? 'Choosing a client fills the For field of this page' : '') + '</span>';
+  const l = $('#pal-l'), a = $('.po.act', l);
+  if (a) { const top = a.offsetTop - l.offsetTop, bot = top + a.offsetHeight; if (top < l.scrollTop) l.scrollTop = top - 30; else if (bot > l.scrollTop + l.clientHeight) l.scrollTop = bot - l.clientHeight + 6; }
+}
+function palKey(e) {
+  if (e.key === 'ArrowDown') { PAL.i = Math.min(PAL.items.length - 1, PAL.i + 1); renderPal(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { PAL.i = Math.max(0, PAL.i - 1); renderPal(); e.preventDefault(); }
+  else if (e.key === 'Enter') { if (PAL.mode === 'pick' && (e.ctrlKey || !PAL.items[PAL.i] || PAL.items[PAL.i].k !== 'client')) { if (PAL.items[PAL.i] && PAL.items[PAL.i].k !== 'client' && !e.ctrlKey) palPick(PAL.i); else palDone(); } else palPick(PAL.i); e.preventDefault(); }
+  else if (e.key === ' ' && PAL.mode === 'pick') { palPick(PAL.i); e.preventDefault(); }
+}
+const FORM_PAGES = ['spt', 'ebupot', 'bpsaya', 'faktur', 'upload', 'fix', 'kredit', 'billing', 'dividen', 'konsep', 'a1'];
+const SINGLE = ['upload', 'fix', 'kredit', 'billing', 'dividen', 'konsep', 'a1'];
+function palPick(i) {
+  const it = PAL.items[i]; if (!it) return;
+  if (PAL.mode === 'pick') {
+    if (it.k === 'client') { const k = PAL.sel.indexOf(it.id); if (k >= 0) PAL.sel.splice(k, 1); else PAL.sel.push(it.id); PAL.i = i; renderPal(); return; }
+    if (it.k === 'group') { GROUPS[it.id].c.forEach((c) => { if (PAL.sel.indexOf(c) < 0) PAL.sel.push(c); }); renderPal(); return; }
+    if (it.k === 'cmd') { closeDialog(); toast('Opens the Add Client form: name, NPWP, PIC and Coretax credentials, stored on this PC only.', 'info'); }
+    return;
+  }
+  closeDialog();
+  if (it.k === 'page') return go(it.id);
+  if (it.k === 'run') { go('runs'); return setTimeout(() => openDrawer(it.id), 60); }
+  if (it.k === 'cmd') { if (it.id === 'sb') return toggleSidebar(); if (it.id === 'theme') return setTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); return toast('Opens the Add Client form: name, NPWP, PIC and Coretax credentials, stored on this PC only.', 'info'); }
+  const target = PAL.page || (FORM_PAGES.indexOf(S.view) >= 0 ? S.view : 'spt');
+  if (it.k === 'client') { form(target).for = [it.id]; if (S.view !== target) go(target); else rerender(); toast('For: ' + it.t, 'check'); }
+  if (it.k === 'group') { if (SINGLE.indexOf(target) >= 0) { go('spt'); form('spt').for = GROUPS[it.id].c.slice(); rerender(); } else { form(target).for = GROUPS[it.id].c.slice(); if (S.view !== target) go(target); else rerender(); } toast(GROUPS[it.id].n + ': ' + GROUPS[it.id].c.length + ' clients', 'users'); }
+}
+function palDone() { const p = PAL.page; form(p).for = PAL.sel.slice(); closeDialog(); rerender(); }
+
+/* ---------- Views and navigation ---------- */
+const VIEWS = { runs: runsView, spt: () => dlView('spt'), ebupot: () => dlView('ebupot'), bpsaya: () => dlView('bpsaya'), faktur: () => dlView('faktur'), upload: uploadView, fix: fixView, kredit: kreditView, billing: billingView, dividen: dividenView, konsep: konsepView, a1: a1View, settings: settingsView };
+function placeThumbs(scope) {
+  $$('.seg', scope).forEach((sg) => {
+    const th = $('.thumb', sg); const on = $('button[aria-pressed="true"]', sg); if (!th) return;
+    if (!on) { th.style.opacity = '0'; return; }
+    th.style.opacity = '1'; th.style.width = on.offsetWidth + 'px'; th.style.transform = 'translateX(' + on.offsetLeft + 'px)';
+  });
+}
+function rerender(animate) {
+  const c = $('#content'); const sc = c.scrollTop;
+  c.innerHTML = '<div class="' + (animate ? 'view' : '') + '">' + VIEWS[S.view]() + '</div>';
+  if (S.view === 'runs') { const l = $('#runlist'); if (l) l.innerHTML = runsListHtml(); }
+  if (S.view === 'settings' && ST.sys) $('#sysbody').innerHTML = sysBody(false);
+  placeThumbs(c);
+  if (!animate) c.scrollTop = sc; else c.scrollTop = 0;
+  refreshChrome();
+}
+function go(v) {
+  if (!VIEWS[v] || !visiblePage(v)) v = 'runs';
+  S.view = v; closeDrawer(); closeDialog(true);
+  if (window.innerWidth < 1100 && S.sbOverlay) { S.sbOverlay = false; applySidebar(true); }
+  rerender(true);
+}
+function refresh() {
+  refreshChrome();
+  if (S.view === 'runs') refreshRuns();
+  refreshDrawer();
+}
+
+/* ---------- Actions ---------- */
+const A = {
+  'strip-toggle': () => { S.stripOpen = !S.stripOpen; store.set('strip', S.stripOpen); renderStrip(); },
+  'strip-run': (el) => { S.stripRun = el.dataset.id; renderStrip(); },
+  'sb-toggle': toggleSidebar, 'sb-close': () => { S.sbOverlay = false; applySidebar(true); },
+  'theme-quick': () => setTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'),
+  theme: (el) => { setTheme(el.dataset.v); rerender(); },
+  palette: () => openPalette('go'), windows: () => { S.runsTab = 'windows'; go('runs'); },
+  'go-runs': () => { S.filter = 'all'; S.runsTab = 'runs'; go('runs'); },
+  'close-top': () => { if (dlgClose) closeDialog(); else closeDrawer(); }, 'close-drawer': closeDrawer, 'close-dialog': () => closeDialog(),
+  'runs-tab': (el) => { S.runsTab = el.dataset.v; rerender(); },
+  filter: (el) => { S.filter = el.dataset.v; const f = $('#filters'); if (f) f.innerHTML = filtersHtml(); const l = $('#runlist'); if (l) flip(l, runsListHtml()); },
+  open: (el) => openDrawer(el.dataset.id),
+  'toggle-batch': (el) => { const id = el.dataset.id; S.openBatch[id] = !S.openBatch[id]; el.setAttribute('aria-expanded', String(S.openBatch[id])); const c = $('[data-coll="' + id + '"]'); if (c) c.classList.toggle('open', S.openBatch[id]); },
+  pause: (el) => requestPause(byId(el)),
+  stop: (el) => { const r = byId(el); confirmStop(r); },
+  'stop-b': (el) => { const kids = RUNS.filter((r) => r.batch === el.dataset.id && (active(r) || r.state === 'queued')); dialog('<div class="dlg-h"><h2>Stop the Whole Batch?</h2></div><div class="dlg-b"><div>' + kids.length + ' runs are running or queued. Finished runs and their files stay. Queued runs are cancelled; nothing was done for them in Coretax.</div></div><div class="dlg-f"><button type="button" class="btn" data-a="close-dialog">Keep running</button><button type="button" class="btn btn-danger-solid" data-a="stop-b-go" data-id="' + el.dataset.id + '">Stop ' + kids.length + ' runs</button></div>'); },
+  'stop-b-go': (el) => { closeDialog(); RUNS.filter((r) => r.batch === el.dataset.id).forEach((r) => { if (r.state === 'queued') r.state = 'stopped', r.error = 'Cancelled before it started. Nothing was done in Coretax.'; else if (active(r)) { r.state = 'stopped'; r.ended = now(); r.error = stopSummary(r); } }); promote(); refresh(); toast('Batch stopped', 'stop'); },
+  retry: (el) => { const r = byId(el); r.state = 'running'; r.paused = false; lg(r, 'Retry ' + r.items[r.done] + ' (your decision).'); refresh(); toast('Retrying ' + r.items[r.done], 'retry'); },
+  skip: (el) => { const r = byId(el); r.skipped.push(r.done); lg(r, 'Skipped ' + r.items[r.done] + ' (your decision).', 'w'); r.done++; r.state = 'running'; if (r.done >= r.total) finish(r); refresh(); },
+  back: (el) => { const r = byId(el); r.done = Math.max(0, r.done - 1); r.state = 'running'; lg(r, 'Back to ' + r.items[r.done] + ' (your decision).'); refresh(); },
+  'show-win': (el) => { const r = byId(el); toast('Coretax window ' + r.pic + ' #' + r.win + ' brought to the front', 'win'); },
+  'cancel-q': (el) => { const r = byId(el); const rows = $$('[data-id="' + r.id + '"].rr'); rows.forEach((x) => x.classList.add('out')); setTimeout(() => { RUNS = RUNS.filter((x) => x !== r); if (S.drawer === r.id) closeDrawer(); promote(); refresh(); toast('Queued run cancelled. Nothing was done in Coretax.', 'x'); }, rm() ? 0 : 180); },
+  folder: (el) => { const r = byId(el); toast('Opens ' + r.folder + ' in File Explorer', 'folder'); },
+  'folder-b': () => toast('Opens D:\\Contoh\\CoretaxAgent in File Explorer (one folder per client)', 'folder'),
+  again: (el) => { const r = byId(el); const rest = r.state === 'stopped' && r.total ? r.items.slice(r.done) : r.items.slice(); const n = addRun({ client: r.client, pic: r.pic, feat: r.feat, params: r.params + (rest.length < r.items.length ? ' · remaining ' + rest.length : ''), kind: r.kind, total: rest.length, items: rest, folder: r.folder }); RUNS = RUNS.filter((x) => x !== r); if (S.drawer === r.id) closeDrawer(); started(n, r.feat); },
+  pagesize: (el) => { $$('button', el.parentNode).forEach((b) => b.setAttribute('aria-pressed', String(b === el))); placeThumbs(el.parentNode.parentNode); toast('Rows per page: ' + el.dataset.v + ' (from the next page)', 'check'); },
+  disc: (el) => { const open = el.getAttribute('aria-expanded') !== 'true'; el.setAttribute('aria-expanded', String(open)); const c = el.nextElementSibling; c.classList.toggle('open', open); const p = c.getAttribute('data-adv'); if (p) form(p).adv = open; placeThumbs(c); },
+  tg: (el) => el.setAttribute('aria-pressed', String(el.getAttribute('aria-pressed') !== 'true')),
+  segx: (el) => { $$('button', el.parentNode).forEach((b) => b.setAttribute('aria-pressed', String(b === el))); placeThumbs(el.parentNode.parentNode); },
+  'first-start': () => { go('spt'); setTimeout(() => openPalette('pick', 'spt'), 80); },
+  pick: (el) => openPalette(el.dataset.single === '1' ? 'one' : 'pick', el.dataset.page),
+  'pal-done': palDone,
+  'rm-client': (el) => { const f = form(el.dataset.page); const chip = el.closest('.cchip'); chip.classList.add('out'); setTimeout(() => { f.for = f.for.filter((c) => c !== el.dataset.c); rerender(); }, rm() ? 0 : 160); },
+  'more-for': (el) => { S.showAllFor[el.dataset.page] = true; rerender(); },
+  'pic-cycle': (el) => { const c = el.dataset.c; const ps = cl(c).p; const cur = S.picSel[c] || ps[0]; S.picSel[c] = ps[(ps.indexOf(cur) + 1) % ps.length]; rerender(); toast(cl(c).n + ' will sign in through PIC ' + PICS[S.picSel[c]], 'users'); },
+  group: (el) => { const g = GROUPS[+el.dataset.g]; const f = form(el.dataset.page); g.c.forEach((c) => { if (f.for.indexOf(c) < 0) f.for.push(c); }); rerender(); toast(g.n + ' added: ' + f.for.length + ' clients', 'users'); },
+  type: (el) => { const f = form(el.dataset.page); const v = el.dataset.v; const k = f.types.indexOf(v); if (k >= 0) f.types.splice(k, 1); else f.types.push(v); el.setAttribute('aria-pressed', String(k < 0)); updBar(el.dataset.page); },
+  month: (el) => { const f = form(el.dataset.page); const v = +el.dataset.v; if (el.dataset.single === '1') f.masa = [v]; else { const k = f.masa.indexOf(v); if (k >= 0) f.masa.splice(k, 1); else f.masa.push(v); } $$('[data-a="month"][data-page="' + el.dataset.page + '"]').forEach((b) => b.setAttribute('aria-pressed', String(f.masa.indexOf(+b.dataset.v) >= 0))); updBar(el.dataset.page); },
+  'masa-q': (el) => { const f = form(el.dataset.page); f.masa = el.dataset.v === 'year' ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : el.dataset.v === 'q' ? [7, 8, 9] : [10]; rerender(); },
+  yr: (el) => { const f = form(el.dataset.page); f.year += +el.dataset.v; rerender(); },
+  'dl-start': (el) => startDownload(el.dataset.page),
+  'batch-go': (el) => { closeDialog(); startBatch(el.dataset.page); },
+  utab: (el) => { U.tab = el.dataset.v; rerender(); },
+  utype: (el) => { U.type = el.dataset.v; U.preview = 'none'; rerender(); },
+  upfile: () => { U.file = true; rerender(); },
+  ipreview: () => { U.preview = 'loading'; rerender(); setTimeout(() => { U.preview = 'ready'; U.sel = [true, true, true]; if (S.view === 'upload') rerender(); }, STATIC ? 10 : 1100); },
+  slip: (el) => { U.sel[+el.dataset.i] = el.checked; rerender(); },
+  'issue-confirm': () => {
+    const n = U.sel.filter(Boolean).length, c = cl(F.upload.for[0]); const tb = SLIPS.reduce((a, s, i) => a + (U.sel[i] ? s[2] : 0), 0), tt = SLIPS.reduce((a, s, i) => a + (U.sel[i] ? s[3] : 0), 0);
+    confirmChange({ tier: 2, title: 'Issue & Sign ' + n + ' Bukti Potong?', ok: 'Issue & sign ' + n, backLabel: 'Back to preview',
+      facts: [['Client', esc(c.n) + ' <span class="t3 mono">' + c.npwp + '</span>'], ['Bukti Potong', n + ' ' + U.type + ' · Masa Pajak ' + masaText(F.upload)], ['Total', 'Bruto ' + rp(tb) + ' · PPh ' + rp(tt)], ['Signed by', 'PIC ' + PICS[c.p[0]] + ' (passphrase)']],
+      effect: 'Issued Bukti Potong move to Telah Terbit and are reported to DJP. A mistake later needs a Pembetulan; withdrawing one needs Batalkan.', ack: 'I checked these ' + n + ' Bukti Potong against the client\u2019s data.',
+      onOk: () => { const r = addRun({ client: c.c, feat: 'e-Bupot Issue & sign', params: n + ' ' + U.type + ' · ' + masaText(F.upload), kind: 'write', total: n, items: SLIPS.filter((s, i) => U.sel[i]).map((s) => s[0].slice(-4)) }); U.preview = 'none'; rerender(); started(r, 'Issue & sign'); } });
+  },
+  'up-confirm': () => { const c = cl(F.upload.for[0]); confirmChange({ tier: 1, title: 'Upload 42 BPMP to Belum Terbit?', ok: 'Upload', facts: [['Client', esc(c.n) + ' <span class="t3 mono">' + c.npwp + '</span>'], ['File', 'contoh-impor.xlsx · 42 BPMP · Masa Pajak 10/2026']], effect: 'Creates 42 drafts in Belum Terbit. Nothing is issued or signed.', onOk: () => { const r = addRun({ client: c.c, feat: 'e-Bupot Upload', params: 'Upload to Belum Terbit · 42 BPMP · 10/2026', kind: 'write', notes: ['Uploading the file', 'Coretax is validating the file', 'Reading the Monitoring XML'], ind: 0, result: '42 Bukti Potong created in Belum Terbit. Nothing was issued or signed.' }); started(r, 'Upload'); } }); },
+  'fix-find': () => { const q = $('#fixq'); X.q = q ? q.value : ''; X.res = 'loading'; rerender(); setTimeout(() => { X.res = 'ready'; if (S.view === 'fix') rerender(); }, STATIC ? 10 : 900); },
+  amend: (el) => { const b = FOUND[+el.dataset.i], c = cl(F.fix.for[0]); confirmChange({ tier: 2, title: 'Amend Bukti Potong ' + b[0] + '?', ok: 'Amend in Coretax', facts: [['Client', esc(c.n)], ['Bukti Potong', b[0] + ' · ' + b[2]]], extra: '<table class="tb"><thead><tr><th>Field</th><th class="num">Now</th><th class="num">After</th></tr></thead><tbody><tr><td>Penghasilan Bruto</td><td class="num">' + rp(b[3]) + '</td><td class="num"><input class="input mono" value="' + (b[3] + 1000000).toLocaleString('id-ID') + '" style="width:130px;text-align:right"></td></tr><tr><td>PPh</td><td class="num">' + rp(b[4]) + '</td><td class="num">' + rp(b[4] + 50000) + '</td></tr></tbody></table>', effect: 'Coretax creates a Pembetulan of this Bukti Potong. If it was already reported, its SPT Masa needs a Pembetulan too.', ack: 'I checked the new values.', onOk: () => { started(addRun({ client: c.c, feat: 'Fix Bukti Potong', params: 'Amend ' + b[0], kind: 'write', total: 1, items: [b[0].slice(-4)] }), 'Amend'); } }); },
+  'cancel-bp': (el) => { const b = FOUND[+el.dataset.i], c = cl(F.fix.for[0]); confirmChange({ tier: 2, danger: true, typed: c.c, title: 'Cancel Bukti Potong ' + b[0] + '?', ok: 'Cancel Bukti Potong', backLabel: 'Keep it', facts: [['Client', esc(c.n) + ' <span class="t3 mono">' + c.npwp + '</span>'], ['Bukti Potong', b[0] + ' · ' + b[2] + ' · ' + rp(b[3])]], effect: 'Batalkan cannot be undone. If this slip was already reported, its SPT Masa needs a Pembetulan.', onOk: () => { started(addRun({ client: c.c, feat: 'Fix Bukti Potong', params: 'Cancel ' + b[0], kind: 'write', total: 1, items: [b[0].slice(-4)] }), 'Cancel'); } }); },
+  tseg: (el) => { const k = el.dataset.k, v = +el.dataset.v; const map = { kmode: ['kredit', 'mode'], dmode: ['dividen', 'mode'], kspt: ['konsep', 'spt'], kact: ['konsep', 'act'], a1tab: ['a1', 'tab'] }; if (map[k]) { T[map[k][0]][map[k][1]] = v; rerender(); } else { $$('button', el.parentNode).forEach((b) => b.setAttribute('aria-pressed', String(b === el))); placeThumbs(el.parentNode.parentNode); } },
+  tfile: (el) => { T[el.dataset.page].file = true; rerender(); },
+  'kredit-go': () => { const c = cl(F.kredit.for[0]); confirmChange({ tier: 2, title: 'Credit 16 Faktur Masukan?', ok: 'Credit 16 Faktur', facts: [['Client', esc(c.n)], ['Faktur', '16 Faktur Masukan · 2 skipped (already credited)'], ['Masa Pengkreditan', T.kredit.mode ? '10/2026 for all' : 'From the Excel column']], effect: 'Credited Faktur Masukan count in the PPN SPT of that Masa Pajak.', ack: 'I checked the Masa Pengkreditan.', onOk: () => started(addRun({ client: c.c, pic: S.picSel[c.c] || c.p[0], feat: 'Credit Faktur Masukan', params: '16 Faktur Masukan · Masa 10/2026', kind: 'write', total: 16, items: Array.from({ length: 16 }, (_, i) => '#' + (i + 1)) }), 'Credit Faktur Masukan') }); },
+  'billing-go': () => { const c = cl(F.billing.for[0]); const nom = ($('#nominal') || {}).value || T.billing.nominal; T.billing.nominal = nom; confirmChange({ tier: 1, title: 'Create Kode Billing?', ok: 'Create Kode Billing', facts: [['Client', esc(c.n)], ['Jenis Pajak', 'PPh 25 · Masa Pajak ' + masaText(F.billing)], ['Nominal', 'Rp' + esc(nom)]], effect: 'Creates a Kode Billing in Coretax and saves its PDF. Nothing is paid.', onOk: () => started(addRun({ client: c.c, feat: 'PPh 25 Kode Billing', params: 'Masa Pajak ' + masaText(F.billing) + ' · Rp' + nom, kind: 'write', total: 1, items: [mm(F.billing.masa[0]) + '26'] }), 'Kode Billing') }); },
+  'dividen-go': () => { const c = cl(F.dividen.for[0]); const m = T.dividen.mode; const modes = ['Check the Excel', 'Import to Coretax', 'Create case']; if (!m) return started(addRun({ client: c.c, feat: 'e-Reporting', params: 'Check the Excel · 2026', total: 4, items: ['row 1', 'row 2', 'row 3', 'row 4'] }), 'e-Reporting check'); confirmChange({ tier: 1, title: modes[m] + '?', ok: modes[m], facts: [['Client', esc(c.n)], ['Report', 'Laporan Realisasi Investasi (Dividen) · 2026']], effect: m === 1 ? 'Imports 4 rows into the open e-Reporting case.' : 'Creates a new e-Reporting case (AS.39-01).', onOk: () => started(addRun({ client: c.c, feat: 'e-Reporting', params: modes[m] + ' · 2026', kind: 'write', total: 1, items: ['2026'] }), 'e-Reporting') }); },
+  'konsep-go': () => { const c = cl(F.konsep.for[0]); const acts = ['Create Konsep SPT', 'Download Konsep SPT', 'Posting']; const a = T.konsep.act; const spt = ['PPh 21/26', 'PPh Unifikasi'][T.konsep.spt]; const spec = { client: c.c, feat: 'Konsep SPT', params: acts[a] + ' · ' + spt + ' · ' + masaText(F.konsep), kind: a === 1 ? 'read' : 'write', total: 1, items: [mm(F.konsep.masa[0]) + '26'] }; if (a === 1) return started(addRun(spec), 'Konsep SPT'); confirmChange({ tier: 1, title: acts[a] + '?', ok: acts[a], facts: [['Client', esc(c.n)], ['SPT', spt + ' · Masa Pajak ' + masaText(F.konsep)]], effect: a === 0 ? 'Creates the Konsep SPT in Coretax. It is not submitted.' : 'Runs Posting in Coretax so the Konsep SPT picks up the latest Bukti Potong. It is not submitted.', onOk: () => started(addRun(spec), 'Konsep SPT') }); },
+  'a1-go': () => { const c = cl(F.a1.for[0]); started(addRun({ client: c.c, feat: 'Annual PPh 21 Recap', params: 'Full-year download · 2026', total: 12, items: monthItems(1, 12) }), 'Annual PPh 21 Recap'); },
+  'a1-nik': () => { const c = cl(F.a1.for[0]); confirmChange({ tier: 2, title: 'Correct NIK on 7 Bukti Potong?', ok: 'Correct 7 Bukti Potong', facts: [['Client', esc(c.n)], ['From the recap', '5 NIK (sheet NIK) · 2 Bukti Potong (sheet Pembetulan)'], ['Check', 'Official Coretax name for NIK Baru must match Nama Baru']], effect: 'Creates Pembetulan of 7 BPMP in Coretax. Rows that do not match are left untouched and listed in the Excel.', ack: 'I checked NIK Baru and Nama Baru against the KTP.', onOk: () => started(addRun({ client: c.c, feat: 'Annual PPh 21 Recap', params: 'BPMP NIK Pembetulan · 7 Bukti Potong', kind: 'write', total: 7, items: Array.from({ length: 7 }, (_, i) => '#' + (i + 1)) }), 'NIK Pembetulan') }); },
+  'a1-xml': () => toast('Saved BPA1 2026.xml next to the recap. Nothing was sent to Coretax.', 'file'),
+  'set-coll': (el) => { const k = el.dataset.k; ST[k] = !ST[k]; el.setAttribute('aria-expanded', String(ST[k])); el.parentNode.querySelector('.coll').classList.toggle('open', ST[k]); if (k === 'sys' && ST.sys) loadSys(); },
+  'sys-again': () => loadSys(),
+  upd: (el) => { el.disabled = true; $('#upd').textContent = 'Taxio Pilot v4.0.0 · checking…'; setTimeout(() => { ST.upd = 'you are on the latest version'; if (S.view === 'settings') { $('#upd').textContent = 'Taxio Pilot v4.0.0 · ' + ST.upd; el.disabled = false; } }, STATIC ? 10 : 800); },
+  lim: (el) => { const k = el.dataset.k; const v = S.limits[k] + +el.dataset.v; S.limits[k] = Math.max(1, Math.min(k === 'pic' ? 5 : 12, v)); promote(); rerender(); toast('Saved: ' + S.limits.pic + ' windows per PIC, ' + S.limits.total + ' running at once', 'check'); },
+  quit: () => dialog('<div class="dlg-h"><h2>Quit Taxio Pilot?</h2></div><div class="dlg-b"><div>' + (counts().running + counts().hold) + ' runs are running and ' + counts().queued + ' are queued. They stop, and all Coretax windows close.</div></div><div class="dlg-f"><button type="button" class="btn" data-a="close-dialog">Keep working</button><button type="button" class="btn btn-danger-solid" data-a="close-dialog">Quit app</button></div>'),
+  toast: (el) => toast(el.dataset.msg, 'check'),
+  // mockup toolbar
+  'm-role': (el) => { S.role = el.dataset.v; seedAndGo(); }, 'm-data': (el) => { S.data = el.dataset.v; seedAndGo(); },
+  'm-sim': () => { S.sim = !S.sim; renderMock(); }, 'm-step': () => tick(),
+  'm-motion': () => { root.classList.toggle('rm'); renderMock(); }, 'm-reset': () => seedAndGo()
+};
+const byId = (el) => RUNS.find((r) => r.id === el.dataset.id);
+function confirmStop(r) {
+  dialog('<div class="dlg-h"><h2>Stop This Run?</h2></div><div class="dlg-b"><div><b class="t1">' + esc(cl(r.client).n) + '</b> · ' + esc(r.feat) + '</div><div class="t3">' + (r.kind === 'write' ? 'Steps already done in Coretax stay done. The step in progress is finished first, then the run stops.' : r.done + ' of ' + r.total + ' are downloaded; those files stay in the folder.') + ' Other runs keep going.</div></div><div class="dlg-f"><button type="button" class="btn" data-a="close-dialog">Keep running</button><button type="button" class="btn btn-danger-solid" id="stop-go">Stop run</button></div>', '', (d) => {
+    $('#stop-go', d).addEventListener('click', () => { closeDialog(); requestStop(r); });
+  });
+}
+function updBar(page) { const b = $('#abar'); if (b && DL[page]) b.innerHTML = dlBar(page); }
+function loadSys() { const b = $('#sysbody'); if (!b) return; b.innerHTML = sysBody(true); setTimeout(() => { const x = $('#sysbody'); if (x) x.innerHTML = sysBody(false); }, STATIC ? 10 : 900); }
+function seedAndGo() { seed(); renderMock(); if (S.role === 'restricted' && !visiblePage(S.view)) S.view = 'runs'; go(S.view); }
+
+/* ---------- Mockup toolbar ---------- */
+function renderMock() {
+  const b = (a, v, label, on) => '<button type="button" data-a="' + a + '" data-v="' + v + '" aria-pressed="' + on + '">' + label + '</button>';
+  $('#mock').innerHTML = '<b>Mockup</b>' + b('m-role', 'editor', 'Editor', S.role === 'editor') + b('m-role', 'restricted', 'Restricted Editor', S.role === 'restricted') + '<span class="sep"></span>'
+    + b('m-data', 'busy', 'Busy day', S.data === 'busy') + b('m-data', 'first', 'First run', S.data === 'first') + '<span class="sep"></span>'
+    + '<button type="button" data-a="m-sim" aria-pressed="' + S.sim + '">' + (S.sim ? '❚❚ Pause simulation' : '▶ Simulate runs') + '</button><button type="button" data-a="m-step">Step</button><button type="button" data-a="m-reset">Reset</button><span class="sep"></span>'
+    + '<button type="button" data-a="m-motion" aria-pressed="' + root.classList.contains('rm') + '">Reduced motion</button>';
+}
+setInterval(() => { if (S.sim) tick(); }, 1400);
+
+/* ---------- Events ---------- */
+document.addEventListener('click', (e) => {
+  const nav = e.target.closest('[data-nav]'); if (nav) return go(nav.dataset.nav);
+  const po = e.target.closest('[data-pi]'); if (po) return palPick(+po.dataset.pi);
+  const el = e.target.closest('[data-a]'); if (!el || el.disabled) return;
+  if (el.tagName === 'INPUT' && el.type === 'checkbox' && el.dataset.a !== 'slip') return;
+  const fn = A[el.dataset.a]; if (fn) { e.stopPropagation(); fn(el, e); }
+});
+document.addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.altKey) && k === 'k') { e.preventDefault(); if (dlgClose) closeDialog(true); return openPalette(FORM_PAGES.indexOf(S.view) >= 0 && SINGLE.indexOf(S.view) < 0 ? 'go' : 'go'); }
+  if (e.ctrlKey && k === 'b') { e.preventDefault(); return toggleSidebar(); }
+  if (e.key === 'Escape') { if (dlgClose) return closeDialog(); if (S.drawer) return closeDrawer(); if (S.sbOverlay) { S.sbOverlay = false; applySidebar(true); } }
+  if (e.ctrlKey && e.key === 'Enter') { const p = $('.abar .btn-primary:not(:disabled)'); if (p && !dlgClose) p.click(); }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('.rr[role=button]')) { e.preventDefault(); e.target.click(); }
+});
+let wasNarrow = window.innerWidth < 1100;
+window.addEventListener('resize', () => { const n = window.innerWidth < 1100; if (n !== wasNarrow) { wasNarrow = n; S.sbOverlay = false; applySidebar(false); } placeThumbs(document); });
+
+window.addEventListener('scroll', () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); });
+/* ---------- Boot ---------- */
+seed(); renderMock(); applySidebar(false); renderTop(); go('runs');
+requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('preload')));
+if (!STATIC && /[?&]sim=1/.test(location.search)) { S.sim = true; renderMock(); }
+window.__mock = { S, U, X, tick, go, openDrawer, setTheme, toggleSidebar, openPalette, rerender };
+})();
+</script>
+</body>
+</html>
