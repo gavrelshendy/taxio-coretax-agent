@@ -902,19 +902,40 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.strictEqual(await text('.big-num b'), '2');
         assert.ok((await text('.big-num')).includes('/ 5'));
         assert.ok((await text('.tally')).includes('PPh Unifikasi · 1 ok, 1 failed'));
-        assert.strictEqual(await page.locator('[data-run-size="50"]').getAttribute('aria-pressed'), 'true');
+        // Keputusan pemilik 2026-11-13: ukuran halaman dan Mundur tidak ditawarkan; Coba lagi / Lewati hanya saat ditahan.
+        assert.strictEqual(await page.locator('[data-run-size]').count(), 0, 'tanpa pilihan baris per halaman');
+        assert.strictEqual(await page.locator('[data-run="back"]').count(), 0, 'tanpa Back');
+        assert.strictEqual(await page.locator('.ctl-grid [data-run="skip"], .ctl-grid [data-run="retry"]').count(), 0, 'Skip / Retry bukan tombol tetap');
+        assert.ok((await text('.banner.warn')).includes('Try again'));
+        assert.ok((await text('.banner.warn')).includes('Skip PPh 21/26 / 0326'), 'Lewati menyebut kombinasi yang dilewati');
         assert.ok((await text('.status-pill')).includes('Running'));
         await shot('18-berjalan');
     });
-    await test('kontrol proses: Ulang, Lewati, Mundur, Jeda/Lanjut dan Hentikan menghubungi server', async () => {
+    await test('kontrol proses: Coba lagi, Lewati (saat ditahan), Jeda/Lanjut dan Hentikan menghubungi server', async () => {
         fakes.ctl.runCalls.length = 0;
         await page.click('.banner.warn [data-run="retry"]'); await pause(150);
         await page.click('.banner.warn [data-run="skip"]'); await pause(150);
-        await page.click('.banner.warn [data-run="back"]'); await pause(150);
         await page.click('.ctl-grid [data-run="pause"]'); await pause(150); // paused=true -> Lanjut -> resume
         page.once('dialog', (d) => d.accept());
         await page.click('.rail [data-run="stop"]'); await pause(200);
-        assert.deepStrictEqual(fakes.ctl.runCalls, ['retry', 'skip', 'back', 'resume', 'stop']);
+        assert.deepStrictEqual(fakes.ctl.runCalls, ['retry', 'skip', 'resume', 'stop']);
+    });
+    await test('kontrol menurut fitur: hanya Stop + Jeda; "Stopping…" / "Pausing…" sampai titik aman berikutnya', async () => {
+        const base = { active: true, label: 'Faktur Masukan crediting · CV Klien Baru Sejahtera', jenisRequested: [], jenisTally: {}, holdReason: '', plan: null, controls: { stop: true, pause: true, skip: false, retry: false, back: false, pageSize: false } };
+        fakes.ctl.run = Object.assign({}, base, { paused: true, pauseRequested: true, stopRequested: false });
+        // Tetap aktif sesudahnya: tes berikutnya menguji peralihan aktif -> selesai.
+        {
+            await page.waitForFunction(() => /Pausing…/.test(document.body.innerText), null, { timeout: 5000 });
+            assert.strictEqual(await page.locator('[data-run="skip"], [data-run="retry"], [data-run="back"], [data-run-size]').count(), 0);
+            assert.ok((await text('.ctl-grid')).includes('Pausing…'));
+            fakes.ctl.run = Object.assign({}, base, { paused: false, pauseRequested: false, stopRequested: true });
+            await page.waitForFunction(() => /Stopping…/.test(document.body.innerText), null, { timeout: 5000 });
+            assert.ok(await page.locator('.rail [data-run="stop"]').isDisabled(), 'Stop tidak bisa diklik dua kali');
+            fakes.ctl.run = Object.assign({}, base, { paused: false, controls: Object.assign({}, base.controls, { pause: false }) });
+            await page.waitForFunction(() => !/Stopping…/.test(document.body.innerText), null, { timeout: 5000 });
+            assert.strictEqual(await page.locator('[data-run="pause"]').count(), 0, 'fitur tanpa Jeda: tombol Jeda tidak ditampilkan');
+            assert.strictEqual(await page.locator('.rail [data-run="stop"]').count(), 1);
+        }
     });
     await test('proses selesai: kembali ke halaman dengan ringkasan hasil yang bisa ditutup', async () => {
         fakes.ctl.run = { active: false, paused: false, label: '', jenisRequested: ['pph21'], jenisTally: { pph21: { ok: 5, fail: 0 } }, plan: { items: [{ label: 'a', short: '0126' }, { label: 'b', short: '0226' }], states: ['ok', 'skip'], index: 1 } };

@@ -17,6 +17,7 @@ const os = require('os');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const { log } = require('../lib/log');
+const runcontrol = require('../lib/runcontrol');
 
 const API = '/einvoiceportal/api';
 const TOKEN_KEY = 'cats-portal-angular-clientuser:https://coretaxdjp.pajak.go.id/identityproviderportal:cats-portal-angular-client';
@@ -213,6 +214,8 @@ async function listByPeriod(page, ctx, periodCodes, year, emit) {
     const out = [];
     const seen = new Set();
     for (let first = 0; first < 20000; first += PAGE) {
+        // Titik aman Stop / Jeda / Lewati: di antara halaman daftar (hanya membaca).
+        await runcontrol.checkpoint();
         const res = await apiPost(page, '/inputinvoice/list', listBody(ctx, [
             { PropertyName: 'TaxInvoicePeriod', Value: periodCodes, MatchMode: 'contains', CaseSensitive: true, AsString: false },
             { PropertyName: 'TaxInvoiceYear', Value: String(year), MatchMode: 'equals', CaseSensitive: true, AsString: false }
@@ -730,8 +733,14 @@ async function runImportFromExcel(o) {
     const toProcess = o.limit ? dataRows.slice(0, o.limit) : dataRows;
 
     const results = [];
+    let stopped = null;
     for (let i = 0; i < toProcess.length; i++) {
         const row = toProcess[i];
+        // Titik aman Stop / Jeda: HANYA di antara baris. Satu baris (cari -> reset ke APPROVED bila perlu -> kreditkan ->
+        // verifikasi baca ulang) selalu selesai dan hasilnya tercatat di Excel sebelum proses berhenti - tidak pernah
+        // berhenti di antara reset dan pengkreditan baris yang sama.
+        try { await runcontrol.checkpoint(); }
+        catch (e) { if (!e.isStop) throw e; stopped = e; break; }
         let out;
         try {
             out = await processExcelRow(page, ctx, row, colMap, { dryRun: o.dryRun, targetPeriod: targetPeriod });
@@ -749,10 +758,22 @@ async function runImportFromExcel(o) {
         }
     }
 
+    // Dihentikan: baris yang belum disentuh ditandai di Excel hasil (tidak ada perubahan Coretax untuk baris itu).
+    const notDone = stopped ? toProcess.slice(results.length) : [];
+    for (const row of notDone) {
+        row.getCell(colMap.hasil).value = 'BELUM DIPROSES';
+        row.getCell(colMap.keterangan).value = 'Dihentikan pengguna sebelum baris ini diproses - tidak ada perubahan di Coretax.';
+    }
+
     const outDir = path.join(os.homedir(), 'Downloads', 'CoretaxAgent', 'PajakMasukan');
     fs.mkdirSync(outDir, { recursive: true });
     const outFile = path.join(outDir, 'Hasil Impor Pajak Masukan - ' + Date.now() + '.xlsx');
     await wb.xlsx.writeFile(outFile);
+    if (stopped) {
+        emit('Dihentikan: ' + results.length + ' dari ' + toProcess.length + ' baris sudah diproses (' + (ringkasan(results) || 'belum ada') + ', '
+            + results.filter((r) => r.hasil === 'SUKSES').length + ' berubah di Coretax); ' + notDone.length + ' belum diproses. Hasil sebagian tersimpan di: ' + outFile);
+        throw stopped;
+    }
     emit('Selesai. ' + ringkasan(results) + '. Hasil tersimpan di: ' + outFile);
 
     return { ctx: ctx, outFile: outFile, rows: results, ringkasan: tally(results) };
@@ -812,16 +833,37 @@ async function runDownloadExcel(o) {
     emit('WP aktif: ' + (ctx.nama || '-') + ' (' + ctx.npwp + '), sesi tersisa ~' + ctx.tokenExpiresInSec + ' detik.');
 
     const allRows = [];
-    for (const mmYY of o.masaList) {
+    // Satu unit = satu masa (hanya membaca): Stop / Jeda / Lewati berlaku di antara halaman daftar (listByPeriod) dan
+    // di antara masa. Lewati = masa yang sedang diambil tidak dimasukkan ke Excel, lanjut ke masa berikutnya.
+    runcontrol.setPlan(o.masaList.map((m) => ({ label: 'Pajak Masukan ' + m, short: m })));
+    const fetched = [], skipped = [];
+    for (let i = 0; i < o.masaList.length; i++) {
+        const mmYY = o.masaList[i];
         const month = parseInt(mmYY.slice(0, 2), 10);
         const year = '20' + mmYY.slice(2);
         const code = PERIOD_CODE[month];
-        if (!code) { emit('Masa tidak valid dilewati: ' + mmYY); continue; }
-        const rows = await listByPeriod(page, ctx, [code], year, null);
+        if (!code) { emit('Masa tidak valid dilewati: ' + mmYY); runcontrol.markCombo(i, 'skip'); continue; }
+        runcontrol.markCombo(i, 'run');
+        let rows;
+        try {
+            await runcontrol.checkpoint();
+            rows = await listByPeriod(page, ctx, [code], year, null);
+            await runcontrol.checkpoint(); // Lewati / Stop yang tiba selama halaman terakhir masa ini: berlaku untuk masa INI
+        } catch (e) {
+            if (e && e.isSkip) { emit(periodLabel(code, year) + ': dilewati atas permintaan pengguna (tidak masuk Excel).'); skipped.push(mmYY); runcontrol.markCombo(i, 'skip'); continue; }
+            if (e && e.isStop) {
+                emit('Dihentikan: ' + fetched.length + ' dari ' + o.masaList.length + ' masa sudah diambil' + (fetched.length ? ' (' + fetched.join(', ') + ')' : '')
+                    + '; ' + (o.masaList.length - fetched.length - skipped.length) + ' belum diproses. File Excel tidak dibuat.');
+            }
+            throw e;
+        }
         emit(periodLabel(code, year) + ': ' + rows.length + ' faktur.');
         rows.forEach((x) => allRows.push(invoiceToRow(x)));
+        fetched.push(mmYY);
+        runcontrol.markCombo(i, 'ok');
     }
     emit('Total ' + allRows.length + ' faktur dari ' + o.masaList.length + ' masa.');
+    if (skipped.length) emit('Masa yang dilewati pengguna (tidak ada di Excel): ' + skipped.join(', ') + '.');
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Pajak Masukan');

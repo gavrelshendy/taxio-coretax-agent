@@ -24,6 +24,11 @@ const fs = require('fs');
 const ExcelJS = require('exceljs');
 const { log, showPopup } = require('../lib/log');
 const chrome = require('../lib/chrome');
+const runcontrol = require('../lib/runcontrol');
+/* Stop / Jeda (lib/runcontrol.js checkpoint): di antara langkah navigasi Buat Kasus Baru, sebelum data dimasukkan ke
+ * draft, di setiap putaran penantian (draft siap, tombol Simpan aktif) dan di antara halaman tabel saat membaca ulang
+ * (file pembanding). Satu langkah tulis (klik Lanjut yang membuat kasus, tulis draft + muat ulang, klik Simpan) tidak
+ * pernah dipotong; baris log "Dihentikan: ..." menyebut apa yang sudah dan belum terjadi. */
 
 const FORM_ID = 'FC AL_03_1_AS_39_FORM001';
 
@@ -47,7 +52,16 @@ const SERVICE_TILE_TEXT = 'LA.39-01 Laporan Realisasi Investasi';
 async function openNewCase(page, emit) {
     const log_ = emit || log;
     if (chrome.isLoggedOut(page)) throw new Error('Belum login ke Coretax - login dulu di jendela yang terbuka.');
-
+    let created = false;
+    try { return await openNewCaseSteps(page, log_, () => { created = true; }); }
+    catch (e) {
+        if (e && e.isStop) log_(created ? 'Dihentikan: kasus baru SUDAH dibuat di Coretax, tetapi draft form-nya belum ditunggu sampai siap - buka "Alur Kasus" kasus itu sendiri sebelum impor (jangan buat kasus baru lagi).'
+            : 'Dihentikan sebelum kasus dibuat - tidak ada yang berubah di Coretax.');
+        throw e;
+    }
+}
+async function openNewCaseSteps(page, log_, markCreated) {
+    await runcontrol.checkpoint();
     log_('Membuka halaman "Buat Permohonan Layanan Administrasi"...');
     await page.goto(CREATE_REQUEST_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
     if (chrome.isLoggedOut(page)) throw new Error('Sesi berakhir saat membuka halaman permohonan - login ulang dulu.');
@@ -76,13 +90,17 @@ async function openNewCase(page, emit) {
         tileVisible = await tile.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
     }
     if (!tileVisible) throw new Error('Layanan "' + SERVICE_TILE_TEXT + '" tidak ditemukan (sudah dicoba pilih kategori juga) - Coretax mungkin mengubah menunya.');
+    await runcontrol.checkpoint();
     await tile.click({ timeout: 5000 });
 
     log_('Konfirmasi ("Lanjut")...');
     const lanjut = page.getByRole('button', { name: /^Lanjut$/i }).first();
     const lanjutVisible = await lanjut.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
     if (!lanjutVisible) throw new Error('Tombol "Lanjut" tidak muncul setelah memilih layanan.');
+    // Titik aman terakhir sebelum kasus dibuat: klik Lanjut = satu langkah tulis, sesudahnya kasusnya ada.
+    await runcontrol.checkpoint();
     await lanjut.click({ timeout: 5000 });
+    markCreated();
 
     log_('Menunggu kasus baru dibuat...');
     await page.waitForURL(/case-overview|case-routing/i, { timeout: 30000 }).catch(() => {});
@@ -105,11 +123,12 @@ async function openNewCase(page, emit) {
     if (!formFrame) {
         // Fall back to polling page.frames() - framenavigated can fire before this call attaches
         // its listener if the iframe was already mid-navigation.
-        const deadline = Date.now() + 15000;
+        let deadline = Date.now() + 15000;
         let found = false;
         while (Date.now() < deadline) {
             if (page.frames().some((f) => /case-components-portal\/.+\/form-render\//i.test(f.url()))) { found = true; break; }
             await new Promise((r) => setTimeout(r, 500));
+            deadline += await runcontrol.checkpoint();
         }
         if (!found) throw new Error('Form e-Reporting tidak termuat setelah membuka Alur Kasus.');
     }
@@ -168,13 +187,15 @@ async function waitForDraftRecord(page, aggregateId, timeoutMs, onTick) {
             return { found: all.some((x) => x.aggregateIdentifier === AGG), seen: all.map((x) => x.aggregateIdentifier + ' (formId=' + x.formId + ')') };
         } catch (e) { return { found:false, seen:['(error: ' + e.message + ')'] }; }
     })()`;
-    const deadline = Date.now() + timeoutMs;
+    let deadline = Date.now() + timeoutMs;
     let last = { found: false, seen: [] };
     while (Date.now() < deadline) {
         last = await page.evaluate(code).catch((e) => ({ found: false, seen: ['(evaluate threw: ' + e.message + ')'] }));
         if (last.found) return last;
         if (onTick) onTick();
         await new Promise((r) => setTimeout(r, 700));
+        // Titik aman (hanya membaca IndexedDB): Stop berhenti menunggu, Jeda memundurkan tenggat.
+        deadline += await runcontrol.checkpoint();
     }
     return last;
 }
@@ -453,6 +474,9 @@ async function runDividenImport(opts) {
         throw Object.assign(new Error('Validasi gagal'), { validation: true });
     }
 
+    // Titik aman terakhir sebelum draft diubah: tulis draft + muat ulang adalah satu langkah (semua baris sekaligus).
+    try { await runcontrol.checkpoint(); }
+    catch (e) { if (e && e.isStop) log('Dihentikan sebelum data dimasukkan - draft Coretax tidak berubah (0 dari ' + (dividend.length + investment.length) + ' baris).'); throw e; }
     log('Semua ' + (dividend.length + investment.length) + ' baris valid. Memasukkan ke draft Coretax...');
     const result = await injectAndReload(page, aggregateId, { cityCode, dividend, investment });
     if (!result || !result.ok) {
@@ -463,7 +487,12 @@ async function runDividenImport(opts) {
     }
 
     log('Data masuk ke draft (' + result.div + ' baris dividen + ' + result.inv + ' baris investasi) - menunggu halaman selesai dimuat ulang...');
-    const saveOutcome = await trySaveDraft(page);
+    let saveOutcome;
+    try { saveOutcome = await trySaveDraft(page); }
+    catch (e) {
+        if (e && e.isStop) log('Dihentikan: ' + result.div + ' baris dividen + ' + result.inv + ' baris investasi SUDAH dimasukkan ke draft, tetapi belum disimpan otomatis - periksa lalu klik Simpan sendiri di Coretax. File pembanding tidak dibuat.');
+        throw e;
+    }
     let doneMsg;
     if (saveOutcome === 'saved') {
         doneMsg = 'SELESAI: ' + result.div + ' baris dividen + ' + result.inv + ' baris investasi dimasukkan DAN TERSIMPAN ke draft Coretax.';
@@ -485,6 +514,7 @@ async function runDividenImport(opts) {
         await writeControlFile(parsed, scraped, controlPath);
         log('File pembanding tersimpan: ' + controlPath);
     } catch (e) {
+        if (e && e.isStop) { log('Dihentikan: impor sudah selesai (lihat baris SELESAI di atas), file pembanding tidak dibuat.'); throw e; }
         log('Gagal membuat file pembanding (impor tetap berhasil): ' + e.message);
     }
 
@@ -504,9 +534,11 @@ async function runDividenImport(opts) {
  *  flipping to enabled. So this must keep polling on "disabled", not treat the first sighting of
  *  it as final - only 'not-found' (button never rendered) is unrecoverable within the timeout. */
 async function trySaveDraft(page) {
-    const deadline = Date.now() + 45000;
+    let deadline = Date.now() + 45000;
     let sawButton = false;
     while (Date.now() < deadline) {
+        // Titik aman (sebelum klik Simpan, yang satu langkah tulis): Stop melempar, Jeda memundurkan tenggat.
+        deadline += await runcontrol.checkpoint();
         for (const frame of page.frames()) {
             const btn = frame.locator('button.btn-primary', { hasText: 'Simpan' }).first();
             const count = await btn.count().catch(() => 0);
@@ -560,6 +592,7 @@ async function scrapeGridRows(grid) {
 
     const rows = [];
     for (let guard = 0; guard < 200; guard++) { // hard ceiling so a stuck paginator can't loop forever
+        await runcontrol.checkpoint(); // titik aman: di antara halaman tabel (hanya membaca)
         const trs = grid.locator('tbody > tr');
         const n = await trs.count().catch(() => 0);
         for (let i = 0; i < n; i++) {
@@ -664,7 +697,9 @@ async function runDividenCheck(opts) {
     log('Cek Hasil: membaca file pembanding...');
     const parsed = await parseTemplate(opts.fileBuffer);
     log('Cek Hasil: membaca tabel LANGSUNG dari Coretax (bisa beberapa detik untuk banyak baris)...');
-    const scraped = await scrapeLiveGrids(page);
+    let scraped;
+    try { scraped = await scrapeLiveGrids(page); }
+    catch (e) { if (e && e.isStop) log('Dihentikan: tabel Coretax belum selesai dibaca - file pembanding tidak dibuat (tidak ada yang berubah).'); throw e; }
     log('Cek Hasil: Excel = ' + parsed.dividen.length + ' dividen/' + parsed.investasi.length + ' investasi | Coretax = ' + scraped.dividend.length + ' dividen/' + scraped.investment.length + ' investasi.');
 
     const outPath = controlFileOutPath('Cek Hasil Dividen');
@@ -676,4 +711,4 @@ async function runDividenCheck(opts) {
 
 module.exports = { runDividenImport, runDividenCheck, openNewCase, FORM_ID };
 // Internal helpers exposed only for offline unit testing (dev-test-dividen.js) - harmless to ship.
-module.exports.__test = { parseTemplate, buildRows, toISODate, toNumber, scrapeLiveGrids, writeControlFile };
+module.exports.__test = { parseTemplate, buildRows, toISODate, toNumber, scrapeLiveGrids, writeControlFile, trySaveDraft, waitForDraftRecord, scrapeGridRows };

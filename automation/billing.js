@@ -471,6 +471,8 @@ async function runBillingPph25(opts) {
         return { created: false, reason: 'duplicate', billingCode: dup.BillingCode, filePath };
     }
 
+    // Titik aman Stop / Jeda terakhir sebelum satu-satunya langkah tulis (isi formulir + Buat Kode Billing). Sesudah klik
+    // simpan tidak ada titik aman lagi: kode yang terbentuk selalu diunduh dan dicatat sebelum proses selesai.
     await runcontrol.checkpoint();
     let buffer;
     try {

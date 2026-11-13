@@ -302,6 +302,7 @@ node scripts/test-lampiran-export.js  # gerbang regresi jalur lampiran (wajib hi
 node scripts/test-session-restore.js  # sesi Taxio Hub dipulihkan di latar ("Memulihkan sesi…", offline = coba lagi)
 node scripts/test-hub-session.js      # token Taxio Hub selalu segar, batas waktu 30 dtk, sesi hilang = pesan jelas
 node scripts/test-run-wrappers.js     # batas waktu / Stop: sesi tetap sibuk sampai langkah Coretax benar-benar selesai
+node scripts/test-run-controls.js     # Stop / Jeda di titik aman setiap fitur (Coretax tiruan) + kontrol per fitur (lib/run-controls.js)
 node scripts/test-chrome-front.js     # jendela Chrome otomasi ke depan lewat pid; cache status jendela; kabar /events
 node scripts/test-profile-housekeeping.js # pemilihan & penghapusan profil Chrome PIC yang lama
 ```

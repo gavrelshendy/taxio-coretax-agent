@@ -225,7 +225,10 @@ const TOOLS = [
             const s = await call('GET', '/api/run/status'), want = String(entity || '').toUpperCase();
             return ((s && s.runs) || []).filter((r) => !want || String(r.tag || '').toUpperCase() === want).map((r) => ({
                 key: r.id ? 'run:' + r.id : r.key, entity: r.tag, label: r.label || r.lastLabel, feature: r.feature || '', active: !!r.active, queued: !!r.queued,
-                ...(r.queued ? { position: r.position } : {}), window: r.window || null, paused: !!r.paused, hold: r.holdReason || (r.held ? 'ditahan - butuh keputusan' : '')
+                ...(r.queued ? { position: r.position } : {}), window: r.window || null, paused: !!r.paused, hold: r.holdReason || (r.held ? 'ditahan - butuh keputusan' : ''),
+                // Kontrol yang benar-benar dikerjakan fitur proses ini (Pilot 4.x; lib/run-controls.js) + permintaan yang belum
+                // sampai di titik aman (berhenti / jeda setelah langkah saat ini selesai).
+                ...(r.controls ? { controls: r.controls, stopping: !!r.stopRequested, pausing: !!r.pauseRequested } : {})
             }));
         } },
     { name: 'stop_run', description: 'Hentikan proses Pilot (berhenti setelah langkah saat ini selesai) atau batalkan proses yang masih antre. Sebut entity; bila entitas itu punya lebih dari satu proses aktif, sebut juga key dari run_status (ditolak dengan daftarnya bila ambigu).',

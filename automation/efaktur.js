@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const { log } = require('../lib/log');
+const runcontrol = require('../lib/runcontrol');
 const pm = require('./pajakmasukan');
 
 const API = '/einvoiceportal/api';
@@ -171,6 +172,8 @@ function listBody(ctx, type, code, year, first, rows) {
 async function listForMasa(page, ctx, type, code, year, emit) {
     const PAGE = 200, out = [], seen = new Set();
     for (let first = 0; first < 200000; first += PAGE) {
+        // Titik aman Stop / Jeda / Lewati: di antara halaman daftar (hanya membaca).
+        await runcontrol.checkpoint();
         const res = await pm.apiPost(page, type.listPath, listBody(ctx, type, code, year, first, PAGE), 90000);
         const j = res && res.__json;
         if (!j || !j.IsSuccessful) throw new Error('Gagal mengambil daftar ' + type.label + ': ' + ((j && j.Message) || (res && res.__http)));
@@ -256,10 +259,24 @@ async function downloadRecord(page, recordId, destFile) {
 async function exportCsvBatch(page, ctx, jobs, emit, opts) {
     opts = opts || {};
     const results = jobs.map((job) => ({ job }));
+    // Stop di fase CSV: yang sudah diminta tetap dibuat Coretax (bisa diunduh dari menu Monitoring), tidak diunduh di sini.
+    const stopNote = (stage) => {
+        const asked = results.filter((r) => r.asked).length, got = results.filter((r) => r.file).length;
+        emit('Dihentikan (' + stage + '): ' + asked + ' dari ' + results.length + ' permintaan CSV resmi sudah dikirim ke Coretax, ' + got + ' file sudah diunduh; '
+            + (results.length - asked) + ' belum diminta. Permintaan yang sudah dikirim tetap dibuat Coretax - unduh dari menu Monitoring bila perlu.');
+    };
     const before = new Map();
     for (const type of new Set(jobs.map((j) => j.type))) before.set(type, new Set((await monitorRows(page, ctx, type)).map((r) => r.RecordId)));
     for (const r of results) {
+        // Titik aman: sebelum tiap permintaan ekspor (satu permintaan = satu jenis x masa). Lewati = jenis x masa ini tidak diminta.
+        try { await runcontrol.checkpoint(); }
+        catch (e) {
+            if (e && e.isSkip) { r.error = 'dilewati atas permintaan pengguna (tidak diminta ke Coretax).'; continue; }
+            if (e && e.isStop) stopNote('sebelum meminta ekspor');
+            throw e;
+        }
         try {
+            r.asked = true;
             const res = await pm.apiPost(page, '/EInvoiceExport/export', exportBody(ctx, r.job.type, r.job.code, r.job.year), 60000);
             const j = res && res.__json;
             if (!j || !j.IsSuccessful) throw new Error('Permintaan ekspor ditolak Coretax: ' + ((j && j.Message) || (res && res.__http)));
@@ -268,10 +285,21 @@ async function exportCsvBatch(page, ctx, jobs, emit, opts) {
     }
     const started = results.filter((r) => r.pending).length;
     if (started) emit('CSV resmi: ' + started + ' permintaan dikirim ke Coretax, menunggu file dibuat...');
-    const deadline = Date.now() + (opts.maxWaitMs || 10 * 60 * 1000);
+    let deadline = Date.now() + (opts.maxWaitMs || 10 * 60 * 1000);
     const claimed = new Set();
     let lastNote = Date.now();
     while (results.some((r) => r.pending) && Date.now() < deadline) {
+        // Titik aman: tiap putaran pemantauan (hanya membaca). Jeda memundurkan tenggat; Lewati = berhenti menunggu file
+        // yang belum jadi (tetap dibuat Coretax), lanjut mengunduh yang sudah jadi.
+        try { deadline += await runcontrol.checkpoint(); }
+        catch (e) {
+            if (e && e.isSkip) {
+                for (const r of results.filter((x) => x.pending)) { r.pending = false; r.error = 'tidak ditunggu lagi (dilewati pengguna) - file tetap dibuat Coretax, unduh dari menu Monitoring.'; }
+                break;
+            }
+            if (e && e.isStop) stopNote('menunggu file dari Coretax');
+            throw e;
+        }
         await page.waitForTimeout(opts.pollMs || 4000);
         for (const type of new Set(results.filter((r) => r.pending).map((r) => r.job.type))) {
             const rows = await monitorRows(page, ctx, type);
@@ -289,6 +317,13 @@ async function exportCsvBatch(page, ctx, jobs, emit, opts) {
     for (const r of results) {
         if (r.pending) { r.error = 'Belum selesai setelah ' + Math.round((opts.maxWaitMs || 600000) / 1000) + ' detik - cek menu Monitoring di Coretax.'; r.pending = false; continue; }
         if (r.error || !r.record) continue;
+        // Titik aman: sebelum tiap unduhan file (hanya membaca). Lewati = file ini tidak diunduh.
+        try { await runcontrol.checkpoint(); }
+        catch (e) {
+            if (e && e.isSkip) { r.error = 'unduhan dilewati pengguna - file ada di menu Monitoring Coretax.'; continue; }
+            if (e && e.isStop) stopNote('mengunduh file');
+            throw e;
+        }
         try { Object.assign(r, await downloadRecord(page, r.record.RecordId, r.job.dest)); }
         catch (e) { r.error = e.message; }
     }
@@ -322,25 +357,46 @@ async function runDownloadEfaktur(o) {
 
     if (wantExcel) {
         const selected = [];
+        // Unit = satu jenis x satu masa (hanya membaca). Stop / Jeda / Lewati di antara unit dan di antara halaman daftar;
+        // Lewati = unit yang sedang diambil tidak masuk Excel (dicatat), lanjut ke unit berikutnya.
+        runcontrol.setPlan(types.flatMap((t) => pairs.map((pr) => ({ label: t.label + ' ' + pr.mmYY, short: pr.mmYY + ' ' + t.key }))));
+        const unitCount = types.length * pairs.length;
+        let unit = -1, unitsDone = 0;
+        result.skipped = [];
         for (const type of types) {
             const rows = [];
-            let failed = false;
+            let failed = false, skippedAny = false;
             for (const pr of pairs) {
-                await require('../lib/runcontrol').checkpoint();
+                runcontrol.markCombo(++unit, 'run');
                 try {
+                    await runcontrol.checkpoint();
                     const got = await listForMasa(page, ctx, type, pr.code, pr.year, emit);
+                    await runcontrol.checkpoint(); // Lewati / Stop yang tiba selama halaman terakhir: berlaku untuk unit INI
                     if (got.length) emit(type.label + ' ' + pm.periodLabel(pr.code, pr.year) + ': ' + got.length + ' dokumen.');
                     rows.push(...got);
+                    runcontrol.markCombo(unit, 'ok');
                 } catch (e) {
-                    if (e.isStop) throw e;
+                    if (e.isSkip) {
+                        emit(type.label + ' ' + pr.mmYY + ': dilewati atas permintaan pengguna (tidak masuk Excel).');
+                        result.skipped.push({ key: type.key, label: type.label, masa: pr.mmYY });
+                        skippedAny = true; runcontrol.markCombo(unit, 'skip'); unitsDone++;
+                        continue;
+                    }
+                    if (e.isStop) {
+                        emit('Dihentikan: ' + unitsDone + ' dari ' + unitCount + ' (jenis x masa) sudah diambil; ' + (unitCount - unitsDone) + ' belum diproses. File Excel tidak dibuat'
+                            + (wantCsv ? ' dan CSV resmi belum diminta ke Coretax' : '') + '.');
+                        throw e;
+                    }
                     emit('GAGAL ' + type.label + ' ' + pr.mmYY + ': ' + e.message);
                     result.failures.push({ key: type.key, label: type.label, masa: pr.mmYY, error: e.message });
                     failed = true;
+                    runcontrol.markCombo(unit, 'skip');
                 }
+                unitsDone++;
             }
-            emit(type.label + ': total ' + rows.length + ' dokumen' + (failed ? ' (ADA MASA GAGAL - lihat log)' : '') + '.');
+            emit(type.label + ': total ' + rows.length + ' dokumen' + (failed ? ' (ADA MASA GAGAL - lihat log)' : '') + (skippedAny ? ' (ADA MASA DILEWATI PENGGUNA)' : '') + '.');
             selected.push({ type, rows });
-            result.perType.push({ key: type.key, label: type.label, count: rows.length, incomplete: failed });
+            result.perType.push({ key: type.key, label: type.label, count: rows.length, incomplete: failed || skippedAny });
         }
         if (selected.length) {
             const file = path.join(dir, 'e-Faktur - ' + masaLabel + ' - ' + stamp + '.xlsx');
@@ -353,7 +409,8 @@ async function runDownloadEfaktur(o) {
     if (wantCsv) {
         const jobs = [];
         for (const type of types) for (const pr of pairs) jobs.push({ type, code: pr.code, year: pr.year, mmYY: pr.mmYY, dest: path.join(dir, 'CSV ' + type.label + ' - ' + pr.mmYY + ' - ' + stamp + '.zip') });
-        await require('../lib/runcontrol').checkpoint();
+        // Stop / Jeda / Lewati di fase CSV: di dalam exportCsvBatch (sebelum tiap permintaan ekspor, tiap putaran pemantauan,
+        // sebelum tiap unduhan).
         for (const r of await exportCsvBatch(page, ctx, jobs, emit)) {
             if (r.error) {
                 emit('GAGAL CSV ' + r.job.type.label + ' ' + r.job.mmYY + ': ' + r.error);

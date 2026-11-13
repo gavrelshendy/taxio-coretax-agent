@@ -823,7 +823,13 @@ const handleBpmpAmend = action({ body: 'large', restricted: 'Pembetulan NIK BPMP
             }
         } catch (e) {
             if (e && e.results) results = e.results;
-            if (e && e.isStop) { log('Pembetulan NIK BPMP dihentikan oleh pengguna.'); page = null; }
+            if (e && e.done) cancelled = e.done;
+            // Dihentikan: tidak ada bukti potong yang setengah terkirim (titik aman di automation/bpmp-amend.js); penyisiran
+            // (hanya membaca, ~1 menit) dilewati, laporan Excel di bawah tetap ditulis dari hasil yang sudah ada.
+            if (e && e.isStop) {
+                if (submit && parsed.cancels.length && !cancelled.length && !(e.done)) log('Pembatalan (Tindakan = Batalkan): ' + parsed.cancels.length + ' bukti potong belum dijalankan.');
+                log('Pembetulan NIK BPMP dihentikan oleh pengguna.'); page = null;
+            }
             else log('Pembetulan NIK BPMP berhenti: ' + e.message);
         }
         // Juga setelah berhenti di tengah: penyisiran menunjukkan apa yang masih tersisa.
@@ -998,7 +1004,17 @@ const handleIssueEbupot = action({ restricted: ISSUE_RESTRICTED }, async (req, r
     return runInBackground(res, { label: (iss.NEEDS_SIGN.has(type) ? 'Issue & sign ' : 'Issue ') + typeLabel(type) + ' ' + period + ' · ' + target.label, session: withRules(target.session, 'issue-ebupot', { type, period, token }, 'ebupot-issue:' + type) }, async () => {
         const signer = iss.NEEDS_SIGN.has(type) ? await target.signer() : null;
         const page = await target.open();
-        const r = await iss.issue(page, { type, period, token, signer, emit: (m) => log(m) });
+        let r;
+        try { r = await iss.issue(page, { type, period, token, signer, emit: (m) => log(m) }); }
+        catch (e) {
+            // Dihentikan di antara kelompok (lib/coretax-issue.js): laporan Excel tetap ditulis dari keadaan Coretax sekarang
+            // bila ada yang sudah dikirim, lalu "Terbitkan dihentikan oleh pengguna." (bukan SELESAI).
+            if (e && e.isStop && e.partial && e.partial.sent) {
+                try { log('Laporan: ' + await writeEbupotPeriodReport(page, target, type, period, 'dihentikan pengguna sesudah ' + e.partial.sent + ' dari ' + e.partial.total + ' ' + e.partial.label + ' dikirim untuk diterbitkan')); }
+                catch (e2) { log('Laporan Excel gagal ditulis: ' + e2.message); }
+            }
+            throw e;
+        }
         try { log('Laporan: ' + await writeEbupotPeriodReport(page, target, type, period, 'sesudah ' + (r.signed ? 'issue & sign ' : 'issue ') + r.label + ' (' + r.issued + ' bukti potong)')); }
         catch (e) { log('Laporan Excel gagal ditulis: ' + e.message); }
         log('SELESAI: ' + r.issued + ' ' + r.label + ' masa ' + r.period + ' diterbitkan' + (r.signed ? ' (ditandatangani)' : '') + (r.pending ? ', ' + r.pending + ' masih diproses Coretax - cek Telah Terbit sebentar lagi' : '') + '. Lapor SPT tetap manual.');
@@ -1167,7 +1183,7 @@ async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
             log('Status ditulis ke ' + out.file + (out.locked ? ' (Excel rekap sedang terbuka - disimpan sebagai file terpisah).' : '.'));
             if (!out.locked) {
                 try { await require('../lib/ebupot-vs-spt').run({ context: page.context(), npwp: entity.project === 'manual' ? null : entity.npwp, file: rekap, year: taxYear, emit: (m) => log(m) }); }
-                catch (e) { log('Cek e-Bupot vs SPT gagal: ' + e.message); }
+                catch (e) { if (e && e.isStop) throw e; log('Cek e-Bupot vs SPT gagal: ' + e.message); }
             }
         }
     }, { stopMsg: 'Penyisiran NIK dihentikan oleh pengguna.', failPrefix: 'Penyisiran NIK gagal: ' });
@@ -1503,6 +1519,53 @@ async function handleRunPageSize(req, res, { sess }) {
     return sendJson(res, 200, runcontrol.status(sess));
 }
 
+/* Fitur proses (lib/runcontrol.js `feature`, lib/run-controls.js FEATURES -> kontrol yang berlaku) yang bisa dimulai
+ * SETIAP route POST. [] = route itu tidak memulai proses otomasi. Route POST baru WAJIB tercantum di sini dan fiturnya
+ * di lib/run-controls.js - scripts/test-run-controls.js gagal bila belum (dashboard / MCP menampilkan kontrol yang
+ * benar-benar dikerjakan fiturnya, bukan semuanya). */
+const ROUTE_FEATURES = {
+    'POST /api/session/retry': [], 'POST /api/connect': [], 'POST /api/disconnect': [], 'POST /api/signup': [],
+    'POST /api/registration/check': [], 'POST /api/registration/initial': [], 'POST /api/local-entities/save': [], 'POST /api/local-entities/delete': [],
+    'POST /api/actions/billing-pph25': ['billing-pph25'],
+    'POST /api/actions/download-ebupot': ['download-ebupot'],
+    'POST /api/actions/download-mybupot': ['download-mybupot'],
+    'POST /api/actions/download-spt': ['download-spt'],
+    'POST /api/actions/import-pajak-masukan': ['import-pajak-masukan'],
+    'POST /api/actions/download-pajak-masukan': ['download-pajak-masukan'],
+    'POST /api/actions/download-efaktur': ['download-efaktur'],
+    'POST /api/actions/import-dividen': ['import-dividen'],
+    'POST /api/actions/bpmp-amend': ['bpmp-amend', 'bpmp-sweep'],
+    'POST /api/import/inspect': [],
+    'POST /api/actions/import-coretax': ['import-coretax'],
+    'POST /api/actions/create-konsep': ['create-konsep'],
+    'POST /api/actions/konsep-download': ['konsep-download'],
+    'POST /api/ebupot/issue-preview': ['issue-preview'],
+    'POST /api/ebupot/find': ['ebupot-find'],
+    'POST /api/ebupot/check-nik': ['check-nik'],
+    'POST /api/import/check-nik': ['import-check-nik'],
+    'POST /api/ebupot/amend-preview': ['ebupot-amend-preview'],
+    'POST /api/ebupot/cancel-preview': ['ebupot-cancel-preview'],
+    'POST /api/actions/ebupot-amend': ['ebupot-amend'],
+    'POST /api/actions/ebupot-cancel': ['ebupot-cancel'],
+    'POST /api/actions/coretax-record': ['coretax-record'],
+    'POST /api/actions/issue-ebupot': ['issue-ebupot'],
+    'POST /api/a1/inspect': [],
+    'POST /api/bpmp-amend/preview': [],
+    'POST /api/actions/a1-refresh': ['a1-refresh'],
+    'POST /api/a1/bpa1-xml': [],
+    'POST /api/actions/check-dividen': ['check-dividen'],
+    'POST /api/actions/create-dividen-case': ['create-dividen-case'],
+    'POST /api/actions/login-entity': ['login'],
+    'POST /api/actions/pick-file': [], 'POST /api/actions/pick-folder': [], 'POST /api/actions/open-coretax': [],
+    // Tautan taxio-coretax:// diteruskan ke lib/deeplink.js (fitur 'deeplink:<action>').
+    'POST /api/deeplink': ['deeplink:login', 'deeplink:download-spt', 'deeplink:mode-a1', 'deeplink:billing-pph25'],
+    'POST /api/session/status': [], 'POST /api/sessions/front': [], 'POST /api/sessions/close': [], 'POST /api/settings/parallel': [],
+    'POST /api/run/pause': [], 'POST /api/run/resume': [], 'POST /api/run/skip': [], 'POST /api/run/retry': [], 'POST /api/run/back': [],
+    'POST /api/run/stop': [], 'POST /api/run/pagesize': [],
+    'POST /api/quit': [], 'POST /api/check-update': [], 'POST /api/tray/open': [], 'POST /api/log/clear': [],
+    'POST /api/diagnostics/export': [], 'POST /api/profiles/stale': [], 'POST /api/profiles/delete': [], 'POST /api/notices/ack': []
+};
+
 // Tabel route: 'METODE /path' -> handler(req, res, { url, sess }). Selain yang tercantum: berkas
 // statis dashboard (gui/public).
 const ROUTES = {
@@ -1663,4 +1726,4 @@ function createGuiServer(port, opts) {
     });
 }
 
-module.exports = { createGuiServer, setLaunchInfo, gracefulQuit };
+module.exports = { createGuiServer, setLaunchInfo, gracefulQuit, _routes: { ROUTES, ROUTE_FEATURES } };

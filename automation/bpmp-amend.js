@@ -10,10 +10,16 @@
  * kirim, check() membandingkan setiap bukti potong per kolom dengan cadangannya.
  *
  * Terbukti live 2026-10-19 (BIRU BIANTI): 19 bukti potong April-Mei dibetulkan, 19/19 lolos pemeriksaan.
- * Tanggal pemotongan pembetulan = tanggal hari pembetulan (perilaku standar Coretax, juga lewat formulir). */
+ * Tanggal pemotongan pembetulan = tanggal hari pembetulan (perilaku standar Coretax, juga lewat formulir).
+ *
+ * Stop / Jeda (lib/runcontrol.js checkpoint): di antara masa saat membaca setahun, di antara NIK Baru dan di antara
+ * bukti potong - TIDAK PERNAH di antara lihat-detail, kirim /amendebupotmp dan pemeriksaan sesudahnya untuk satu bukti
+ * potong: kirimnya selalu selesai, diperiksa, dan tercatat di hasil.json sebelum proses berhenti. Pembatalan: di antara
+ * bukti potong (satu /cancel + pemeriksaannya utuh). */
 const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
+const runcontrol = require('../lib/runcontrol');
 
 const API = 'https://coretaxdjp.pajak.go.id/withholdingslipsportal/api';
 const ISSUED_URL = 'https://coretaxdjp.pajak.go.id/withholding-slips-portal/id-ID/ebupotmp/issued';
@@ -193,6 +199,7 @@ async function listYear(s, year, emit, endpoint = 'getebupotmpissued') {
     const out = new Array(12); let next = 0;
     const worker = async () => {
         for (;;) {
+            await runcontrol.checkpoint(); // titik aman: di antara masa (hanya membaca)
             const m = ++next; if (m > 12) return;
             const mm = String(m).padStart(2, '0'), rows = await s.list(endpoint, mm + mm + year);
             out[m - 1] = rows.map((r) => ({ ...r, _masa: m }));
@@ -245,6 +252,7 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
     const s = session || await openSession(context, npwp);
     const results = [], checked = new Map();
     const save = () => fs.writeFileSync(path.join(outDir, 'hasil.json'), JSON.stringify(results, null, 1));
+    let ti = 0; // NIK Baru yang sedang diproses (untuk ringkasan bila dihentikan)
     try {
         const all = [];
         // Membaca 12 masa bisa lebih dari semenit: tulis kemajuannya supaya tidak tampak macet.
@@ -256,6 +264,7 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
         if (direct) {
             emit('Mengambil ' + targets.length + ' bukti potong langsung dari Coretax (per nomor, tanpa membaca setahun)...');
             for (const t of targets) {
+                await runcontrol.checkpoint(); // titik aman: di antara pembacaan per nomor
                 const mm = String(t.masa).padStart(2, '0'), r = await s.find('getebupotmpissued', mm + mm + year, t.number);
                 if (r) all.push(r); else { emit(t.number + ': tidak ada di BPMP Telah Terbit masa ' + mm + '/' + year + ' - membaca setahun untuk memastikan.'); readYear = true; break; }
             }
@@ -269,7 +278,9 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
         // (satu NIK bisa dipakai dua orang - mis. sebagian BPMP ber-NIK A sebenarnya milik B).
         // exclude: Tindakan Biarkan / Batalkan di sheet Pembetulan - tidak ikut diganti NIK-nya.
         const perSlip = new Set([...targets.filter((t) => t.number).map((t) => t.number), ...exclude]);
-        for (const t of targets) {
+        for (ti = 0; ti < targets.length; ti++) {
+            const t = targets[ti];
+            await runcontrol.checkpoint(); // titik aman: di antara NIK Baru
             const slips = t.number
                 ? all.filter((r) => String(r.WithholdingSlipsNumber) === t.number && (t.temp ? r.TaxIdentificationNumber === TEMP : r.TaxIdentificationNumber === t.old))
                 : all.filter((r) => !perSlip.has(String(r.WithholdingSlipsNumber)) && (t.temp ? String(r.Name || '').trim().endsWith('#' + t.old) && r.TaxIdentificationNumber === TEMP : r.TaxIdentificationNumber === t.old));
@@ -288,6 +299,9 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
             const found = checked.get(t.newNik), person = found.payload || {};
             const officialName = String(person.Name || '').trim();
             for (const slip of slips) {
+                // Titik aman: di antara bukti potong. Dari sini sampai results.push sesudah pemeriksaan = satu unit tulis yang
+                // tidak dipotong Stop / Jeda (lihat header).
+                await runcontrol.checkpoint();
                 const label = t.old + ' -> ' + t.newNik + ' · ' + slip.WithholdingSlipsNumber + ' masa ' + slip.TaxPeriodCode.slice(0, 2) + '/' + year;
                 // NIK salah: NIK di bukti potong valid (16 digit, bukan sementara / 0000) tetapi milik orang lain.
                 const kind = t.temp || nikProblem(slip) ? 'NIK bermasalah' : 'NIK salah';
@@ -323,22 +337,34 @@ async function run({ context, npwp, targets, year, submit, outDir, allowSimilar 
                 if (!ok) throw new Error(label + ': verifikasi sesudah kirim tidak sesuai');
             }
         }
-    } catch (e) { e.results = results; throw e; } finally { save(); if (!session) await s.close(); }
+    } catch (e) {
+        e.results = results;
+        if (e && e.isStop) {
+            const n = (re) => results.filter((r) => re.test(r.status)).length;
+            emit('Dihentikan: ' + results.length + ' bukti potong sudah diproses (' + (submit ? n(/^DIBETULKAN/) + ' dibetulkan' : n(/^SIAP/) + ' siap dikirim') + ', '
+                + (results.length - n(submit ? /^DIBETULKAN/ : /^SIAP/)) + ' tidak dikirim); ' + Math.max(0, targets.length - ti) + ' dari ' + targets.length
+                + ' NIK Baru belum (selesai) diproses - tidak ada bukti potong yang setengah terkirim. Hasil di hasil.json.');
+        }
+        throw e;
+    } finally { save(); if (!session) await s.close(); }
     return results;
 }
 
 /** Batalkan BPMP yang Tindakan-nya "Batalkan" di sheet Pembetulan - hanya nomor yang ada di `confirmed` (dikonfirmasi
  *  pengguna setelah melihat daftarnya). Bukti potong harus masih Telah Terbit dengan NIK yang sama seperti di Excel.
  *  Mengembalikan [{row, ok, msg, number}] (bentuk sama dengan lib/ebupot-vs-spt.js autoCancelZero). */
-async function cancelSlips({ context, npwp, year, cancels, confirmed, emit = () => {} }) {
+async function cancelSlips({ context, npwp, year, cancels, confirmed, emit = () => {}, session = null }) {
     const ok = new Set(confirmed || []), todo = cancels.filter((c) => ok.has(c.number));
     for (const c of cancels) if (!ok.has(c.number)) emit('LEWATI BATAL ' + c.number + ': belum dikonfirmasi.');
     if (!todo.length) return [];
-    const s = await openSession(context, npwp), done = [];
+    const s = session || await openSession(context, npwp), done = [];
+    let i = 0;
     try {
         const all = [];
         for (const rows of await listYear(s, year)) all.push(...rows);
-        for (const c of todo) {
+        for (; i < todo.length; i++) {
+            const c = todo[i];
+            await runcontrol.checkpoint(); // titik aman: di antara pembatalan (satu /cancel + pemeriksaannya utuh)
             const r = all.find((x) => String(x.WithholdingSlipsNumber) === c.number);
             if (!r) { emit('LEWATI BATAL ' + c.number + ': tidak ada di BPMP Telah Terbit ' + year + ' (sudah dibatalkan / diganti?).'); continue; }
             if (c.nik && r.TaxIdentificationNumber !== c.nik) { emit('LEWATI BATAL ' + c.number + ': NIK di Coretax ' + r.TaxIdentificationNumber + ' berbeda dengan Excel ' + c.nik + ' - periksa dulu.'); continue; }
@@ -346,7 +372,13 @@ async function cancelSlips({ context, npwp, year, cancels, confirmed, emit = () 
             done.push({ ...x, number: c.number });
             emit((x.ok ? 'DIBATALKAN  ' : 'GAGAL BATAL ') + 'BPMP ' + c.number + ' masa ' + r._masa + '/' + year + ' · ' + r.TaxIdentificationNumber + ' ' + String(r.Name || '').trim() + (x.ok ? (r.IsReportedToTaxReturn ? ' - sudah dilaporkan di SPT, SPT Masa perlu dibetulkan.' : '.') : ': ' + x.msg + ' - batalkan manual di e-Bupot.'));
         }
-    } finally { await s.close(); }
+    } catch (e) {
+        if (e && e.isStop) {
+            e.done = done;
+            emit('Dihentikan: ' + done.filter((x) => x.ok).length + ' dari ' + todo.length + ' bukti potong yang dikonfirmasi sudah dibatalkan; ' + (todo.length - i) + ' belum diproses.');
+        }
+        throw e;
+    } finally { if (!session) await s.close(); }
     return done;
 }
 
@@ -365,6 +397,7 @@ async function check({ context, npwp, dirs, emit = () => {} }) {
     const details = new Map();
     try {
         for (const [number, exp] of expected) {
+            await runcontrol.checkpoint(); // titik aman: di antara bukti potong (hanya membaca)
             const before = backups.get(number + '|' + exp.recordId); if (!before) continue;
             const problems = [];
             const now = (await get('getebupotmpissued', before.TaxPeriodCode)).find((r) => r.WithholdingSlipsNumber === number);
