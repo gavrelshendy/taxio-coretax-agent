@@ -350,6 +350,7 @@ async function runDownloadEfaktur(o) {
     const saveRoot = o.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
     const dir = path.join(saveRoot, o.entityFolder || 'eFaktur', 'eFaktur');
     fs.mkdirSync(dir, { recursive: true });
+    runcontrol.setOutput(dir); // folder hasil proses ini (halaman Runs)
     const masaLabel = o.masaList.length === 1 ? o.masaList[0] : o.masaList[0] + '-' + o.masaList[o.masaList.length - 1];
     const stamp = Date.now();
     const result = { dir, perType: [], files: [], failures: [] };
