@@ -105,9 +105,9 @@ function fakePage({ pid, cdpFails, url } = {}) {
         const off = uiEvents.on((e) => got.push(e.event));
         runcontrol.isolate(() => { runcontrol.start('x', { key: 'ev' }); runcontrol.finish(); });
         require('../lib/login-status').set('p', { entity_id: 'E' });
-        await sleep(uiEvents.DEBOUNCE_MS + 60);
+        await sleep(uiEvents.DEBOUNCE_MS + 400); // 'runs' (halaman Runs) ditahan sampai 250 ms
         off();
-        assert.deepStrictEqual(got.sort(), ['login', 'run']);
+        assert.deepStrictEqual(got.sort(), ['login', 'run', 'runs']);
     });
 
     try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) { /* ignore */ }

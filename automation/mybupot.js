@@ -230,6 +230,7 @@ async function downloadComboData(ctx) {
     emit('Total data: ' + rows.length + ' baris.');
     let downloadedCount = 0;
     fs.mkdirSync(saveDir, { recursive: true });
+    runcontrol.setOutput(saveDir); // folder hasil proses ini (halaman Runs)
     for (let i = 0; i < rows.length; i++) {
         await runcontrol.checkpoint();
         const row = rows[i];

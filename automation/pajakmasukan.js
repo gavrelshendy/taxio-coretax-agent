@@ -767,6 +767,7 @@ async function runImportFromExcel(o) {
 
     const outDir = path.join(os.homedir(), 'Downloads', 'CoretaxAgent', 'PajakMasukan');
     fs.mkdirSync(outDir, { recursive: true });
+    runcontrol.setOutput(outDir); // folder hasil proses ini (halaman Runs)
     const outFile = path.join(outDir, 'Hasil Impor Pajak Masukan - ' + Date.now() + '.xlsx');
     await wb.xlsx.writeFile(outFile);
     if (stopped) {
@@ -875,6 +876,7 @@ async function runDownloadExcel(o) {
     const saveRoot = o.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
     const dir = path.join(saveRoot, o.entityFolder || 'PajakMasukan', 'PajakMasukan');
     fs.mkdirSync(dir, { recursive: true });
+    runcontrol.setOutput(dir); // folder hasil proses ini (halaman Runs)
     const label = o.masaList.length === 1 ? o.masaList[0] : (o.masaList[0] + '-' + o.masaList[o.masaList.length - 1]);
     const outFile = path.join(dir, 'Pajak Masukan - ' + label + ' - ' + Date.now() + '.xlsx');
     await wb.xlsx.writeFile(outFile);
