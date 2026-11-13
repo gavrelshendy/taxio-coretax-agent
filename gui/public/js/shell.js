@@ -131,7 +131,7 @@
         // "Start another command" (P.run.hidden): halaman fitur tampil lagi selagi proses entitas ini berjalan / antre.
         const showRun = run.active && !P.run.isHidden(run);
         const want = showRun ? 'run' : 'page:' + P.state.page;
-        const fresh = document.createElement('div');
+        const fresh = document.createElement('div'); fresh.className = 'page';
         if (showRun) {
             const top = content.scrollTop;
             fresh.innerHTML = P.run.viewHtml(run);
@@ -339,6 +339,12 @@
             if (e.target.closest('#outdated-check')) return checkUpdateFromBanner();
         });
     }
+    // Ctrl+Enter = tombol utama bilah aksi halaman fitur (bukan di tampilan proses, dan tidak saat dialog terbuka).
+    document.addEventListener('keydown', (e) => {
+        if (view !== 'app' || !(e.ctrlKey || e.metaKey) || e.key !== 'Enter' || document.querySelector('.scrim')) return;
+        const b = document.querySelector('#abar:not(.run-abar) .btn-primary:not(:disabled)');
+        if (b) { e.preventDefault(); b.click(); }
+    });
     async function closeSession(picId, btn) {
         btn.disabled = true;
         try { await P.post('/api/sessions/close', { picId }); } catch (e) { /* jendela mungkin sudah tertutup */ }

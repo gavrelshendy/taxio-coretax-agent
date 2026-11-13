@@ -38,17 +38,30 @@
         if (L.isManualLike(ent) && !P.state.manual.loggedIn) return { ok: false, reason: 'Waiting for manual login' };
         return { ok: true };
     }
-    function railCard(o) {
+    /** Bilah aksi lengket di bawah formulir (menggantikan rail ringkasan kanan): satu kalimat tentang apa yang akan
+     *  dijalankan + satu tombol utama. o: { count, unit, parts[] (HTML sudah di-escape), dest, sub (HTML), ready,
+     *  blocked, cta, icon, act, extra (tombol sekunder) }. */
+    const destText = () => P.saveRoot() || 'Downloads\\CoretaxAgent';
+    const whoText = (ent) => (!ent ? '' : L.isManualLike(ent) ? 'Manual session' : ent.entity_name);
+    function actionBar(o) {
         const ready = o.ready || { ok: true };
         const why = !ready.ok ? ready.reason : o.blocked;
-        return '<div class="card"><div class="eyebrow">' + (o.title || 'Summary') + '</div>'
-            + (o.big !== undefined ? '<div class="big-num"><b>' + o.big + '</b><span>' + (o.unit || '') + '</span></div>' : '')
-            + (o.sub ? '<div style="font-size:13px;color:var(--text)">' + o.sub + '</div>' : '')
-            + '<div class="divider"></div>' + P.kv(o.rows || [])
-            + (o.folder === false ? '' : P.folderField())
-            + '<button type="button" class="btn btn-primary btn-lg btn-block" data-act="start"' + (why ? ' disabled' : '') + '>' + P.icon(o.icon || 'play', 18, '', 2) + (o.cta || 'Start automation') + '</button>'
-            + (why ? '<div class="hint" style="text-align:center;margin-top:-8px">' + esc(why) + '</div>' : '')
-            + (o.notes || []).map((n) => P.note(n[0], n[1], n[2])).join('') + '</div>';
+        const bits = [];
+        if (o.count !== undefined) bits.push('<b><span class="abar-n">' + o.count + '</span> ' + esc(o.unit || '') + '</b>');
+        (o.parts || []).filter(Boolean).forEach((x) => bits.push(x));
+        const line = bits.join('<span class="abar-dot"> · </span>') + (o.dest ? ' <span class="abar-to">→</span> <span class="mono abar-dest">' + esc(destText()) + '</span>' : '');
+        const sub = why ? '<span class="abar-why">' + esc(why) + '</span>' + (o.sub ? '<span class="abar-dot"> · </span>' + o.sub : '') : (o.sub || '');
+        return '<div class="abar-sum"><div class="abar-line">' + line + '</div>' + (sub ? '<div class="abar-sub">' + sub + '</div>' : '') + '</div>'
+            + (o.extra || '')
+            + '<button type="button" class="btn btn-primary btn-lg" data-act="' + (o.act || 'start') + '"' + (why ? ' disabled' : '') + ' title="Ctrl+Enter">' + P.icon(o.icon || 'play', 17, '', 2) + esc(o.cta || 'Start') + '</button>';
+    }
+    const loginSub = (ent) => (ent ? 'Login: ' + esc(loginText(ent)) : '');
+    /** "Options": hanya folder tujuan (keputusan pemilik 2026-11-14). Terbuka/tertutup diingat. */
+    function optionsHtml() {
+        const open = !!P.store.get('optsOpen', false);
+        return '<section class="card opts"><div class="card-head"><h2>Options</h2></div><div class="card-body">'
+            + '<button type="button" class="disc" data-opts aria-expanded="' + open + '">' + P.icon('right', 14) + '<span>Destination folder</span><span class="disc-val mono">' + esc(destText()) + '</span></button>'
+            + '<div class="coll' + (open ? ' open' : '') + '"><div><div class="ci">' + P.folderField() + '</div></div></div></div></section>';
     }
     /** Banner login manual: menuntun pengguna untuk login sendiri di jendela Coretax. Hanya
      *  untuk sesi Coretax POLOS (project 'manual') - entitas lokal berkredensial (tab Saya)
@@ -84,15 +97,15 @@
 
         function railHtml() {
             const ent = api.entity();
-            if (def.needsEntity !== false && !ent) return railCard({ rows: [['Entity', '<span class="muted">Not selected</span>']], ready: { ok: false, reason: 'Select an entity first' } });
+            if (def.needsEntity !== false && !ent) return actionBar({ parts: ['<span class="muted">No entity selected</span>'], ready: { ok: false, reason: 'Select an entity first' }, cta: def.cta || 'Start', icon: def.ctaIcon });
             return def.rail(st, api);
         }
         function html() {
             const ent = api.entity();
             if (def.normalize) def.normalize(st, api);
             const need = def.needsEntity !== false;
-            const main = (need ? (ent ? manualBanner(ent) : entityGuard()) : '') + def.main(st, api);
-            return P.run.summaryHtml() + (def.batch ? P.batch.barHtml() : '') + '<div class="cols"><div class="col-main">' + main + '</div><aside class="rail" id="rail">' + railHtml() + '</aside></div>';
+            const main = (need ? (ent ? manualBanner(ent) : entityGuard()) : '') + def.main(st, api) + (def.folder ? optionsHtml() : '');
+            return P.run.summaryHtml() + (def.batch ? P.batch.barHtml() : '') + '<div class="col-main">' + main + '</div><div class="abar" id="abar">' + railHtml() + '</div>';
         }
         function afterDraw() {
             P.bindFolderField(root);
@@ -109,14 +122,21 @@
             if (activeId) { const el = document.getElementById(activeId); if (el && el.focus) el.focus(); }
         }
         function updateRail() {
-            const rail = root && root.querySelector('#rail');
-            if (!rail) return;
-            rail.innerHTML = railHtml();
-            P.bindFolderField(rail);
+            const bar = root && root.querySelector('#abar');
+            if (!bar) return;
+            bar.innerHTML = railHtml();
+            const dv = root.querySelector('.disc-val'); if (dv) dv.textContent = destText();
         }
         async function onClick(e) {
             const dismiss = e.target.closest('[data-dismiss-run]');
             if (dismiss) { P.run.dismissed = P.run.finished && P.run.finished.at; redraw(); return; }
+            const opts = e.target.closest('[data-opts]');
+            if (opts) {
+                const open = opts.getAttribute('aria-expanded') !== 'true';
+                opts.setAttribute('aria-expanded', String(open)); P.store.set('optsOpen', open);
+                const c = opts.nextElementSibling; if (c) c.classList.toggle('open', open);
+                return;
+            }
             const t = e.target.closest('[data-act]');
             if (!t || !root.contains(t) || t.closest('.pp')) return;
             const act = t.dataset.act;
@@ -140,6 +160,7 @@
             if (def.act && def.act(act, t.dataset, st, api) !== false) redraw();
         }
         function onInput(e) {
+            if (e.target.id === 'save-root-input' && e.type === 'input') { P.store.set('saveRoot', e.target.value.trim()); updateRail(); return; }
             const key = e.target.dataset && e.target.dataset.bind;
             if (!key) return;
             // Kolom teks bereaksi pada 'input' saja. Jika 'change' (saat kehilangan fokus) ikut menggambar
@@ -181,7 +202,7 @@
     const SPT_ANNUAL = [['badan', '1771', 'PPh Badan'], ['spt_op', '1770', 'PPh Orang Pribadi']];
     const ANNUAL_KEYS = ['badan', 'spt_op'];
     const spt = createPage({
-        id: 'spt', batch: true,
+        id: 'spt', batch: true, folder: true, cta: 'Start download', ctaIcon: 'download',
         init(api) {
             return { jenis: new Set([restricted() ? 'unifikasi' : 'pph21']), bpe: true, induk: true, lampiran: false, fmt: 'pdf', isi: 'print', sus: 'combined',
                 ppM: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }), ppY: P.period.create({ mode: 'tahun', onChange: () => api.updateRail() }) };
@@ -206,18 +227,19 @@
                 return P.tile('jenis', k, st.jenis.has(k), code, title, sub, { disabled: dis, title: dis && k === 'pph21' ? 'SPT PPh 21 is not available for Restricted users.' : '' });
             }).join('') + '</div>';
             const pp = annual ? st.ppY : st.ppM;
+            // Lampiran ditonjolkan (keputusan pemilik 2026-11-14): format dan versi langsung di formulir saat dipilih.
+            // Tata letak PDF tidak lagi dipilih: selalu digabung (outputLayout 'combined').
             const lamp = st.lampiran
-                ? '<div class="subpanel"><div class="field"><span class="label">Format</span>' + P.seg('fmt', [{ value: 'pdf', label: 'PDF' }, { value: 'excel', label: 'Excel' }, { value: 'both', label: 'Both' }], st.fmt) + '</div>'
-                    + (st.fmt !== 'excel' ? '<div class="field"><span class="label">PDF content</span>' + P.seg('isi', [{ value: 'print', label: 'Compact' }, { value: 'full', label: 'Full' }, { value: 'confidential', label: 'Confidential', disabled: !onlyPph21, title: 'PPh 21/26 only' }], st.isi) + '</div>'
-                        + '<div class="field"><span class="label">PDF layout</span>' + P.seg('sus', [{ value: 'combined', label: 'Combined' }, { value: 'separate', label: 'Separate' }], st.sus) + '</div>' : '')
-                    + '<div class="full hint">' + (st.fmt === 'excel' ? 'The Excel contains all data. One sheet per Lampiran, which may hold several tables.' : ({ print: 'Compact: the PDF shows the first 50 rows of each table and states how many rows are not shown. Totals always cover all data.', full: 'Full: the PDF shows every row of each table, max. 1,000 rows (±26 pages). Larger tables (e.g. L3 tax credits) show rows 1–1,000; all rows are in the "… lengkap" sheet of the Lampiran Excel, which is downloaded automatically. Totals always cover all data.', confidential: 'Confidential mode removes recipient details. Only available when PPh 21/26 alone is selected.' }[st.isi])) + '</div></div>' : '';
-            return P.card(1, 'Jenis Pajak', '<span>Multiple Masa Pajak allowed · annual: pick one</span>',
+                ? '<div class="subpanel"><div class="field"><span class="label">Lampiran format</span>' + P.seg('fmt', [{ value: 'pdf', label: 'PDF' }, { value: 'excel', label: 'Excel' }, { value: 'both', label: 'PDF + Excel' }], st.fmt) + '</div>'
+                    + (st.fmt !== 'excel' ? '<div class="field"><span class="label">Version</span>' + P.seg('isi', [{ value: 'print', label: 'Compact' }, { value: 'full', label: 'Full' }, { value: 'confidential', label: 'Confidential', disabled: !onlyPph21, title: 'PPh 21/26 only' }], st.isi) + '</div>' : '')
+                    + '<div class="full hint">' + (st.fmt === 'excel' ? 'Excel always holds all rows, one sheet per Lampiran.' : ({ print: 'Compact: first 50 rows of each table. Totals cover all data.', full: 'Full: every row, up to 1,000 per table; larger tables are complete in the Lampiran Excel.', confidential: 'Confidential: without recipient details. PPh 21/26 only.' }[st.isi])) + '</div></div>' : '';
+            return P.card(1, 'Jenis Pajak', '<span>Annual: one at a time</span>',
                 '<div class="stack"><div class="eyebrow">SPT Masa</div>' + tiles(SPT_MONTHLY, 'c3') + '</div><div class="stack"><div class="eyebrow">SPT Tahunan</div>' + tiles(SPT_ANNUAL, 'c2') + '</div>')
-                + P.card(2, annual ? 'Tahun Pajak' : 'Masa Pajak', annual ? 'One year = one full download (Jan–Dec)' : '', pp.html())
-                + P.card(3, 'Documents to Download', '<span>BPE and Induk = original Coretax PDF</span>',
-                    '<div class="stack">' + P.docRow('bpe', st.bpe, 'fileCheck', 'BPE', 'Electronic filing receipt (Bukti Penerimaan Elektronik)')
+                + P.card(2, annual ? 'Tahun Pajak' : 'Masa Pajak', annual ? 'Full year, Jan–Dec' : '', pp.html())
+                + P.card(3, 'Documents', '',
+                    '<div class="stack">' + P.docRow('bpe', st.bpe, 'fileCheck', 'BPE', 'Bukti Penerimaan Elektronik')
                     + P.docRow('induk', st.induk, 'file', 'Induk', 'Main SPT form')
-                    + P.docRow('lampiran', st.lampiran, 'sheet', 'Lampiran', 'Printed from the Coretax view, including those without an official PDF') + lamp + '</div>');
+                    + P.docRow('lampiran', st.lampiran, 'sheet', 'Lampiran', 'All Lampiran, also those without an official PDF') + lamp + '</div>');
         },
         act(act, d, st, api) {
             if (act === 'jenis') {
@@ -225,19 +247,19 @@
                 if (ANNUAL_KEYS.includes(k)) { const had = st.jenis.has(k); st.jenis.clear(); if (!had) st.jenis.add(k); }
                 else { ANNUAL_KEYS.forEach((a) => st.jenis.delete(a)); if (st.jenis.has(k)) st.jenis.delete(k); else st.jenis.add(k); }
             } else if (act === 'bpe' || act === 'induk' || act === 'lampiran') st[act] = !st[act];
-            else if (act === 'fmt' || act === 'isi' || act === 'sus') st[act] = d.val;
+            else if (act === 'fmt' || act === 'isi') st[act] = d.val;
             else return false;
             api.updateRail();
         },
         rail(st, api) {
             const ent = api.entity(); const annual = isAnnual(st); const pp = annual ? st.ppY : st.ppM;
             const combos = st.jenis.size * pp.count();
-            const docs = [st.bpe && 'BPE', st.induk && 'Induk', st.lampiran && 'Lampiran (' + ({ pdf: 'PDF', excel: 'Excel', both: 'PDF + Excel' }[st.fmt]) + ')'].filter(Boolean);
+            const docs = [st.bpe && 'BPE', st.induk && 'Induk', st.lampiran && 'Lampiran ' + ({ pdf: 'PDF', excel: 'Excel', both: 'PDF + Excel' }[st.fmt])].filter(Boolean);
+            const names = Array.from(st.jenis).map((k) => (SPT_MONTHLY.concat(SPT_ANNUAL).find((x) => x[0] === k) || [])[2]).filter(Boolean);
             let blocked = '';
             if (!st.jenis.size) blocked = 'Select a Jenis Pajak'; else if (!pp.count()) blocked = annual ? 'Select a Tahun Pajak' : 'Select a Masa Pajak'; else if (!docs.length) blocked = 'Select at least one document';
-            return railCard({ big: combos, unit: 'download combinations', sub: st.jenis.size + ' Jenis Pajak × ' + pp.count() + ' ' + pp.unit(),
-                rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Documents', docs.length ? esc(docs.join(' · ')) : '<span class="muted">Not selected</span>', docs.length ? '' : 'dim']],
-                ready: readiness(ent), blocked, notes: [['shield', 'var(--green)', 'Only downloads from Coretax. No SPT is submitted to DJP.']] });
+            return actionBar({ count: combos, unit: combos === 1 ? 'download' : 'downloads', parts: [esc(names.join(', ')), pp.count() ? esc(pp.unit() + ' ' + pp.code()) : '', esc(docs.join(', ')), esc(whoText(ent))],
+                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' });
         },
         async start(st, api) {
             const annual = isAnnual(st); const pp = annual ? st.ppY : st.ppM;
@@ -246,7 +268,7 @@
             if (!st.bpe && !st.induk && !st.lampiran) throw new Error('Select at least one document to download.');
             const lampiranMode = st.fmt === 'excel' ? 'full' : st.isi;
             await P.post('/api/actions/download-spt', { entity: api.entity(), jenisPajakKeys, masaInput: pp.code(), saveRoot: P.saveRoot() || undefined, checkPph25: false,
-                includeLampiran: st.lampiran, includeBpe: st.bpe, includeInduk: st.induk, lampiranMode, lampiranFormat: st.fmt, outputLayout: st.sus, layoutStyle: 'coretax' });
+                includeLampiran: st.lampiran, includeBpe: st.bpe, includeInduk: st.induk, lampiranMode, lampiranFormat: st.fmt, outputLayout: 'combined', layoutStyle: 'coretax' });
         }
     });
     function isAnnual(st) { return Array.from(st.jenis).some((k) => ANNUAL_KEYS.includes(k)); }
@@ -257,7 +279,7 @@
     const EBUPOT_TYPES = [['bp21', 'BP21', 'PPh 21 Bukti Potong'], ['bppu', 'BPPU', 'Unifikasi withholding'], ['bpa1', 'BPA1', 'A1 Bukti Potong'], ['bpmp', 'BPMP', 'Monthly, permanent employees']];
     const KODE_TYPES = ['bp21', 'bppu'];
     const ebupot = createPage({
-        id: 'ebupot', batch: true,
+        id: 'ebupot', batch: true, folder: true, cta: 'Start download', ctaIcon: 'download',
         init(api) {
             // Awalnya TIDAK ada jenis terpilih. Dulu BP21 sudah tercentang sejak awal, sehingga mengklik BPPU
             // menghasilkan BP21 + BPPU dan antrean mengunduh BP21 lebih dulu (dilaporkan live 2026-10-05).
@@ -287,8 +309,8 @@
             const ent = api.entity(); const n = st.jenis.size * st.pp.count();
             const forceExcel = st.status === 'not_issued' || (st.jenis.size === 1 && st.jenis.has('bpmp'));
             let blocked = ''; if (!st.jenis.size) blocked = 'Select an e-Bupot type'; else if (!st.pp.count()) blocked = 'Select a Masa Pajak';
-            return railCard({ big: n, unit: 'downloads', sub: st.jenis.size + ' type(s) × ' + st.pp.count() + ' Masa Pajak', rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Format', forceExcel || !st.pdf ? 'Excel' : 'Excel + PDF']], ready: readiness(ent), blocked,
-                notes: [['info', 'var(--accent)', 'Multiple types run in sequence, one at a time.']] });
+            return actionBar({ count: n, unit: n === 1 ? 'download' : 'downloads', parts: [esc(Array.from(st.jenis).map((k) => k.toUpperCase()).join(', ')), st.status === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit', st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', forceExcel || !st.pdf ? 'Excel' : 'Excel + PDF', esc(whoText(ent))],
+                dest: true, sub: loginSub(ent) + (st.jenis.size > 1 ? ' · types run one after another' : ''), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' });
         },
         async start(st, api) {
             const types = Array.from(st.jenis);
@@ -306,7 +328,7 @@
     const MYBUPOT = [['bppu', 'BPPU', 'BPPU', false], ['bpnr', 'BPNR', 'BPNR', false], ['bp26', 'BP26', 'BP26', false], ['bpatc', 'DOK', 'Dokumen yang Dipersamakan', false],
         ['bpmp', 'BPMP', 'BPMP', true], ['bp21', 'BP21', 'BP21', true], ['bpa1', 'A1', 'BPA1', true], ['bpa2', 'A2', 'BPA2', true]];
     const bpsaya = createPage({
-        id: 'bpsaya', batch: true,
+        id: 'bpsaya', batch: true, folder: true, cta: 'Start download', ctaIcon: 'download',
         init(api) { return { jenis: new Set(['bppu']), pdf: true, pageSize: 'auto', pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }) }; },
         normalize(st, api) {
             const ent = api.entity();
@@ -334,7 +356,9 @@
         },
         rail(st, api) {
             const ent = api.entity(); let blocked = ''; if (!st.jenis.size) blocked = 'Select a Bukti Potong type'; else if (!st.pp.count()) blocked = 'Select a Masa Pajak';
-            return railCard({ big: st.jenis.size * st.pp.count(), unit: 'downloads', sub: st.jenis.size + ' type(s) × ' + st.pp.count() + ' Masa Pajak', rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Format', st.pdf ? 'Excel + PDF' : 'Excel']], ready: readiness(ent), blocked });
+            const n = st.jenis.size * st.pp.count();
+            return actionBar({ count: n, unit: n === 1 ? 'download' : 'downloads', parts: [esc(Array.from(st.jenis).map((k) => (MYBUPOT.find((m) => m[0] === k) || [])[2] || k).join(', ')), st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', st.pdf ? 'Excel + PDF' : 'Excel', esc(whoText(ent))],
+                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' });
         },
         async start(st, api) {
             await P.post('/api/actions/download-mybupot', { entity: api.entity(), buktiTypeKeys: Array.from(st.jenis), masaInput: st.pp.code(), saveRoot: P.saveRoot() || undefined, pageSize: st.pageSize, outputMode: st.pdf ? 'pdf_excel' : 'excel_only' });
@@ -351,13 +375,12 @@
         ['sdInputReturn', 'Retur Dokumen Lain Masukan'], ['sdOutputReturn', 'Retur Dokumen Lain Keluaran']
     ];
     const faktur = createPage({
-        id: 'faktur', batch: true,
+        id: 'faktur', batch: true, folder: true, cta: 'Start download', ctaIcon: 'download',
         init(api) { return { pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }), types: ['input'], excel: true, csv: false }; },
         afterDraw(st) { st.pp.bind(); },
         main(st) {
             const chips = EFAKTUR_TYPES.map(([key, label]) => '<button type="button" class="chip" data-act="etype" data-val="' + key + '" aria-pressed="' + st.types.includes(key) + '">' + esc(label) + '</button>').join('');
-            return '<div class="banner info"><span class="ico">' + P.icon('receipt', 22) + '</span><div class="body"><b>Download e-Faktur documents</b><span>Faktur Pajak Masukan and Keluaran, Retur, Dokumen Lain, and Retur Dokumen Lain. Fetched directly from Coretax, not limited by on-screen pagination.</span></div></div>'
-                + P.card(1, 'Document Type', '<span><button type="button" class="link" data-act="eall">Select all</button> · <button type="button" class="link" data-act="enone">Clear</button></span>', '<div class="chips c2 wide" id="efaktur-types">' + chips + '</div>')
+            return P.card(1, 'Document Type', '<span><button type="button" class="link" data-act="eall">Select all</button> · <button type="button" class="link" data-act="enone">Clear</button></span>', '<div class="chips c2 wide" id="efaktur-types">' + chips + '</div>')
                 + P.card(2, 'Masa Pajak', '', st.pp.html())
                 + P.card(3, 'Format', '<span>Both allowed</span>', '<div class="chips c2 wide"><button type="button" class="chip" data-act="efmt" data-val="excel" aria-pressed="' + st.excel + '">Excel<span class="hint">One file, one sheet per type · fast</span></button>'
                     + '<button type="button" class="chip" data-act="efmt" data-val="csv" aria-pressed="' + st.csv + '">Official Coretax CSV<span class="hint">Zip built by the Coretax server · may take a few minutes</span></button></div>');
@@ -374,7 +397,8 @@
             const fmt = [st.excel ? 'Excel' : '', st.csv ? 'Official CSV' : ''].filter(Boolean).join(' + ') || '-';
             let blocked = '';
             if (!st.types.length) blocked = 'Select a document type'; else if (!st.pp.count()) blocked = 'Select a Masa Pajak'; else if (!st.excel && !st.csv) blocked = 'Select a format';
-            return railCard({ big: st.types.length, unit: 'document type(s)', rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Masa Pajak', st.pp.count() + ' selected'], ['Format', esc(fmt)]], ready: readiness(ent), blocked });
+            return actionBar({ count: st.types.length, unit: st.types.length === 1 ? 'document type' : 'document types', parts: [st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', esc(fmt), esc(whoText(ent))],
+                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' });
         },
         async start(st, api) { await P.post('/api/actions/download-efaktur', { entity: api.entity(), masaInput: st.pp.code(), types: st.types, excel: st.excel, csv: st.csv, saveRoot: P.saveRoot() || undefined }); }
     });
@@ -413,7 +437,7 @@
     // Antrean banyak entitas hanya untuk Unduh: pembetulan memakai Excel satu entitas.
     let a1View = 'unduh';
     const a1 = createPage({
-        id: 'a1', get batch() { return a1View === 'unduh'; },
+        id: 'a1', folder: true, cta: 'Start', get batch() { return a1View === 'unduh'; },
         init() {
             const y = P.today().getFullYear(), years = Array.from({ length: y - 2025 + 1 }, (_, i) => 2025 + i);
             return { view: a1View, year: y, years, fresh: false, nik: { file: null, submit: false, year: y, years }, bpa1: { file: null, year: y, years, result: null, error: '', outDir: '' } };
@@ -446,7 +470,8 @@
             if (st.view === 'nik') return nikForm.rail(st.nik, api);
             if (st.view === 'bpa1') return bpa1Form.rail(st.bpa1, api);
             const ent = api.entity();
-            return railCard({ big: 12, unit: 'Masa Pajak · PPh 21/26 · ' + st.year, rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))]], ready: readiness(ent), blocked: restricted() ? 'Not available for Restricted users' : '', notes: [['lock', 'var(--muted)', 'Not available for Restricted users.']] });
+            return actionBar({ count: 12, unit: 'Masa Pajak', parts: ['PPh 21/26 ' + st.year, st.fresh ? 'Start over' : 'Continue', esc(whoText(ent))], dest: true, sub: loginSub(ent),
+                ready: readiness(ent), blocked: restricted() ? 'Not available for Restricted users' : '', cta: 'Start download', icon: 'download' });
         },
         async start(st, api) {
             if (st.view === 'nik') return nikForm.start(st.nik, api);
@@ -487,9 +512,9 @@
         },
         rail(st, api) {
             const ent = api.entity();
-            return railCard({ rows: [['Entity', esc(ent && ent.project !== 'manual' ? ent.entity_name : '-')], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>'], ['Year', String(st.year)]],
-                ready: true, blocked: !st.file ? 'Select a recap Excel first' : !st.file.filePath ? 'Select via the Windows dialog (path required)' : '', cta: 'Create BPA1 XML', icon: 'file',
-                notes: [['shield', 'var(--green)', 'Only creates an XML file; nothing is sent to Coretax.']] });
+            return actionBar({ parts: ['<b>BPA1 XML ' + st.year + '</b>', st.file ? esc(st.file.fileName) : '<span class="muted">No recap Excel yet</span>', esc(ent && ent.project !== 'manual' ? ent.entity_name : '')],
+                sub: 'Creates an XML file on this PC; nothing is sent to Coretax.',
+                ready: { ok: true }, blocked: !st.file ? 'Select a recap Excel first' : !st.file.filePath ? 'Select via the Windows dialog (path required)' : '', cta: 'Create BPA1 XML', icon: 'file' });
         },
         async start(st, api) {
             st.error = ''; st.result = null;
@@ -563,9 +588,8 @@
         rail(st, api) {
             const ent = api.entity();
             const blocked = restricted() ? 'Not available for Restricted users' : !st.file ? 'Select a recap Excel first' : '';
-            return railCard({ rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>'], ['Year', String(st.year)]],
-                ready: readiness(ent), blocked, cta: 'Correct in Coretax', icon: 'upload',
-                notes: [['shield', 'var(--green)', 'Only submitted when the official Coretax name for NIK Baru matches Nama Baru in the Excel.']] });
+            return actionBar({ parts: ['<b>BPMP NIK Pembetulan ' + st.year + '</b>', st.file ? esc(st.file.fileName) : '<span class="muted">No recap Excel yet</span>', esc(whoText(ent))],
+                sub: loginSub(ent) + ' · only where the official name matches Nama Baru', ready: readiness(ent), blocked, cta: 'Correct in Coretax', icon: 'upload' });
         },
         async start(st, api) {
             if (restricted()) throw new Error('BPMP NIK Pembetulan is not available for Restricted users.');
@@ -591,7 +615,7 @@
     // entitas (atau sesi manual) lewat jendela Coretax yang Anda login sendiri.
     // =========================================================
     const dividen = createPage({
-        id: 'dividen',
+        id: 'dividen', cta: 'Import to Coretax', ctaIcon: 'upload',
         init() { return { file: null, busy: '' }; },
         main(st, api) {
             return P.card(1, 'Create New Case', '', '<div class="hint" style="font-size:13.5px">Logs in to Coretax as this entity and opens a new e-Reporting case (AS.39-01). Skip this if the case is already open in this entity\'s Coretax window.</div><button type="button" class="btn btn-sm btn-primary" data-act="create-case" style="box-shadow:none;margin-top:8px">' + P.icon('plus', 15) + 'Create new case</button>')
@@ -612,10 +636,9 @@
         rail(st, api) {
             const ent = api.entity(), ready = readiness(ent);
             const why = !ready.ok ? ready.reason : (!st.file ? 'Select a template file first' : '');
-            return '<div class="card"><div class="eyebrow">Summary</div>' + P.kv([['Entity', esc(L.isManualLike(ent) ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>']])
-                + '<button type="button" class="btn btn-primary btn-lg btn-block" data-act="import"' + (why ? ' disabled' : '') + '>' + P.icon('upload', 18, '', 2) + 'Import to Coretax</button>'
-                + '<button type="button" class="btn btn-block" data-act="check"' + (why ? ' disabled' : '') + ' title="Read the table currently shown in Coretax and compare it with this file">' + P.icon('search', 16) + 'Check results (compare table)</button>'
-                + (why ? '<div class="hint" style="text-align:center">' + esc(why) + '</div>' : '') + P.note('shield', 'var(--green)', 'Data goes into a draft and is not submitted to DJP until you sign it yourself.') + '</div>';
+            return actionBar({ parts: ['<b>Dividen import</b>', st.file ? esc(st.file.fileName) : '<span class="muted">No file yet</span>', esc(whoText(ent))],
+                sub: loginSub(ent) + ' · goes into a draft; you sign it yourself', ready: { ok: !why, reason: why }, act: 'import', cta: 'Import to Coretax', icon: 'upload',
+                extra: '<button type="button" class="btn" data-act="check"' + (why ? ' disabled' : '') + ' title="Read the table currently shown in Coretax and compare it with this file">' + P.icon('search', 16) + 'Check results</button>' });
         },
         start() {}
     });
@@ -625,7 +648,7 @@
     // Kreditkan Faktur Masukan (per baris Excel)
     // =========================================================
     const kredit = createPage({
-        id: 'kredit',
+        id: 'kredit', cta: 'Import to Coretax', ctaIcon: 'upload',
         init(api) { return { file: null, mode: 'excel', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }) }; },
         afterDraw(st) { if (st.mode === 'fixed') st.pp.bind(); },
         main(st) {
@@ -641,8 +664,8 @@
         },
         rail(st, api) {
             const ent = api.entity(); let blocked = ''; if (!st.file) blocked = 'Select an Excel file first'; else if (st.mode === 'fixed' && !st.pp.count()) blocked = 'Select a Masa Pengkreditan';
-            return railCard({ title: 'Summary', rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>'], ['Masa Pengkreditan', st.mode === 'fixed' && st.pp.count() ? esc(L.masaLabel(st.pp.single())) : 'Follows the Excel']],
-                folder: false, ready: readiness(ent), blocked, cta: 'Import to Coretax', icon: 'upload', notes: [['shield', 'var(--green)', 'Per-row results (SUKSES, GAGAL, DILEWATI) are written back to your Excel file and saved in the Downloads folder.']] });
+            return actionBar({ parts: ['<b>Credit Faktur Masukan</b>', st.file ? esc(st.file.fileName) : '<span class="muted">No file yet</span>', 'Masa Pengkreditan ' + (st.mode === 'fixed' && st.pp.count() ? esc(L.masaLabel(st.pp.single())) : 'from the Excel'), esc(whoText(ent))],
+                sub: loginSub(ent) + ' · results are written back to the Excel', ready: readiness(ent), blocked, cta: 'Import to Coretax', icon: 'upload' });
         },
         async start(st, api) {
             await P.post('/api/actions/import-pajak-masukan', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.fileBase64 ? undefined : st.file.filePath, targetMasaInput: st.mode === 'fixed' && st.pp.single() ? st.pp.single() : undefined });
@@ -653,20 +676,19 @@
     // Kode Billing PPh 25
     // =========================================================
     const billing = createPage({
-        id: 'billing',
+        id: 'billing', folder: true, cta: 'Create Kode Billing', ctaIcon: 'bank',
         init(api) { return { nominal: '', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }) }; },
         afterDraw(st) { st.pp.bind(); },
         main(st) {
             return P.card(1, 'Masa Pajak', '<span>PPh 25 · self-payment</span>', st.pp.html())
-                + P.card(2, 'Payment Amount', '', '<div class="field"><div class="input-group" style="align-items:center"><span style="font:700 20px var(--font-head);color:var(--muted);padding-left:4px">Rp</span><input class="input mono" style="height:56px;font-size:22px;font-weight:600" id="bl-nominal" data-bind="nominal" data-money inputmode="numeric" placeholder="0" value="' + esc(st.nominal) + '" aria-label="PPh 25 amount"></div><span class="hint">Enter the PPh 25 installment that must be paid.</span></div>')
-                + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Checked automatically before creating the code</b><div class="hint">The agent makes sure the Masa Pajak is not yet paid and has no active Kode Billing. If one exists, the existing code is downloaded instead of creating a duplicate.</div></div></div></section>';
+                + P.card(2, 'Payment Amount', '', '<div class="field"><div class="input-group money"><span class="money-rp">Rp</span><input class="input mono money-in" id="bl-nominal" data-bind="nominal" data-money inputmode="numeric" placeholder="0" value="' + esc(st.nominal) + '" aria-label="PPh 25 amount"></div><span class="hint">Enter the PPh 25 installment that must be paid.</span></div>')
+                + P.callout('shield', 'Checked automatically before creating the code', 'The agent makes sure the Masa Pajak is not yet paid and has no active Kode Billing. If one exists, the existing code is downloaded instead of creating a duplicate.');
         },
         rail(st, api) {
             const ent = api.entity(); const masa = st.pp.single(); const digits = String(st.nominal).replace(/\D/g, '');
             let blocked = ''; if (!masa) blocked = 'Select a Masa Pajak'; else if (!digits || Number(digits) <= 0) blocked = 'Enter the payment amount';
-            return railCard({ big: digits ? '<span style="font-size:36px">Rp ' + L.rupiah(digits) + '</span>' : '—', unit: '', sub: masa ? 'PPh 25 · Masa Pajak ' + esc(L.masaLabel(masa)) : 'Select a Masa Pajak',
-                rows: [['Entity', esc(ent.project === 'manual' ? 'Manual session' : ent.entity_name)], ['Login', esc(loginText(ent))], ['Type', ent.individual ? 'Individual' : 'Corporate']], ready: readiness(ent), blocked, cta: 'Create Kode Billing', icon: 'bank',
-                notes: [['info', 'var(--accent)', 'The code is created through the official Coretax wizard and its PDF is saved to the folder. You still make the payment yourself.']] });
+            return actionBar({ parts: ['<b>Kode Billing PPh 25</b>', masa ? esc('Masa Pajak ' + L.masaLabel(masa)) : '', digits ? '<b class="mono">Rp ' + L.rupiah(digits) + '</b>' : '', esc(whoText(ent)) + ' (' + (ent.individual ? 'Individual' : 'Corporate') + ')'],
+                dest: true, sub: loginSub(ent) + ' · you still make the payment yourself', ready: readiness(ent), blocked, cta: 'Create Kode Billing', icon: 'bank' });
         },
         async start(st, api) {
             await P.post('/api/actions/billing-pph25', { entity: api.entity(), masaInput: st.pp.single(), nominal: String(st.nominal).replace(/\D/g, ''), saveRoot: P.saveRoot() || undefined });
@@ -678,7 +700,7 @@
     // =========================================================
     let imporView = 'upload';
     const impor = createPage({
-        id: 'impor',
+        id: 'impor', cta: 'Start', ctaIcon: 'upload',
         init(api) {
             return { view: imporView, file: null, info: null, infoError: '', konsepType: 'ICT_WIT', konsepAction: 'create', pp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }),
                 issueType: 'mp', ipp: P.period.create({ mode: 'masa1', onChange: () => api.updateRail() }), preview: null, previewError: '', previewing: false };
@@ -704,7 +726,7 @@
                     + P.card(1, 'Bukti Potong Type', '', '<div class="chips c4">' + [['mp', 'BPMP'], ['bp21', 'BP21'], ['bpa1', 'BPA1'], ['bpu', 'BPPU']].map(([v, l]) => '<button type="button" class="chip" data-act="itype" data-val="' + v + '" aria-pressed="' + (st.issueType === v) + '">' + l + '</button>').join('') + '</div>')
                     + P.card(2, 'Masa Pajak', '<span>BPA1: the last Masa Pajak of the slip</span>', st.ipp.html())
                     + P.card(3, 'Preview', '', '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="ipreview" style="box-shadow:none"' + (st.previewing ? ' disabled' : '') + '>' + P.icon('search', 15) + 'Preview Belum Terbit</button></div>' + result)
-                    + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Issues exactly what the preview shows</b><div class="hint">BPMP is issued without a signature; BP21 / BPA1 / BPPU are signed with the PIC passphrase stored in Taxio Pilot (checked with Coretax first). If Belum Terbit changes after the preview, nothing is issued. Filing the SPT stays manual.</div></div></div></section>';
+                    + P.callout('shield', 'Issues exactly what the preview shows', 'BPMP is issued without a signature; BP21 / BPA1 / BPPU are signed with the PIC passphrase stored in Taxio Pilot (checked with Coretax first). If Belum Terbit changes after the preview, nothing is issued. Filing the SPT stays manual.');
             }
             const i = st.info;
             const summary = st.infoError ? '<div class="hint warn" style="margin-top:8px">' + esc(st.infoError) + '</div>'
@@ -712,7 +734,7 @@
                     + ((i.problems || []).length ? '<div class="hint warn">' + i.problems.slice(0, 5).map(esc).join('<br>') + '</div>' : '') : '';
             return tabs
                 + P.card(1, 'Import File', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>DJP import template Excel (.xlsx) or XML</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>' + summary)
-                + '<section class="card" style="border-style:dashed;box-shadow:none"><div class="row">' + P.icon('shield', 22) + '<div><b style="color:var(--ink)">Belum Terbit only</b><div class="hint">The type is detected automatically (BPMP, BP21, BPA1, BPPU). Coretax validates the file, then creates the Bukti Potong in Belum Terbit; if any row is wrong, nothing is created and the errors appear in the log. You still issue / sign them yourself.</div></div></div></section>';
+                + P.callout('shield', 'Belum Terbit only', 'The type is detected automatically (BPMP, BP21, BPA1, BPPU). Coretax validates the file, then creates the Bukti Potong in Belum Terbit; if any row is wrong, nothing is created and the errors appear in the log. You still issue / sign them yourself.');
         },
         async act(act, d, st, api) {
             if (act === 'iview') { st.view = imporView = d.val; return true; }
@@ -743,21 +765,21 @@
             if (st.view === 'issue') {
                 const pv = st.preview, masa = st.ipp.single(), fresh = !!(pv && pv.forType === st.issueType && pv.forPeriod === masa);
                 const blocked = !masa ? 'Select a Masa Pajak' : !fresh ? 'Run the preview first' : !pv.count ? 'Nothing to issue in Belum Terbit' : '';
-                return railCard({ title: 'Summary', rows: [['Entity', esc(name)], ['Login', esc(loginText(ent))], ['Type', { mp: 'BPMP', bp21: 'BP21', bpa1: 'BPA1', bpu: 'BPPU' }[st.issueType]], ['Masa Pajak', masa ? esc(L.masaLabel(masa)) : '<span class="muted">Not selected</span>'], ['Bukti Potong', fresh ? String(pv.count) : '-'], ['Signature', fresh ? (pv.needsSign ? 'PIC passphrase' : 'Not needed') : '-']],
-                    folder: false, ready: readiness(ent), blocked, cta: fresh && pv.count ? (pv.needsSign ? 'Issue & sign ' : 'Issue ') + pv.count + ' Bukti Potong' : 'Issue & sign', icon: 'check',
-                    notes: [['shield', 'var(--green)', 'Asks for confirmation, then issues only the previewed list (confirmation code ' + (fresh && pv.token ? pv.token : '-') + ').']] });
+                const tname = { mp: 'BPMP', bp21: 'BP21', bpa1: 'BPA1', bpu: 'BPPU' }[st.issueType];
+                return actionBar({ parts: ['<b>' + (fresh ? pv.count + ' ' : '') + tname + '</b>', masa ? esc('Masa Pajak ' + L.masaLabel(masa)) : '', fresh ? (pv.needsSign ? 'signed with the PIC passphrase' : 'no signature needed') : '', esc(name)],
+                    sub: 'Asks for confirmation, then issues only the previewed list' + (fresh && pv.token ? ' (code ' + esc(pv.token) + ')' : ''), ready: readiness(ent), blocked,
+                    cta: fresh && pv.count ? (pv.needsSign ? 'Issue & sign ' : 'Issue ') + pv.count + ' Bukti Potong' : 'Issue & sign', icon: 'check' });
             }
             if (st.view === 'konsep') {
                 const masa = st.pp.single();
-                return railCard({ title: 'Summary', rows: [['Entity', esc(name)], ['Login', esc(loginText(ent))], ['SPT', st.konsepType === 'ICT_WIT' ? 'PPh 21/26' : 'PPh Unifikasi'], ['Masa Pajak', masa ? esc(L.masaLabel(masa)) : '<span class="muted">Not selected</span>']],
-                    folder: false, ready: readiness(ent), blocked: masa ? '' : 'Select a Masa Pajak', cta: { create: 'Create Konsep SPT', post: 'Posting SPT & download', download: 'Download Konsep SPT' }[st.konsepAction], icon: st.konsepAction === 'create' ? 'file' : 'download',
-                    notes: [['shield', 'var(--green)', st.konsepAction === 'create' ? 'Only creates the Konsep SPT. Posting SPT, checking, signing and filing still happen in Coretax.' : 'Saved to Downloads\\CoretaxAgent\\<code>\\Konsep SPT. Never signs or files the SPT.']] });
+                return actionBar({ parts: ['<b>Konsep SPT ' + (st.konsepType === 'ICT_WIT' ? 'PPh 21/26' : 'PPh Unifikasi') + '</b>', masa ? esc('Masa Pajak ' + L.masaLabel(masa)) : '', esc(name)],
+                    sub: st.konsepAction === 'create' ? 'Signing and filing stay in Coretax.' : 'Never signs or files the SPT.', ready: readiness(ent), blocked: masa ? '' : 'Select a Masa Pajak',
+                    cta: { create: 'Create Konsep SPT', post: 'Posting SPT & download', download: 'Download Konsep SPT' }[st.konsepAction], icon: st.konsepAction === 'create' ? 'file' : 'download' });
             }
             const i = st.info;
             const blocked = !st.file ? 'Select an import file first' : st.infoError ? 'File cannot be used' : !i ? 'Checking file…' : (i.problems || []).length ? 'Fix the data problems in the file' : '';
-            return railCard({ title: 'Summary', rows: [['Entity', esc(name)], ['Login', esc(loginText(ent))], ['File', st.file ? esc(st.file.fileName) : '<span class="muted">Not selected</span>'], ['Type', i ? esc(i.label) : '-'], ['Bukti Potong', i ? String(i.count) : '-']],
-                folder: false, ready: readiness(ent), blocked, cta: 'Upload to Belum Terbit', icon: 'upload',
-                notes: [['shield', 'var(--green)', 'Does not issue or sign. Results come from Coretax Monitoring XML and appear in the log.']] });
+            return actionBar({ parts: [i ? '<b>' + i.count + ' ' + esc(i.label) + '</b>' : '<b>Upload to Belum Terbit</b>', st.file ? esc(st.file.fileName) : '<span class="muted">No file yet</span>', esc(name)],
+                sub: 'Does not issue or sign.', ready: readiness(ent), blocked, cta: 'Upload to Belum Terbit', icon: 'upload' });
         },
         async start(st, api) {
             if (st.view === 'issue') {

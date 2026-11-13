@@ -163,8 +163,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(main.includes('No entity selected'));
         assert.ok(/Jenis Pajak/i.test(main) && /Masa Pajak/i.test(main), 'formulir SPT tetap tampil');
         assert.ok(await page.locator('.col-main [data-act="open-palette"]').isVisible());
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
-        assert.ok((await text('#rail')).includes('Select an entity first'));
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled());
+        assert.ok((await text('#abar')).includes('Select an entity first'));
         await shot('05-tanpa-entitas');
     });
     await test('Laporan Realisasi Investasi (Dividen): kini butuh entitas terpilih seperti halaman lain (banner sesi manual lama sudah dihapus)', async () => {
@@ -175,8 +175,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(main.includes('No entity selected'), 'banner pilih entitas, sama seperti halaman lain');
         assert.ok(!/session you log in to yourself/i.test(main), 'banner sesi manual lama sudah dihapus');
         assert.strictEqual(await page.locator('.col-main [data-act="open-coretax"], .col-main [data-act="check-session"]').count(), 0, 'tanpa tombol Open Coretax / Check session di halaman');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'tombol mulai terkunci tanpa entitas');
-        assert.ok((await text('#rail')).includes('Select an entity first'));
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'tombol mulai terkunci tanpa entitas');
+        assert.ok((await text('#abar')).includes('Select an entity first'));
         await page.click('.nav-item[data-nav="spt"]');
         await page.waitForSelector('.tile[data-val="pph21"]');
     });
@@ -299,14 +299,14 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('SPT: bawaan PPh 21/26 dan bulan lalu, ringkasan menghitung kombinasi', async () => {
         assert.strictEqual(await page.locator('.tile[data-val="pph21"]').getAttribute('aria-pressed'), 'true');
         assert.strictEqual(await page.locator('.chip[data-val="' + PREV_MMYY + '"]').getAttribute('aria-pressed'), 'true');
-        assert.strictEqual(await text('#rail .big-num b'), '1');
-        assert.ok((await text('#rail')).includes('Automatic · PIC ANDI PRATAMA'));
+        assert.strictEqual(await text('#abar .abar-n'), '1');
+        assert.ok((await text('#abar')).includes('Automatic · PIC ANDI PRATAMA'));
         await shot('09-spt');
     });
     await test('SPT: pilih beberapa jenis dan masa memperbarui hitungan; kode diketik memilih chip', async () => {
         await page.click('.tile[data-val="ppn"]');
-        await page.click('.pp [data-pp="quick"][data-val="q1"]');
-        assert.strictEqual(await text('#rail .big-num b'), '6', '2 jenis x 3 masa');
+        await page.click('.pp [data-pp="quick"][data-val="year"]');
+        assert.strictEqual(await text('#abar .abar-n'), '24', '2 jenis x 12 masa (Full year)');
         await page.click('.pp [data-pp="text"]');
         await page.fill('.pp [data-pp-input]', '0126-0326;0526');
         assert.ok((await text('.pp .summary-line')).includes('4 Masa Pajak'));
@@ -367,7 +367,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('.nav-item[data-nav="ebupot"]');
         await page.waitForSelector('.tile[data-val="bp21"]');
         assert.strictEqual(await page.locator('.tile[aria-pressed="true"]').count(), 0, 'awalnya tidak ada jenis yang terpilih (BP21 tidak lagi tercentang sendiri)');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'tanpa jenis: tombol mulai terkunci');
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'tanpa jenis: tombol mulai terkunci');
         assert.ok(!(await visible('#eb-kode')), 'tanpa jenis kode objek tidak relevan');
         await page.click('.tile[data-val="bpmp"]');
         assert.ok(!(await visible('#eb-kode')), 'tanpa BP21/BPPU kode objek tidak relevan');
@@ -375,7 +375,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('.tile[data-val="bp21"]');
         assert.ok(await visible('#eb-kode'), 'dengan BP21 kode objek tampil');
         await page.fill('#eb-kode', '21-100-35');
-        await page.click('.pp [data-pp="quick"][data-val="q1"]');
+        await page.click('.pp [data-pp="quick"][data-val="year"]');
         await page.click('[data-act="start"]');
         await pause(2800); // jenis kedua baru dikirim setelah jenis pertama selesai (polling 1,2 dtk)
         const eb = calls.filter((x) => x.url === '/api/actions/download-ebupot');
@@ -391,9 +391,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         for (const k of ['bp21', 'bpmp']) { if ((await page.locator('.tile[data-val="' + k + '"]').getAttribute('aria-pressed')) === 'true') await page.click('.tile[data-val="' + k + '"]'); }
         await page.click('.tile[data-val="bppu"]');
         assert.strictEqual(await page.locator('.tile[aria-pressed="true"]').count(), 1, 'hanya BPPU yang terpilih');
-        await page.click('.pp [data-pp="quick"][data-val="q1"]');
         const before = calls.length;
-        await page.click('#rail [data-act="start"]'); await pause(800);
+        await page.click('#abar [data-act="start"]'); await pause(800);
         const eb = calls.slice(before).filter((x) => x.url === '/api/actions/download-ebupot');
         assert.deepStrictEqual(eb.map((x) => x.body.bupotType), ['bppu'], 'hanya satu permintaan: BPPU');
     });
@@ -421,23 +420,23 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     });
     await test('Unduh e-Faktur: tombol mulai terkunci bila tak ada jenis dokumen atau format', async () => {
         await page.click('[data-act="enone"]');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'tanpa jenis dokumen');
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'tanpa jenis dokumen');
         await page.click('[data-act="eall"]');
         assert.strictEqual(await page.locator('#efaktur-types .chip[aria-pressed="true"]').count(), 8);
         await page.click('[data-act="efmt"][data-val="excel"]'); await page.click('[data-act="efmt"][data-val="csv"]');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'tanpa format');
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'tanpa format');
         await page.click('[data-act="efmt"][data-val="excel"]');
-        assert.ok(!(await page.locator('#rail [data-act="start"]').isDisabled()));
+        assert.ok(!(await page.locator('#abar [data-act="start"]').isDisabled()));
         await shot('21-efaktur');
     });
     await test('Billing: nominal berformat ribuan, masa satu bulan, tombol aktif hanya bila lengkap', async () => {
         await page.click('.nav-item[data-nav="billing"]');
         await page.waitForSelector('#bl-nominal');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'nominal kosong');
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'nominal kosong');
         await page.fill('#bl-nominal', '1500000');
         assert.strictEqual(await page.inputValue('#bl-nominal'), '1.500.000');
-        assert.ok(!(await page.locator('#rail [data-act="start"]').isDisabled()));
-        assert.ok((await text('#rail .big-num')).includes('1.500.000'));
+        assert.ok(!(await page.locator('#abar [data-act="start"]').isDisabled()));
+        assert.ok((await text('#abar')).includes('1.500.000'));
         await shot('13-billing');
         await page.click('[data-act="start"]'); await pause(300);
         const c = lastCall();
@@ -449,6 +448,26 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('Billing di Otomasi: satu bulan saja yang bisa dipilih', async () => {
         assert.strictEqual(await page.locator('.pp .chip[aria-pressed="true"]').count(), 1);
     });
+    await test('bilah aksi lengket di setiap halaman fitur (tanpa rail ringkasan kanan); Options hanya folder tujuan', async () => {
+        for (const id of ['spt', 'ebupot', 'bpsaya', 'faktur', 'a1', 'dividen', 'kredit', 'billing', 'impor']) {
+            await page.click('.nav-item[data-nav="' + id + '"]');
+            await page.waitForSelector('#abar .btn-primary');
+            assert.strictEqual(await page.locator('#rail, .rail').count(), 0, id + ': tanpa rail kanan');
+            assert.strictEqual(await page.locator('#abar .btn-primary').count(), 1, id + ': tepat satu tombol utama');
+            const box = await page.evaluate(() => { const a = document.querySelector('#abar').getBoundingClientRect(), c = document.querySelector('#content').getBoundingClientRect(); return { a: a.bottom, c: c.bottom, w: document.documentElement.scrollWidth, vw: window.innerWidth }; });
+            assert.ok(box.a <= box.c + 1, id + ': bilah aksi terlihat di dalam area konten');
+            assert.ok(box.w <= box.vw + 1, id + ': tanpa scroll horizontal');
+            assert.ok(!/Read-only: nothing is submitted/.test(await text('#content')), id + ': tanpa kalimat Read-only');
+        }
+        await page.click('.nav-item[data-nav="spt"]');
+        await page.waitForSelector('#abar [data-act="start"]');
+        assert.ok(await visible('[data-opts]'), 'SPT: Options (folder tujuan) ada');
+        await page.click('[data-opts]');
+        await page.waitForSelector('#save-root-input', { state: 'visible' });
+        assert.strictEqual(await page.locator('[data-act="sus"]').count(), 0, 'pilihan tata letak PDF sudah dihapus');
+        assert.deepStrictEqual(await page.locator('.pp [data-pp="quick"]').allInnerTexts(), ['Full year'], 'pintasan Masa Pajak hanya Full year');
+        await page.click('[data-opts]');
+    });
     await test('e-Bupot Upload, Issue & Sign: tiga tab (Upload e-Bupot / Issue & Sign / Konsep SPT), masing-masing dengan ringkasannya', async () => {
         await page.click('.nav-item[data-nav="impor"]');
         await page.waitForSelector('[data-act="iview"]');
@@ -456,17 +475,17 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.deepStrictEqual((await page.locator('[data-act="iview"]').allInnerTexts()).map((t) => t.trim()), ['Upload e-Bupot', 'Issue & sign', 'Konsep SPT']);
         assert.strictEqual(await page.locator('[data-act="iview"][data-val="upload"]').getAttribute('aria-pressed'), 'true', 'tab bawaan: Upload e-Bupot');
         assert.ok(await visible('.dropzone'));
-        assert.ok((await text('#rail [data-act="start"]')).includes('Upload to Belum Terbit'));
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'belum ada file impor');
+        assert.ok((await text('#abar [data-act="start"]')).includes('Upload to Belum Terbit'));
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'belum ada file impor');
         await page.click('[data-act="iview"][data-val="issue"]');
         await page.waitForSelector('[data-act="ipreview"]');
         assert.ok((await text('[data-act="ipreview"]')).includes('Preview Belum Terbit'));
         assert.strictEqual(await page.locator('[data-act="itype"]').count(), 4, 'BPMP, BP21, BPA1, BPPU');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'Issue & Sign terkunci sebelum preview');
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'Issue & Sign terkunci sebelum preview');
         await page.click('[data-act="iview"][data-val="konsep"]');
         await page.waitForSelector('[data-act="kaction"]');
         assert.strictEqual(await page.locator('[data-act="ktype"]').count(), 2, 'PPh 21/26 dan PPh Unifikasi');
-        assert.ok((await text('#rail [data-act="start"]')).includes('Create Konsep SPT'));
+        assert.ok((await text('#abar [data-act="start"]')).includes('Create Konsep SPT'));
         await shot('13b-impor');
         await page.click('[data-act="iview"][data-val="upload"]');
         await page.waitForSelector('[data-act="iview"][data-val="upload"][aria-pressed="true"]');
@@ -590,7 +609,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape');
         await page.waitForFunction(() => /Download queue: 2 entities/.test(document.body.textContent), null, { timeout: 3000 });
         const before = calls.length;
-        await page.click('#rail [data-act="start"]');
+        await page.click('#abar [data-act="start"]');
         const seqNow = () => calls.slice(before).map((c) => c.url.replace('/api/actions/', '') + ':' + ((c.body && c.body.entity) || {}).entity_id);
         for (let i = 0; i < 60 && seqNow().length < 4; i++) await pause(500);
         assert.deepStrictEqual(seqNow(), ['login-entity:SNM', 'download-efaktur:SNM', 'login-entity:MKA', 'download-efaktur:MKA'], 'tiap entitas: pindah dulu, baru unduh; berurutan');
@@ -705,7 +724,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(chip.includes('CV Klien Baru Sejahtera') && chip.includes('AUTO') && chip.includes('PIC Ani Sample Wijaya'));
         await page.click('.nav-item[data-nav="spt"]');
         assert.ok(!(await visible('.banner')), 'tidak ada banner login manual untuk entitas lokal berkredensial');
-        assert.ok(!(await page.locator('#rail [data-act="start"]').isDisabled()));
+        assert.ok(!(await page.locator('#abar [data-act="start"]').isDisabled()));
         assert.ok((await text('.status-pill')).includes('Not signed in to Coretax'), 'status login umum, bukan status jendela manual');
         await shot('15-entitas-lokal-otomatis');
     });
@@ -749,7 +768,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
 
         await page.click('.nav-item[data-nav="kredit"]');
         await page.waitForSelector('.dropzone');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'belum ada file');
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'belum ada file');
         await page.click('[data-act="pick-file"]');
         await page.waitForSelector('.dropzone.filled');
         assert.ok((await text('.dropzone')).includes('faktur-uji.xlsx'));
@@ -774,7 +793,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('.nav-item[data-nav="dividen"]');
         await page.waitForSelector('.dropzone');
         assert.ok(!(await page.locator('.col-main .banner').count()), 'entitas berkredensial: tanpa banner login manual / pilih entitas');
-        assert.ok((await text('#rail')).includes('Automatic · PIC'), 'ringkasan menyebut login otomatis');
+        assert.ok((await text('#abar')).includes('Automatic · PIC'), 'ringkasan menyebut login otomatis');
         assert.ok(!(await page.locator('[data-act="create-case"]').isDisabled()), 'buat kasus tidak menunggu login manual');
         await page.click('[data-act="create-case"]'); await pause(300);
         c = lastCall();
@@ -793,16 +812,16 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('[data-act="a1view"][data-val="nik"]');
         await page.click('[data-act="a1view"][data-val="nik"]');
         await page.waitForSelector('.dropzone');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled(), 'pembetulan: belum ada Excel');
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'pembetulan: belum ada Excel');
         await page.click('[data-act="pick-file"]'); await page.waitForSelector('.dropzone.filled');
         assert.ok(!(await page.locator('[data-act="bmode"]').count()), 'satu tombol saja: Betulkan (cek sudah otomatis per bukti potong)');
-        assert.ok((await text('#rail [data-act="start"]')).includes('Correct in Coretax'));
+        assert.ok((await text('#abar [data-act="start"]')).includes('Correct in Coretax'));
         const n = calls.length;
         page.once('dialog', (dlg) => dlg.dismiss());
-        await page.click('#rail [data-act="start"]'); await pause(300);
+        await page.click('#abar [data-act="start"]'); await pause(300);
         assert.strictEqual(calls.length, n, 'dibatalkan di dialog konfirmasi -> tidak ada permintaan');
         page.once('dialog', (dlg) => dlg.accept());
-        await page.click('#rail [data-act="start"]'); await pause(300);
+        await page.click('#abar [data-act="start"]'); await pause(300);
         c = lastCall();
         assert.strictEqual(c.url, '/api/actions/bpmp-amend');
         assert.strictEqual(c.body.submit, true);
@@ -813,7 +832,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.route('**/api/a1/inspect', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ excel: 'C:\\A1\\Mode A1 - 2026.xlsx', rows: [{ masa: 'Januari', excel: { revision: 0, data: 'Lengkap' }, cache: null, pdf: true }, { masa: 'Februari', excel: null, cache: null, pdf: false }] }) }));
         await page.click('[data-act="nik-latest"]'); await page.waitForFunction(() => /Mode A1 - 2026\.xlsx/.test(document.querySelector('.dropzone')?.innerText || ''));
         page.once('dialog', (dlg) => dlg.accept());
-        await page.click('#rail [data-act="start"]'); await pause(300);
+        await page.click('#abar [data-act="start"]'); await pause(300);
         assert.strictEqual(lastCall().url, '/api/actions/bpmp-amend');
         assert.strictEqual(lastCall().body.filePath, 'C:\\A1\\Mode A1 - 2026.xlsx');
         assert.ok(!lastCall().body.fileBase64);
@@ -825,7 +844,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('.mini-table');
         const tbl = await text('.mini-table');
         assert.ok(/Januari[\s\S]*Old Excel[\s\S]*Reuse/.test(tbl) && /Februari[\s\S]*Download/.test(tbl), 'tabel status per masa');
-        await page.click('#rail [data-act="start"]'); await pause(300);
+        await page.click('#abar [data-act="start"]'); await pause(300);
         c = lastCall();
         assert.strictEqual(c.url, '/api/actions/download-spt');
         assert.ok(c.body.a1Year && c.body.a1Fresh === false && c.body.a1Source === undefined);
@@ -845,7 +864,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForFunction(() => /Coretax not opened yet/.test(document.querySelector('.status-pill')?.innerText || ''), null, { timeout: 3000 });
         const banner = await text('.banner');
         assert.ok(banner.includes('Coretax opens in a separate window'), 'banner login manual polos tetap ada untuk jalur ini');
-        assert.ok(await page.locator('#rail [data-act="start"]').isDisabled());
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled());
     });
     await test('Dividen lewat entitas MANUAL (login manual polos): banner sesi terdeteksi, impor mengirim file + entitas manual', async () => {
         // Dividen kini memakai entitas terpilih seperti halaman lain; entitas MANUAL (MITRA LESTARI,
@@ -857,7 +876,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('.dropzone');
         assert.ok(!(await text('.col-main')).includes('No entity selected'));
         assert.ok((await text('.col-main .banner')).includes('Coretax session detected'), 'sesi manual terdeteksi');
-        assert.ok((await text('#rail')).includes('Manual · open session'), 'sesi manual: tanpa login otomatis');
+        assert.ok((await text('#abar')).includes('Manual · open session'), 'sesi manual: tanpa login otomatis');
         // File yang dipilih di tes entitas lokal tetap diingat halaman Dividen.
         if (!(await page.locator('.dropzone.filled').count())) {
             assert.ok(await page.locator('[data-act="import"]').isDisabled(), 'belum ada file');
@@ -917,7 +936,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('.banner.warn [data-run="skip"]'); await pause(150);
         await page.click('.ctl-grid [data-run="pause"]'); await pause(150); // paused=true -> Lanjut -> resume
         page.once('dialog', (d) => d.accept());
-        await page.click('.rail [data-run="stop"]'); await pause(200);
+        await page.click('#abar [data-run="stop"]'); await pause(200);
         assert.deepStrictEqual(fakes.ctl.runCalls, ['retry', 'skip', 'resume', 'stop']);
     });
     await test('kontrol menurut fitur: hanya Stop + Jeda; "Stopping…" / "Pausing…" sampai titik aman berikutnya', async () => {
@@ -930,11 +949,11 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
             assert.ok((await text('.ctl-grid')).includes('Pausing…'));
             fakes.ctl.run = Object.assign({}, base, { paused: false, pauseRequested: false, stopRequested: true });
             await page.waitForFunction(() => /Stopping…/.test(document.body.innerText), null, { timeout: 5000 });
-            assert.ok(await page.locator('.rail [data-run="stop"]').isDisabled(), 'Stop tidak bisa diklik dua kali');
+            assert.ok(await page.locator('#abar [data-run="stop"]').isDisabled(), 'Stop tidak bisa diklik dua kali');
             fakes.ctl.run = Object.assign({}, base, { paused: false, controls: Object.assign({}, base.controls, { pause: false }) });
             await page.waitForFunction(() => !/Stopping…/.test(document.body.innerText), null, { timeout: 5000 });
             assert.strictEqual(await page.locator('[data-run="pause"]').count(), 0, 'fitur tanpa Jeda: tombol Jeda tidak ditampilkan');
-            assert.strictEqual(await page.locator('.rail [data-run="stop"]').count(), 1);
+            assert.strictEqual(await page.locator('#abar [data-run="stop"]').count(), 1);
         }
     });
     await test('proses selesai: kembali ke halaman dengan ringkasan hasil yang bisa ditutup', async () => {
@@ -959,16 +978,16 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
             assert.ok(strip.includes('#1') && strip.includes('#2'), 'jendela PIC yang sama bernomor: ' + strip);
             await page.waitForSelector('.sess-queue', { timeout: 4000 });
             assert.ok((await text('.sess-queue')).includes('1 queued'));
-            await page.waitForSelector('.rail [data-run-hide]', { timeout: 4000 });
+            await page.waitForSelector('#abar [data-run-hide]', { timeout: 4000 });
             assert.ok((await text('.content')).includes('Queued') && (await text('.content')).includes('Position 1'));
-            await page.click('.rail [data-run-hide]');
+            await page.click('#abar [data-run-hide]');
             await page.waitForSelector('[data-run-show]', { timeout: 4000 });
             assert.ok((await text('.run-back')).includes('queued'), 'halaman fitur tampil dengan penanda proses yang antre');
             await page.click('[data-run-show]');
-            await page.waitForSelector('.rail [data-run="stop"]', { timeout: 4000 });
+            await page.waitForSelector('#abar [data-run="stop"]', { timeout: 4000 });
             fakes.ctl.runCalls.length = 0;
             page.once('dialog', (d) => d.accept());
-            await page.click('.rail [data-run="stop"]'); await pause(200);
+            await page.click('#abar [data-run="stop"]'); await pause(200);
             assert.deepStrictEqual(fakes.ctl.runCalls, ['stop']);
         } finally { fakes.ctl.run = null; fakes.ctl.sessions = []; }
         await page.waitForSelector('.sess-queue', { state: 'detached', timeout: 6000 });
@@ -982,6 +1001,30 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(await page.locator('#log-view .log-line').count() > 0);
         await shot('19-log');
         await page.click('#dock-toggle');
+    });
+    await test('log dock: baris layout yang mendorong konten (tidak menimpa formulir), tertutup = satu baris, status & tinggi diingat', async () => {
+        await page.click('.nav-item[data-nav="spt"]');
+        await page.waitForSelector('#abar [data-act="start"]');
+        const geo = () => page.evaluate(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); return { content: r('#content').bottom, abar: r('#abar').bottom, dockTop: r('#dock').top, dockH: r('#dock').height, vh: window.innerHeight }; });
+        const closed = await geo();
+        assert.ok(closed.dockH <= 48, 'tertutup: satu baris (' + closed.dockH + ' px)');
+        assert.ok(closed.abar <= closed.dockTop + 1 && closed.content <= closed.dockTop + 1, 'tertutup: konten & bilah aksi di atas strip log');
+        await page.click('#dock-toggle');
+        await page.waitForSelector('#dock.open');
+        const open = await geo();
+        assert.ok(open.dockH > 100, 'terbuka: panel log');
+        assert.ok(open.content <= open.dockTop + 1, 'terbuka: area konten berakhir di atas log (tidak ditimpa)');
+        assert.ok(open.abar <= open.dockTop + 1, 'terbuka: tombol utama tetap terlihat di atas log');
+        assert.ok(await page.locator('#abar [data-act="start"]').isVisible());
+        assert.strictEqual(await page.evaluate(() => localStorage.getItem('pilot.logOpen')), 'true', 'status terbuka diingat');
+        // Seret tepi atas: tinggi berubah dan diingat.
+        const g = await page.locator('#dock-resize').boundingBox();
+        await page.mouse.move(g.x + 200, g.y + 4); await page.mouse.down(); await page.mouse.move(g.x + 200, g.y - 60, { steps: 4 }); await page.mouse.up();
+        const after = await geo();
+        assert.ok(after.dockH > open.dockH + 30, 'tinggi log bisa diubah dengan menyeret');
+        assert.ok(Number(await page.evaluate(() => localStorage.getItem('pilot.logH'))) > open.dockH, 'tinggi diingat');
+        await page.click('#dock-toggle');
+        await page.waitForFunction(() => !document.querySelector('#dock').classList.contains('open'));
     });
 
     await test('tambah entitas dengan 1 PIC: langsung login otomatis setelah disimpan (tidak perlu pilih ulang)', async () => {
