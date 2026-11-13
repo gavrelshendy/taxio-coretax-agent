@@ -139,7 +139,10 @@
     P.info = (msg) => P.notice({ id: 'local-' + (++localSeq), local: true, level: 'info', msg: String(msg) });
 
     // ---------- Potongan HTML bersama ----------
-    P.card = (step, title, aside, body) => '<section class="card"><div class="card-head">' + (step ? '<span class="step">' + step + '</span>' : '') + '<h2>' + title + '</h2>' + (aside ? '<span class="aside">' + aside + '</span>' : '') + '</div>' + body + '</section>';
+    // Satu baris formulir: label (+ keterangan pendek) di kiri, kontrol di kanan, garis tipis antar baris.
+    P.card = (step, title, aside, body) => '<section class="card"><div class="card-head"><h2>' + title + '</h2>' + (aside ? '<span class="aside">' + aside + '</span>' : '') + '</div><div class="card-body">' + body + '</div></section>';
+    /** Catatan bergaris putus-putus (penjelasan singkat sebuah langkah), bukan baris formulir. */
+    P.callout = (icon, title, text) => '<div class="note-box">' + P.icon(icon, 18) + '<div><b>' + title + '</b><div class="hint">' + text + '</div></div></div>';
     P.seg = (name, options, value) => '<div class="seg" role="group">' + options.map((o) =>
         '<button type="button" data-act="' + name + '" data-val="' + P.esc(o.value) + '" aria-pressed="' + (o.value === value) + '"' + (o.disabled ? ' disabled' : '') + (o.title ? ' title="' + P.esc(o.title) + '"' : '') + '>' + P.esc(o.label) + '</button>').join('') + '</div>';
     P.switchBtn = (act, on, label, disabled) => '<button type="button" class="switch" role="switch" aria-checked="' + !!on + '" aria-label="' + P.esc(label) + '" data-act="' + act + '"' + (disabled ? ' disabled' : '') + '></button>';
@@ -156,9 +159,9 @@
 
     // Folder simpan dipakai bersama semua halaman (satu pilihan, seperti sebelumnya).
     P.saveRoot = () => P.store.get('saveRoot', '');
-    P.folderField = () => '<div class="stack" style="gap:8px"><div class="eyebrow">Save to</div><div class="input-group">'
+    P.folderField = () => '<div class="input-group folder-field">'
         + '<input type="text" class="input sm mono" id="save-root-input" placeholder="Downloads\\CoretaxAgent" value="' + P.esc(P.saveRoot()) + '" aria-label="Save folder">'
-        + '<button type="button" class="btn btn-sm" id="pick-folder-btn" style="height:40px">Browse</button></div></div>';
+        + '<button type="button" class="btn btn-sm" id="pick-folder-btn">Browse</button></div>';
     P.bindFolderField = (root) => {
         const input = root.querySelector('#save-root-input');
         const btn = root.querySelector('#pick-folder-btn');
@@ -166,7 +169,7 @@
         if (btn) btn.addEventListener('click', async () => {
             try {
                 const data = await P.post('/api/actions/pick-folder', { title: 'Select the folder to save downloads to' });
-                if (data && !data.canceled && data.folderPath) { input.value = data.folderPath; P.store.set('saveRoot', data.folderPath); }
+                if (data && !data.canceled && data.folderPath) { input.value = data.folderPath; P.store.set('saveRoot', data.folderPath); input.dispatchEvent(new Event('input', { bubbles: true })); }
             } catch (e) { /* dibatalkan */ }
         });
     };

@@ -34,7 +34,7 @@
                 return '<div class="pills">' + [['last', 'Last year'], ['last2', 'Last 2 years'], ['clear', 'Clear']].map(([v, t]) => '<button type="button" class="pill" data-pp="quick" data-val="' + v + '">' + t + '</button>').join('') + '</div>';
             }
             const quick = mode === 'masa'
-                ? '<div class="pills">' + [['year', 'Full year'], ['q1', 'Q1'], ['s1', 'H1'], ['clear', 'Clear']].map(([v, t]) => '<button type="button" class="pill" data-pp="quick" data-val="' + v + '">' + t + '</button>').join('') + '</div>'
+                ? '<div class="pills">' + [['year', 'Full year']].map(([v, t]) => '<button type="button" class="pill" data-pp="quick" data-val="' + v + '">' + t + '</button>').join('') + '</div>'
                 : '<span></span>';
             return '<div class="row" style="justify-content:space-between">' + quick
                 + '<div class="stepper-year"><button type="button" aria-label="Previous year" data-pp="yprev">' + P.icon('left', 16) + '</button><span>' + self.year + '</span><button type="button" aria-label="Next year" data-pp="ynext">' + P.icon('right', 16) + '</button></div></div>';
@@ -81,7 +81,9 @@
             }
             if (v === 'clear') { self.sel = new Set(); return; }
             const months = v === 'q1' ? 3 : v === 's1' ? 6 : 12;
-            self.sel = new Set(Array.from({ length: months }, (_, i) => L.mmYY(i + 1, self.year)));
+            const want = Array.from({ length: months }, (_, i) => L.mmYY(i + 1, self.year));
+            // "Full year" lagi saat setahun penuh sudah terpilih = kosongkan (pengganti tombol Clear).
+            self.sel = v === 'year' && self.sel.size === 12 && want.every((m) => self.sel.has(m)) ? new Set() : new Set(want);
         }
 
         self.bind = function () {
