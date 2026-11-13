@@ -334,6 +334,20 @@ dulu; proses antre/berjalan tidak pernah dibuang; hilang saat aplikasi ditutup).
 - `POST /api/runs/open-folder` `{ key }` -> membuka `outputDir` yang DICATAT server untuk proses itu di Explorer
   (`lib/shell.js` `openPath`; Electron: `shell.openPath`). Path dari body tidak pernah dipakai; kunci tak dikenal / belum ada
   folder -> 404. `POST /api/runs/clear-done` -> `{ ok, cleared }` membuang proses selesai dari riwayat.
+- **Batch ("unduh untuk banyak klien")**: setiap aksi latar (route yang memakai `runInBackground`) menerima `batch` opsional di body:
+  `{ id, label, index, total }` - `id` dibuat klien (1-64 karakter `[A-Za-z0-9_-]`), `label` teks maks. 120 karakter, `index` 0..total-1,
+  `total` 1..10000. Dashboard mengirim satu permintaan aksi biasa per klien dengan `id` yang sama; antrean / batas paralel tidak berubah
+  dan aturan perintah identik (`withRules`) tetap berlaku per klien (409 untuk klien yang sama + parameter yang sama). `batch` yang tidak
+  valid -> 400. Batch HANYA untuk fitur hanya-baca: bila `changesCoretax` fitur itu true (termasuk kasus bersyarat: BPMP `submit`,
+  Konsep SPT `post`) -> 400 "Batch hanya boleh untuk unduhan yang hanya membaca ..." dan tidak ada proses dibuat. Setiap proses di
+  `GET /api/runs` dan `GET /api/runs/<key>` membawa `batch` (objek di atas) atau `null`.
+- `GET /api/runs` juga mengembalikan `batches: [{ id, label, feature, total, counts: { queued, running, hold, done, failed, stopped },
+  startedAt, endedAt }]`, dihitung dari proses yang membawa id itu. `running` = berjalan + dijeda + berhenti dulu; `total` = nilai
+  terbesar yang dilaporkan proses-prosesnya; `startedAt` = waktu antre paling awal; `endedAt` = null selagi masih ada yang antre /
+  berjalan / ditahan, selain itu waktu selesai terakhir. Sebuah batch tetap terdaftar selama salah satu prosesnya ada di riwayat hari ini.
+- `POST /api/runs/stop-batch` `{ id }` -> `{ ok, stopped }`: Stop untuk setiap proses batch itu yang masih aktif (berhenti di titik aman)
+  atau antre (dibatalkan); proses yang sudah selesai tidak dihitung (`stopped: 0` bila semuanya sudah selesai). Id tidak valid -> 400;
+  id yang tidak punya proses sama sekali -> 404. Tes: `node scripts/test-runs-batch.js`.
 - Kabar SSE di `/events`: `data: {"event":"runs"}` setiap daftar berubah (mulai, antre maju, ditahan, lanjut, langkah
   kemajuan, selesai), maks. 4 per detik; klien lalu memuat ulang `GET /api/runs`. (`"run"` lama tetap dikirim.)
 
