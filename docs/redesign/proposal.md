@@ -396,3 +396,17 @@ Menggantikan baris yang bertentangan di tabel sebelumnya dan di isi usulan:
 - **Batch banyak klien**: hanya untuk Download. Aksi yang mengubah Coretax tetap satu klien per perintah.
 - **Riwayat proses**: hari ini saja (memori; hilang saat aplikasi ditutup).
 - **Konfirmasi Batalkan**: cukup centang. **Klien dengan 2 PIC**: selalu tanya. **Tema bawaan**: Dark.
+
+## Revisi mockup dari pemilik (2026-11-14) - mengalahkan mockup.html dan isi usulan di atas bila bertentangan
+
+1. **Pilihan yang penting tampil langsung di formulir, bukan di balik "Options"**: Status (Telah Terbit / Belum Terbit) dan Format (PDF / Excel) pada e-Bupot, dan padanannya di halaman lain. "Options" hanya untuk folder tujuan.
+2. **Pintasan Masa Pajak: hanya "Full year"**. "Last quarter" dan "Last month" dihapus.
+3. **Bahasa dan interaksi dirapikan**: label pendek dan jelas, tanpa kalimat penjelas yang tidak perlu. Baris "Read-only: nothing is submitted or changed in Coretax." DIHAPUS (juga label Read-only sejenis di formulir).
+4. **Unduh SPT**:
+   - Pilihan "PDF layout: Combined / One file per document" DIHAPUS. Selalu digabung (`outputLayout: 'combined'`), tanpa pilihan di UI.
+   - Yang ditonjolkan adalah **Lampiran**: format **PDF / Excel** dan versi **Ringkas / Lengkap** (nilai yang sudah ada: `lampiranFormat` pdf|excel, `lampiranMode` compact|full; Excel selalu Lengkap seperti perilaku sekarang). Tampil langsung di formulir saat Lampiran dipilih.
+   - Dokumen BPE / Induk / Lampiran tetap bisa dipilih.
+5. **Halaman "Fix Bukti Potong" TIDAK dibuat** (cari / pembetulan / batal bukti potong hanya untuk MCP). Fase 8 dibatalkan; tidak ada entri sidebar untuknya.
+6. **Tema hanya diatur dari Settings** (System / Light / Dark, bawaan Dark). Tidak ada tombol tema cepat di sidebar.
+7. **Saved groups tidak ada** (menegaskan keputusan sebelumnya): hapus baris "Saved groups" dari formulir.
+8. **Sidebar diberi warna beraksen supaya berbeda dari area konten** di kedua tema (mis. permukaan bernuansa aksen biru/periwinkle yang gelap dan tenang di tema gelap, dan padanannya di tema terang), item aktif jelas, kontras teks tetap AA. Tetap minimalis: satu warna, tanpa gradasi mencolok.
