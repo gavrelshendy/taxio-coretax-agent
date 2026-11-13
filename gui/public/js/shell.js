@@ -107,7 +107,7 @@
         const busy = P.state.run.active;
         let buttons = '';
         if (ent && L.isManualLike(ent)) {
-            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Open Coretax</button><button type="button" class="btn" id="btn-check-session" style="background:var(--surface-2)">' + P.icon('shield', 17) + 'Check session</button>';
+            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Open Coretax</button><button type="button" class="btn" id="btn-check-session">' + P.icon('shield', 17) + 'Check session</button>';
         } else if (ent) {
             buttons = '<button type="button" class="icon-btn" id="btn-refresh-session" title="Re-check who is signed in to Coretax right now" aria-label="Refresh session status">' + P.icon('retry', 16) + '</button>'
                 + (P.isRestricted() ? '' : '<button type="button" class="icon-btn" id="btn-manual-for-entity" title="Manual login for this entity - you type the Coretax password yourself, without using saved credentials" aria-label="Manual login for this entity"' + (busy ? ' disabled' : '') + '>' + P.icon('user', 16) + '</button>')
@@ -167,8 +167,8 @@
         const h = P.hub(); const v = P.state.version || {};
         const scrim = document.createElement('div'); scrim.className = 'scrim'; scrim.id = 'settings';
         scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Settings"><div class="dialog-head"><h2>Settings</h2><button type="button" class="icon-btn" aria-label="Close" data-x="close">' + P.icon('x', 18) + '</button></div>'
-            + '<div class="dialog-body"><div class="stack"><div class="eyebrow">Account</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Disconnect</button></div></div>'
-            + '<div class="stack"><div class="eyebrow">App version</div><div class="row" style="justify-content:space-between"><div><b style="color:var(--ink)">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div>'
+            + '<div class="dialog-body">' + themeSectionHtml() + '<div class="stack set-sec"><div class="eyebrow">Account</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Disconnect</button></div></div>'
+            + '<div class="stack set-sec"><div class="eyebrow">App version</div><div class="row row-between"><div><b class="t1">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div>'
             + rollbackHtml(v) + parallelSectionHtml() + healthSectionHtml() + profilesSectionHtml() + '</div>'
             + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Quit app</button><span class="grow"></span><button type="button" class="btn" data-x="close">Done</button></div></div>';
         document.body.appendChild(scrim);
@@ -181,6 +181,7 @@
             const b = e.target.closest('[data-x]'); if (!b) return;
             const x = b.dataset.x;
             if (x === 'close') closeIt();
+            else if (x === 'theme') { P.theme.set(b.dataset.val); scrim.querySelectorAll('[data-x="theme"]').forEach((t) => t.setAttribute('aria-pressed', String(t === b))); }
             else if (x === 'disconnect') { closeIt(); P.state.session = await P.post('/api/disconnect', { project: 'taxio_hub' }); E.clear(); P.auth.screen = 'masuk'; P.emit('session'); }
             else if (x === 'quit') { if (confirm('Quit Taxio Pilot completely?')) await P.post('/api/quit'); }
             else if (x === 'update') {
@@ -206,6 +207,13 @@
         });
     }
 
+    // ---------- Tema (System / Light / Dark; bawaan Dark). Hanya di sini - tidak ada tombol tema cepat (keputusan pemilik 2026-11-14). ----------
+    function themeSectionHtml() {
+        const pref = P.theme.pref();
+        return '<div class="stack set-sec" id="theme-section"><div class="row row-between"><div><div class="eyebrow">Theme</div><div class="hint">System follows the Windows setting.</div></div>'
+            + '<div class="seg" role="group" aria-label="Theme">' + [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => '<button type="button" data-x="theme" data-val="' + v + '" aria-pressed="' + (pref === v) + '">' + l + '</button>').join('') + '</div></div></div>';
+    }
+
     // ---------- Kembali ke versi 3 (README "Kembali ke versi 3") ----------
     // Hanya petunjuk - tidak ada downgrade otomatis. Path exe lama dicatat saat serah-terima
     // (lib/legacy-handover.js); selain itu tautan ke rilis v3 terakhir.
@@ -214,15 +222,15 @@
         const where = rb.legacyExe && rb.legacyExeExists
             ? 'open the old <b>coretax-agent.exe</b> at <code class="mono" id="rollback-exe">' + esc(rb.legacyExe) + '</code>'
             : 'open your old <b>coretax-agent.exe</b>' + (rb.legacyExe ? ' (it used to be at <code class="mono">' + esc(rb.legacyExe) + '</code>)' : '') + ', or download it again from <a href="' + esc(rb.v3ReleaseUrl) + '" target="_blank" rel="noopener">the v' + esc(rb.v3Version) + ' release</a>';
-        return '<div class="stack" id="rollback"><div class="eyebrow">Back to version 3</div><div class="hint">To go back to v' + esc(rb.v3Version) + ': click <b>Quit app</b> below first (never run both at once), then ' + where
+        return '<div class="stack set-sec" id="rollback"><div class="eyebrow">Back to version 3</div><div class="hint">To go back to v' + esc(rb.v3Version) + ': click <b>Quit app</b> below first (never run both at once), then ' + where
             + '. Version 3 keeps its own data; each PIC logs in to Coretax once more there, and you may have to sign in to Taxio Hub again. Opening Taxio Pilot later brings you back to this version.</div></div>';
     }
 
     // ---------- Sesi paralel (GET/POST /api/settings/parallel, lib/parallel-settings.js) ----------
     function parallelSectionHtml() {
-        return '<div class="stack" id="parallel-section"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">Parallel sessions</div>'
-            + '<div class="row" style="gap:8px"><label class="hint" for="par-pic">Windows per PIC</label><input class="input sm" id="par-pic" type="number" min="1" max="5" style="width:64px">'
-            + '<label class="hint" for="par-total">Running at once</label><input class="input sm" id="par-total" type="number" min="1" max="12" style="width:64px">'
+        return '<div class="stack set-sec" id="parallel-section"><div class="row row-between"><div class="eyebrow">Parallel sessions</div>'
+            + '<div class="row" style="gap:8px"><label class="hint" for="par-pic">Windows per PIC</label><input class="input sm num" id="par-pic" type="number" min="1" max="5">'
+            + '<label class="hint" for="par-total">Running at once</label><input class="input sm num" id="par-total" type="number" min="1" max="12">'
             + '<button type="button" class="btn btn-sm" data-x="parallel">Save</button></div></div>'
             + '<div class="hint" id="par-text">Each PIC can use several Coretax windows at once, each with its own Chrome profile, so different commands (or entities of the same PIC) run side by side. Commands that do not get a window wait in a queue and start by themselves.</div></div>';
     }
@@ -245,7 +253,7 @@
     // ---------- Pemeriksaan sistem (GET /api/health, lib/doctor.js) ----------
     const HEALTH_LABEL = { ok: 'OK', warn: 'Warning', fail: 'Failed' };
     function healthSectionHtml() {
-        return '<div class="stack"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">System check</div>'
+        return '<div class="stack set-sec"><div class="row row-between"><div class="eyebrow">System check</div>'
             + '<div class="row" style="gap:8px"><button type="button" class="btn btn-sm" data-x="health">Check again</button><button type="button" class="btn btn-sm" data-x="diag">' + P.icon('download', 15) + 'Export diagnostics</button></div></div>'
             + '<div class="health-list" id="health-list" aria-live="polite"><div class="health-empty">Checking…</div></div>'
             + '<div class="hint" id="diag-text">Export diagnostics saves a zip file in your Downloads folder: the check results, version, folder locations and recent log, without login sessions, passwords, passphrases or tokens. The log may contain entity names and NPWPs, so decide yourself who the file is sent to.</div></div>';
@@ -269,8 +277,8 @@
     // ---------- Bersihkan profil Chrome yang lama (POST /api/profiles/stale|delete, lib/profile-housekeeping.js) ----------
     const fmtBytes = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.round((b || 0) / 1048576) + ' MB');
     function profilesSectionHtml() {
-        return '<div class="stack" id="prof-section"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><div class="eyebrow">Chrome Profiles</div>'
-            + '<div class="row" style="gap:8px"><label class="hint" for="prof-days">Unused for</label><input class="input sm" id="prof-days" type="number" min="1" value="60" style="width:72px"><span class="hint">days</span>'
+        return '<div class="stack set-sec" id="prof-section"><div class="row row-between"><div class="eyebrow">Chrome Profiles</div>'
+            + '<div class="row" style="gap:8px"><label class="hint" for="prof-days">Unused for</label><input class="input sm num" id="prof-days" type="number" min="1" value="60"><span class="hint">days</span>'
             + '<button type="button" class="btn btn-sm" data-x="prof-list">Clean up old Chrome profiles</button></div></div>'
             + '<div class="health-list" id="prof-list" aria-live="polite"></div>'
             + '<div class="hint" id="prof-text">Each PIC has its own Chrome profile. Deleting the profile of a PIC you have not used for a while only means that PIC signs in again automatically the next time it is used. Profiles whose window is currently open are never deleted.</div></div>';

@@ -451,7 +451,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('bilah aksi lengket di setiap halaman fitur (tanpa rail ringkasan kanan); Options hanya folder tujuan', async () => {
         for (const id of ['spt', 'ebupot', 'bpsaya', 'faktur', 'a1', 'dividen', 'kredit', 'billing', 'impor']) {
             await page.click('.nav-item[data-nav="' + id + '"]');
-            await page.waitForSelector('#abar .btn-primary');
+            await page.waitForSelector('#abar .btn-primary'); await pause(300); // animasi masuk halaman (geser 6 px) selesai dulu
             assert.strictEqual(await page.locator('#rail, .rail').count(), 0, id + ': tanpa rail kanan');
             assert.strictEqual(await page.locator('#abar .btn-primary').count(), 1, id + ': tepat satu tombol utama');
             const box = await page.evaluate(() => { const a = document.querySelector('#abar').getBoundingClientRect(), c = document.querySelector('#content').getBoundingClientRect(); return { a: a.bottom, c: c.bottom, w: document.documentElement.scrollWidth, vw: window.innerWidth }; });
@@ -545,6 +545,40 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
             await page.waitForSelector('#settings', { state: 'detached' });
         } finally { await page.unroute('**/api/health**'); await page.unroute('**/api/diagnostics/export'); }
     });
+    await test('tema: bawaan Dark; Settings System / Light / Dark mengganti tema, diingat dan dipasang sebelum paint (tanpa kedipan)', async () => {
+        const theme = () => page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+        assert.strictEqual(await page.evaluate(() => localStorage.getItem('pilot.theme')), null, 'pengguna baru: belum ada pilihan');
+        assert.strictEqual(await theme(), 'dark', 'bawaan pengguna baru = Dark');
+        assert.strictEqual(await page.locator('.sidebar [data-x="theme"], .sidebar #theme-quick').count(), 0, 'tanpa tombol tema cepat di sidebar');
+        await page.click('#open-settings');
+        await page.waitForSelector('#settings [data-x="theme"]');
+        assert.deepStrictEqual(await page.locator('#settings [data-x="theme"]').allInnerTexts(), ['System', 'Light', 'Dark']);
+        assert.strictEqual(await page.locator('#settings [data-x="theme"][data-val="dark"]').getAttribute('aria-pressed'), 'true');
+        await page.click('#settings [data-x="theme"][data-val="light"]');
+        await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'light');
+        const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+        assert.strictEqual(bg, 'rgb(247, 248, 250)', 'token terang dipakai');
+        assert.strictEqual(await page.evaluate(() => localStorage.getItem('pilot.theme')), '"light"', 'pilihan diingat');
+        await page.keyboard.press('Escape');
+        // Dipasang sebelum paint pertama: atribut sudah benar saat DOMContentLoaded, sebelum skrip aplikasi apa pun berjalan.
+        await page.reload({ waitUntil: 'commit' });
+        await page.waitForFunction(() => document.body !== null);
+        assert.strictEqual(await theme(), 'light', 'tema terang diterapkan oleh theme-boot.js sebelum paint');
+        await page.waitForSelector('#app .sidebar');
+        // System mengikuti Windows (prefers-color-scheme), juga langsung saat berubah.
+        await page.evaluate(() => localStorage.setItem('pilot.theme', '"system"'));
+        await page.emulateMedia({ colorScheme: 'light' }); await page.reload(); await page.waitForSelector('#app .sidebar');
+        assert.strictEqual(await theme(), 'light');
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'dark', null, { timeout: 3000 });
+        await page.click('#open-settings');
+        await page.click('#settings [data-x="theme"][data-val="dark"]');
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#settings', { state: 'detached' });
+        assert.strictEqual(await page.evaluate(() => localStorage.getItem('pilot.theme')), '"dark"');
+        await page.emulateMedia({ colorScheme: null });
+        await sessionsGoneThenReselect(); // muat ulang melepas pilihan entitas (tidak ada jendela Coretax): pilih lagi
+    });
     await test('topbar: tab sesi menampilkan jendela yang benar-benar terbuka, tab entitas terpilih menyala, X menutupnya; tidak terpotong di jendela sempit', async () => {
         fakes.ctl.sessions = [
             { picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT CONTOH SEJAHTERA ABADI' },
@@ -616,6 +650,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForFunction(() => /Queue finished: 2 of 2/.test(document.body.textContent), null, { timeout: 8000 });
         assert.ok(!(await text('#content')).includes('Download queue:'), 'bar antrean hilang setelah selesai');
         await page.click('.nav-item[data-nav="spt"]');
+        await pause(4500); // satu putaran polling sesi melihat jendela entitas terakhir, supaya pelepasan otomatis aktif
         await sessionsGoneThenReselect();
     });
     await test('topbar: jendela sesi entitas terpilih hilang -> pilihan otomatis dilepas ("Pilih entitas")', async () => {
@@ -1004,7 +1039,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     });
     await test('log dock: baris layout yang mendorong konten (tidak menimpa formulir), tertutup = satu baris, status & tinggi diingat', async () => {
         await page.click('.nav-item[data-nav="spt"]');
-        await page.waitForSelector('#abar [data-act="start"]');
+        await page.waitForSelector('#abar [data-act="start"]'); await pause(300);
         const geo = () => page.evaluate(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(); return { content: r('#content').bottom, abar: r('#abar').bottom, dockTop: r('#dock').top, dockH: r('#dock').height, vh: window.innerHeight }; });
         const closed = await geo();
         assert.ok(closed.dockH <= 48, 'tertutup: satu baris (' + closed.dockH + ' px)');

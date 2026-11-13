@@ -398,13 +398,13 @@
         if (unlinked) tag = '<span class="tag warn lg">NO PIC YET</span>';
         else if (isManualRow) tag = '<span class="tag lg manual" style="margin-left:0">DETECTED</span>';
         const picChip = multi ? '<span class="pic-chip">' + P.esc((chosen ? chosen.pic_name : '').split(' ')[0]) + P.icon(open ? 'up' : 'down', 15) + '</span>' : '';
-        const actions = isLocal ? '<span class="ent-actions"><button type="button" aria-label="Edit entity" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Delete entity" data-act="del" data-key="' + P.esc(key) + '" style="color:var(--red)">' + P.icon('trash', 15) + '</button></span>' : '';
+        const actions = isLocal ? '<span class="ent-actions"><button type="button" aria-label="Edit entity" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Delete entity" data-act="del" data-key="' + P.esc(key) + '" class="danger-ic">' + P.icon('trash', 15) + '</button></span>' : '';
         const right = '<span class="row-right">' + picChip + tag + '</span>';
         const av = isManualRow ? 'SM' : L.initials(e.entity_name);
         let html = '<div class="ent' + (cur ? ' current' : '') + (idx === pal.hover && !unlinked ? ' hover' : '') + (unlinked ? ' unlinked' : '') + '" data-idx="' + idx + '">'
             + '<div class="ent-line"><button type="button" class="ent-main" data-act="ent" data-key="' + P.esc(key) + '"' + (unlinked ? ' aria-disabled="true"' : '') + '>'
             + '<span class="ent-av">' + P.esc(av) + '</span><span class="ent-tx"><b>' + P.esc(isManualRow ? (P.state.manual.identity || 'Manual session') : e.entity_name) + '</b><span>' + metaFor(e) + '</span></span>' + right
-            + (cur ? P.icon('check', 18, '', 2.6).replace('<svg ', '<svg style="color:var(--accent)" ') : '') + '</button>'
+            + (cur ? P.icon('check', 18, 'ent-tick', 2.6) : '') + '</button>'
             // Tombol ubah/hapus JANGAN di dalam .ent-main: <button> di dalam <button> membuat browser
             // menutup .ent-main lebih awal dan merusak tata letak baris. Jadi saudaranya, bukan anaknya.
             + actions + '</div>';
@@ -419,7 +419,7 @@
                 + '<div class="hint" style="padding:4px 2px 0">If an SPT was signed by another PIC, the SPT download is automatically retried with that PIC.</div></div>';
         }
         if (unlinked) {
-            html += '<div class="unlinked-note">No linked PIC yet. Link one via <b style="color:var(--text)">Manage Coretax PIC</b> in Taxio Hub to use it automatically.'
+            html += '<div class="unlinked-note">No linked PIC yet. Link one via <b>Manage Coretax PIC</b> in Taxio Hub to use it automatically.'
                 + (P.isRestricted() ? '' : ' <button type="button" class="link" data-act="use-manual" data-key="' + P.esc(key) + '">Use manual login</button>') + '</div>';
         }
         return html + '</div>';
@@ -439,11 +439,11 @@
         // dipakai kapan saja, tidak terkubur di bawah daftar (dan tidak ikut hilang saat mengetik
         // di kotak cari, beda dari daftar entitas lokal di bawah yang IKUT tersaring oleh q).
         if (!P.isRestricted()) {
-            html += '<button type="button" class="pal-add" data-act="add"><span class="ent-av" style="background:var(--accent-soft);color:var(--accent)">' + P.icon('plus', 18, '', 2.2) + '</span><span>Add new entity</span></button>';
+            html += '<button type="button" class="pal-add" data-act="add"><span class="ent-av acc-av">' + P.icon('plus', 18, '', 2.2) + '</span><span>Add new entity</span></button>';
         }
         const seen = new Set();
         // Galat pemuatan (mis. sesi Taxio Hub kedaluwarsa) dulu hanya terlihat sebagai "Belum ada entitas."
-        (E.errors || []).forEach((m) => { html += '<div class="pal-note" style="color:var(--danger, #dc2626)">' + P.icon('warn', 15) + '<span>' + P.esc(m) + '</span></div>'; });
+        (E.errors || []).forEach((m) => { html += '<div class="pal-note err">' + P.icon('warn', 15) + '<span>' + P.esc(m) + '</span></div>'; });
 
         const me = E.manualEntity();
         if (me) { html += '<div class="pal-sec">CURRENTLY OPEN SESSION</div>' + rowHtml(me, push(me)); }
@@ -463,7 +463,7 @@
         if (!P.isRestricted()) {
             const locals = E.personal.filter((e) => e.project === 'local' && L.entityMatches(e, q));
             if (locals.length || !q) {
-                html += '<div class="pal-sec">ADDED HERE</div>' + (locals.length ? locals.map((e) => rowHtml(e, push(e))).join('') : '<div class="pal-empty" style="padding:12px">None yet. Add clients that are not in Taxio Hub.</div>');
+                html += '<div class="pal-sec">ADDED HERE</div>' + (locals.length ? locals.map((e) => rowHtml(e, push(e))).join('') : '<div class="pal-empty sm">None yet. Add clients that are not in Taxio Hub.</div>');
             }
         }
 
@@ -489,7 +489,7 @@
         const scrim = document.createElement('div');
         scrim.className = 'scrim'; scrim.id = 'palette';
         scrim.innerHTML = '<div class="dialog" role="dialog" aria-label="Select entity">'
-            + '<div class="pal-search">' + P.icon('search', 20, '', 2.2).replace('<svg ', '<svg style="color:var(--accent)" ') + '<input id="pal-q" type="text" placeholder="Search entity or NPWP…" autocomplete="off" aria-label="Search entity"><kbd>Esc</kbd></div>'
+            + '<div class="pal-search">' + P.icon('search', 18, 'acc', 2.2) + '<input id="pal-q" type="text" placeholder="Search entity or NPWP…" autocomplete="off" aria-label="Search entity"><kbd>Esc</kbd></div>'
             + '<div class="pal-list" id="pal-body"></div><div class="pal-foot" id="pal-foot"></div></div>';
         document.body.appendChild(scrim);
         const input = P.$('pal-q');
@@ -629,8 +629,8 @@
     function picRowHtml(p, i) {
         const passHint = p.id ? 'Leave blank to keep unchanged' : 'Required';
         const passphraseHint = p.id ? 'Leave blank to keep unchanged' : 'Optional';
-        return '<div class="pic-form-row" style="border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px">'
-            + '<div class="row" style="justify-content:space-between"><b style="font-size:13px;color:var(--ink)">PIC ' + (i + 1) + (i === 0 ? '<span class="tag auto" style="margin-left:8px">PRIMARY</span>' : '') + '</b>'
+        return '<div class="pic-form-row">'
+            + '<div class="row" style="justify-content:space-between"><b>PIC ' + (i + 1) + (i === 0 ? '<span class="tag auto" style="margin-left:8px">PRIMARY</span>' : '') + '</b>'
             + (dlg.pics.length > 1 ? '<button type="button" class="icon-btn" data-act="pic-remove" data-idx="' + i + '" aria-label="Remove this PIC">' + P.icon('trash', 15) + '</button>' : '<span></span>') + '</div>'
             + '<div class="field"><label>PIC name</label><input class="input sm" data-pic-field="name" data-idx="' + i + '" value="' + P.esc(p.name) + '" placeholder="e.g. Ani Sample Wijaya"></div>'
             + '<div class="field"><label>NPWP PIC</label><input class="input sm mono" data-pic-field="npwp" data-idx="' + i + '" value="' + P.esc(p.npwp) + '" placeholder="16 digits, no dots/dashes" maxlength="20" inputmode="numeric"></div>'

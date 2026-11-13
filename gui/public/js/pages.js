@@ -75,7 +75,7 @@
         }
         const steps = [['1', 'Open Coretax'], ['2', 'Log in'], ['3', 'Check session']];
         return '<div class="banner ' + (m.open ? 'warn' : 'info') + '"><span class="ico">' + P.icon('globe', 22) + '</span><div class="body"><b>' + (m.open ? 'Waiting for manual login in the Coretax window' : 'Coretax opens in a separate window') + '</b><span>' + who + ' The agent waits, and continues as soon as the session is detected.</span>'
-            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-coretax" style="box-shadow:none">' + P.icon('globe', 15) + (m.open ? 'Show window' : 'Open Coretax') + '</button><button type="button" class="btn btn-sm" data-act="check-session">' + P.icon('shield', 15) + 'Check session</button></div></div>'
+            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-coretax">' + P.icon('globe', 15) + (m.open ? 'Show window' : 'Open Coretax') + '</button><button type="button" class="btn btn-sm" data-act="check-session">' + P.icon('shield', 15) + 'Check session</button></div></div>'
             + '<div class="banner-steps">' + steps.map(([n, t]) => '<span><i>' + n + '</i>' + t + '</span>').join('') + '</div></div>';
     }
     /** Belum ada entitas: formulir tetap tampil (bisa disiapkan dulu), hanya diberi banner untuk memilih
@@ -83,7 +83,7 @@
     function entityGuard() {
         return '<div class="banner info"><span class="ico">' + P.icon('search', 20) + '</span><div class="body"><b>No entity selected</b>'
             + '<span>You can prepare the form first. Select an entity from Taxio Hub, or add a new client, before starting.</span>'
-            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-palette" style="box-shadow:none">' + P.icon('search', 15) + 'Search entity</button></div></div></div>';
+            + '<div class="row" style="gap:8px;margin-top:8px"><button type="button" class="btn btn-sm btn-primary" data-act="open-palette">' + P.icon('search', 15) + 'Search entity</button></div></div></div>';
     }
     const kodeHint = (n, unit) => n + ' ' + unit;
 
@@ -489,7 +489,7 @@
         main(st) {
             const r = st.result;
             return P.card(1, 'Recap Excel', '<span>Filled-in Draft SPT Desember sheet</span>', '<div class="hint" style="font-size:13.5px">Fill in the green columns of the <b>Draft SPT Desember</b> sheet (PTKP status, income from KK), save, then select the recap here. Employees without income are skipped.</div>'
-                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="bpa1-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Use latest recap (' + st.year + ')</button></div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="bpa1-latest">' + P.icon('sheet', 15) + 'Use latest recap (' + st.year + ')</button></div>'
                     + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…or select another recap Excel</span>') + '<button type="button" class="link" data-act="bpa1-pick">' + (st.file ? 'change file…' : 'select file…') + '</button></div>')
                 + P.card(2, 'Save XML to', '<span>' + (st.outDir ? esc(st.outDir) : 'Same folder as the recap Excel') + '</span>', '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm" data-act="bpa1-outdir">' + P.icon('folder', 15) + 'Select folder…</button>' + (st.outDir ? '<button type="button" class="btn btn-sm" data-act="bpa1-outdir-clear">Same as recap</button>' : '') + '</div>')
                 + P.card(3, 'Tahun Pajak', '', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="bpa1-year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
@@ -534,7 +534,7 @@
             const step = (n, t, s) => '<div class="doc-row" style="align-items:flex-start"><span class="ico">' + n + '</span><div class="t"><b>' + t + '</b><span>' + s + '</span></div></div>';
             // Tidak ada template terpisah: sumbernya Excel hasil tab "Unduh setahun" (<kode> <tahun> - Rekap SPT PPh 21 Setahun (A1).xlsx).
             return P.card(1, 'Recap Excel', '<span>Output of the "Full-year download" tab</span>', '<div class="hint" style="font-size:13.5px">No template needed: use the Excel from the <b>Full-year download</b> tab (<b>… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx</b>). In the <b>NIK</b> sheet, wrong NIKs are highlighted yellow (filter the <b>Kategori</b> column) and the green <b>NIK Baru</b> / <b>Nama Baru</b> columns are pre-filled with suggestions where available - check them against the KTP, fill in the blanks, save, then select the file here. Rows with empty green columns are left untouched.</div>'
-                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest" style="box-shadow:none">' + P.icon('sheet', 15) + 'Use latest recap (' + st.year + ')</button><button type="button" class="btn btn-sm" data-act="nik-refresh"' + (st.file && st.file.filePath && !st.refreshing ? '' : ' disabled') + ' title="Rebuild this recap from the file itself (no Coretax): sheet NIK and Draft SPT Desember follow the latest Pembetulan inputs, e.g. a NIK salah gets its own row. Close the file in Excel first.">' + P.icon('retry', 15) + (st.refreshing ? 'Updating… (about 1 min)' : 'Update recap') + '</button></div>'
+                    + '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="nik-latest">' + P.icon('sheet', 15) + 'Use latest recap (' + st.year + ')</button><button type="button" class="btn btn-sm" data-act="nik-refresh"' + (st.file && st.file.filePath && !st.refreshing ? '' : ' disabled') + ' title="Rebuild this recap from the file itself (no Coretax): sheet NIK and Draft SPT Desember follow the latest Pembetulan inputs, e.g. a NIK salah gets its own row. Close the file in Excel first.">' + P.icon('retry', 15) + (st.refreshing ? 'Updating… (about 1 min)' : 'Update recap') + '</button></div>'
                     + (st.latestError ? '<div class="hint warn">' + esc(st.latestError) + '</div>' : '')
                     + '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' + (st.file.filePath ? '<span class="hint">' + esc(st.file.filePath) + '</span>' : '') : '<span>…or select another recap Excel</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>')
                 + P.card(2, 'Tahun Pajak', '<span>Looks up this year\'s Telah Terbit BPMP Bukti Potong</span>', '<div class="chips c6 tall">' + st.years.map((y) => '<button type="button" class="chip" data-act="year" data-val="' + y + '" aria-pressed="' + (st.year === y) + '">' + y + '</button>').join('') + '</div>')
@@ -618,7 +618,7 @@
         id: 'dividen', cta: 'Import to Coretax', ctaIcon: 'upload',
         init() { return { file: null, busy: '' }; },
         main(st, api) {
-            return P.card(1, 'Create New Case', '', '<div class="hint" style="font-size:13.5px">Logs in to Coretax as this entity and opens a new e-Reporting case (AS.39-01). Skip this if the case is already open in this entity\'s Coretax window.</div><button type="button" class="btn btn-sm btn-primary" data-act="create-case" style="box-shadow:none;margin-top:8px">' + P.icon('plus', 15) + 'Create new case</button>')
+            return P.card(1, 'Create New Case', '', '<div class="hint" style="font-size:13.5px">Logs in to Coretax as this entity and opens a new e-Reporting case (AS.39-01). Skip this if the case is already open in this entity\'s Coretax window.</div><button type="button" class="btn btn-sm btn-primary" data-act="create-case" style="margin-top:8px">' + P.icon('plus', 15) + 'Create new case</button>')
                 + P.card(2, 'Excel Template File', '', '<div class="dropzone' + (st.file ? ' filled' : '') + '">' + P.icon(st.file ? 'check' : 'upload', 26) + (st.file ? '<span class="file-name">' + esc(st.file.fileName) + '</span>' : '<span>Select the filled-in .xlsx template file</span>') + '<button type="button" class="link" data-act="pick-file">' + (st.file ? 'change file…' : 'select file…') + '</button></div>');
         },
         async act(act, d, st, api) {
@@ -725,7 +725,7 @@
                 return tabs
                     + P.card(1, 'Bukti Potong Type', '', '<div class="chips c4">' + [['mp', 'BPMP'], ['bp21', 'BP21'], ['bpa1', 'BPA1'], ['bpu', 'BPPU']].map(([v, l]) => '<button type="button" class="chip" data-act="itype" data-val="' + v + '" aria-pressed="' + (st.issueType === v) + '">' + l + '</button>').join('') + '</div>')
                     + P.card(2, 'Masa Pajak', '<span>BPA1: the last Masa Pajak of the slip</span>', st.ipp.html())
-                    + P.card(3, 'Preview', '', '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="ipreview" style="box-shadow:none"' + (st.previewing ? ' disabled' : '') + '>' + P.icon('search', 15) + 'Preview Belum Terbit</button></div>' + result)
+                    + P.card(3, 'Preview', '', '<div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn btn-sm btn-primary" data-act="ipreview"' + (st.previewing ? ' disabled' : '') + '>' + P.icon('search', 15) + 'Preview Belum Terbit</button></div>' + result)
                     + P.callout('shield', 'Issues exactly what the preview shows', 'BPMP is issued without a signature; BP21 / BPA1 / BPPU are signed with the PIC passphrase stored in Taxio Pilot (checked with Coretax first). If Belum Terbit changes after the preview, nothing is issued. Filing the SPT stays manual.');
             }
             const i = st.info;

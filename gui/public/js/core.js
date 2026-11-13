@@ -33,6 +33,26 @@
         set(key, value) { try { localStorage.setItem('pilot.' + key, JSON.stringify(value)); } catch (e) { /* diabaikan */ } }
     };
 
+    // ---------- Tema: System / Light / Dark (bawaan Dark). Dipasang sebelum paint oleh theme-boot.js. ----------
+    const mqLight = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+    const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    P.reducedMotion = reducedMotion;
+    P.theme = {
+        pref() { const v = P.store.get('theme', 'dark'); return v === 'system' || v === 'light' ? v : 'dark'; },
+        resolved(pref) { pref = pref || P.theme.pref(); return pref === 'dark' || (pref === 'system' && !(mqLight && mqLight.matches)) ? 'dark' : 'light'; },
+        apply(pref, animate) {
+            const root = document.documentElement;
+            const want = P.theme.resolved(pref);
+            root.setAttribute('data-theme-pref', pref);
+            if (root.getAttribute('data-theme') === want) return;
+            const go = () => root.setAttribute('data-theme', want);
+            // Cross-fade lewat View Transitions (sekali-sekali, seluruh layar); instan bila reduced motion.
+            if (animate && document.startViewTransition && !reducedMotion()) document.startViewTransition(go); else go();
+        },
+        set(pref) { P.store.set('theme', pref); P.theme.apply(pref, true); P.emit('theme', pref); }
+    };
+    if (mqLight && mqLight.addEventListener) mqLight.addEventListener('change', () => { if (P.theme.pref() === 'system') P.theme.apply('system', true); });
+
     // ---------- Bus kejadian sederhana ----------
     const handlers = {};
     P.on = (name, fn) => { (handlers[name] = handlers[name] || []).push(fn); };
@@ -152,10 +172,10 @@
         opt = opt || {};
         return '<button type="button" class="tile" data-act="' + act + '" data-val="' + P.esc(val) + '" aria-pressed="' + !!on + '"' + (opt.disabled ? ' disabled' : '') + (opt.title ? ' title="' + P.esc(opt.title) + '"' : '') + '>'
             + '<span class="code">' + code + '</span><span class="t"><b>' + title + '</b><span>' + sub + '</span></span>'
-            + (opt.disabled ? '<span class="lock">' + P.icon('lock', 14) + '</span>' : '<span class="tick">' + P.icon('check', 12, '', 3).replace('currentColor', '#fff') + '</span>') + '</button>';
+            + (opt.disabled ? '<span class="lock">' + P.icon('lock', 14) + '</span>' : '<span class="tick">' + P.icon('check', 12, '', 3) + '</span>') + '</button>';
     };
     P.kv = (rows) => '<dl class="kv">' + rows.map(([k, v, cls]) => '<div><dt>' + k + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</dd></div>').join('') + '</dl>';
-    P.note = (icon, color, text) => '<div class="note"><span style="color:' + color + '">' + P.icon(icon, 16) + '</span><span>' + text + '</span></div>';
+    P.note = (icon, cls, text) => '<div class="note"><span class="' + (cls || '') + '">' + P.icon(icon, 16) + '</span><span>' + text + '</span></div>';
 
     // Folder simpan dipakai bersama semua halaman (satu pilihan, seperti sebelumnya).
     P.saveRoot = () => P.store.get('saveRoot', '');
