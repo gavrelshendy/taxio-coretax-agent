@@ -386,3 +386,13 @@ berubah) — sudah termasuk dalam ukuran.
 | 4 | Konfirmasi Batalkan | cukup centang (tanpa mengetik kode klien) |
 | 5 | Klien dengan 2 PIC | selalu tanya PIC setiap kali |
 | 6 | Tema bawaan pengguna baru | Dark |
+
+## Keputusan pemilik - pembaruan (2026-11-13, sesudah melihat mockup)
+
+Menggantikan baris yang bertentangan di tabel sebelumnya dan di isi usulan:
+
+- **Halaman Runs disederhanakan menjadi tiga bagian/saringan saja**: `Needs you` (menunggu keputusan), `In progress` (yang berjalan DAN yang antre dalam satu daftar; yang antre diberi keterangan kecil "waiting · #2 in line"), `Done` (selesai, gagal, dihentikan - dibedakan dengan ikon). Tidak ada saringan All / Running / Queued / Failed / Finished terpisah. Label "Changes Coretax" tidak ditampilkan di baris daftar Runs (hanya di halaman/formulir sebelum memulai).
+- **Grup klien**: TIDAK ada fitur "Saved groups" baru dan tidak ada sinkronisasi ke Taxio Hub. Pemilihan klien memakai cara yang sudah ada sekarang (daftar Group / Me dari Taxio Hub, pencarian Ctrl+K, pilih banyak).
+- **Batch banyak klien**: hanya untuk Download. Aksi yang mengubah Coretax tetap satu klien per perintah.
+- **Riwayat proses**: hari ini saja (memori; hilang saat aplikasi ditutup).
+- **Konfirmasi Batalkan**: cukup centang. **Klien dengan 2 PIC**: selalu tanya. **Tema bawaan**: Dark.
