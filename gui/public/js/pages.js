@@ -63,6 +63,83 @@
             + '<button type="button" class="btn btn-primary btn-lg" data-act="' + (o.act || 'start') + '"' + (why ? ' disabled' : '') + ' title="Ctrl+Enter">' + P.icon(o.icon || 'play', 17, '', 2) + esc(o.cta || 'Start') + '</button>';
     }
     const loginSub = (ent) => (ent ? 'Login: ' + esc(loginText(ent)) : '');
+    /** Halaman Download: bilah aksi untuk satu klien (kalimat seperti biasa) atau banyak klien (hitungan x klien,
+     *  tombol "Start N downloads", terkunci sampai PIC tiap klien ber-PIC banyak dipilih). Bagian "siapa" selalu terakhir. */
+    function withClients(o, ent) {
+        const rows = P.multi.rows(), n = rows.length;
+        if (n < 2) { o.parts.push(esc(whoText(ent))); return o; }
+        const pend = rows.find((r) => r.pending);
+        o.count = (o.count || 0) * n; o.unit = o.count === 1 ? 'download' : 'downloads';
+        o.parts.push(n + ' clients');
+        o.sub = 'Each client signs in with its own PIC';
+        if (!o.blocked && pend) o.blocked = 'Choose a PIC for ' + pend.entity.entity_name;
+        if (o.count > 0) o.cta = 'Start ' + o.count + ' downloads';
+        return o;
+    }
+    // ---------- Baris "For": klien untuk unduhan (hanya halaman Download) ----------
+    let chipSeen = new Set();
+    function chipHtml(r, many) {
+        const e = r.entity, pics = e.pics || [];
+        const sel = r.primary ? (r.flat && r.flat.pic_id) : r.picId;
+        let pic;
+        if (pics.length > 1) {
+            pic = '<select class="cc-pic' + (r.pending ? ' need' : '') + '" data-multi-pic="' + esc(r.key) + '" aria-label="PIC for ' + esc(e.entity_name) + '">'
+                + (sel ? '' : '<option value="" selected>Choose PIC…</option>')
+                + pics.map((p) => '<option value="' + esc(p.pic_id) + '"' + (p.pic_id === sel ? ' selected' : '') + '>PIC ' + esc(p.pic_name) + '</option>').join('') + '</select>';
+        } else pic = '<span class="cc-sub">' + esc(pics.length === 1 ? 'PIC ' + pics[0].pic_name : E.typeLabel(e)) + '</span>';
+        const can = many && P.multi.canRemove(r.key);
+        const x = many ? '<button type="button" class="cc-x" data-act="multi-rm" data-key="' + esc(r.key) + '" aria-label="Remove ' + esc(e.entity_name) + '"' + (can ? '' : ' disabled title="Choose a PIC for another client first"') + '>' + P.icon('x', 13, '', 2.4) + '</button>' : '';
+        return '<span class="cchip' + (r.pending ? ' pending' : '') + (chipSeen.has(r.key) ? '' : ' new') + '" data-chip="' + esc(r.key) + '"><span class="cc-av">' + esc(L.initials(e.entity_name)) + '</span>'
+            + '<span class="cc-tx"><b title="' + esc(e.entity_name) + '">' + esc(e.entity_name) + '</b>' + pic + '</span>' + x + '</span>';
+    }
+    function forRowHtml() {
+        const rows = P.multi.rows();
+        if (!rows.length || rows[0].entity.project === 'manual') { chipSeen = new Set(); return ''; }
+        const html = '<section class="for-bar" aria-label="Clients for this download"><span class="for-l">For</span><div class="for-chips">' + rows.map((r) => chipHtml(r, rows.length > 1)).join('') + '</div>'
+            + '<button type="button" class="btn btn-sm" data-act="multi-add">' + P.icon('plus', 15, '', 2.2) + 'Add clients</button></section>';
+        chipSeen = new Set(rows.map((r) => r.key));
+        return html;
+    }
+    // ---------- Tinjau + kirim: satu permintaan aksi biasa per klien, `batch` yang sama ----------
+    const batchId = () => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    /** send(flat) mengirim satu klien (melempar bila ditolak). Menutup dialog dan membuka Runs bila semuanya diterima. */
+    async function reviewDialog(rows, total, label, send) {
+        let limit = 0;
+        try { const d = await P.api('/api/runs'); limit = Number(d && d.limits && d.limits.total) || 0; } catch (e) { /* tanpa angka batas */ }
+        const scrim = document.createElement('div'); scrim.className = 'scrim'; scrim.id = 'review';
+        const nm = (r) => '<span class="rv-av">' + esc(L.initials(r.entity.entity_name)) + '</span><span class="rv-tx"><b>' + esc(r.entity.entity_name) + '</b><span>' + esc(r.flat && r.flat.pic_name ? 'PIC ' + r.flat.pic_name : E.typeLabel(r.entity)) + '</span></span>';
+        const dl = total + (total === 1 ? ' download' : ' downloads');
+        scrim.innerHTML = '<div class="dialog narrow rv" role="dialog" aria-label="Review downloads"><div class="dialog-head"><h2>Review Downloads</h2><button type="button" class="icon-btn" aria-label="Close" data-rv="close">' + P.icon('x', 18) + '</button></div>'
+            + '<div class="dialog-body"><div class="rv-sum"><div><b>' + esc(dl) + '</b> · ' + rows.length + ' clients</div><span>' + esc(label) + '</span></div>'
+            + '<ul class="rv-list">' + rows.map((r) => '<li class="rv-row" data-rv-key="' + esc(r.key) + '">' + nm(r) + '<span class="rv-st">Ready</span></li>').join('') + '</ul>'
+            + '<p class="hint" id="rv-hint">Runs start as Coretax windows become available' + (limit ? ' (up to ' + limit + ' at a time)' : '') + '. The rest wait in line; follow them on the Runs page.</p></div>'
+            + '<div class="dialog-foot"><span class="grow"></span><button type="button" class="btn" data-rv="close">Cancel</button><button type="button" class="btn btn-primary" data-rv="go">' + P.icon('play', 16, '', 2) + 'Start ' + esc(dl) + '</button></div></div>';
+        document.body.appendChild(scrim);
+        let sending = false;
+        const close = () => { document.removeEventListener('keydown', onKey); scrim.remove(); };
+        const onKey = (e) => { if (e.key === 'Escape' && !sending) close(); };
+        document.addEventListener('keydown', onKey);
+        scrim.addEventListener('mousedown', (e) => { if (e.target === scrim && !sending) close(); });
+        scrim.addEventListener('click', async (e) => {
+            const b = e.target.closest('[data-rv]'); if (!b || sending) return;
+            if (b.dataset.rv === 'close') return close();
+            if (b.dataset.rv === 'runs') { close(); P.run.poll(); return P.shell.go('runs'); }
+            sending = true; b.disabled = true; b.textContent = 'Starting…';
+            const bad = [];
+            for (const r of rows) {
+                const li = scrim.querySelector('[data-rv-key="' + CSS.escape(r.key) + '"] .rv-st');
+                try { await send(r.flat, r); if (li) { li.className = 'rv-st ok'; li.textContent = 'Queued'; } }
+                catch (err) { bad.push(r); if (li) { li.className = 'rv-st bad'; li.textContent = err.message; li.title = err.message; } }
+            }
+            sending = false;
+            if (!bad.length) { close(); P.run.poll(); return P.shell.go('runs'); }
+            const okN = rows.length - bad.length;
+            scrim.querySelector('#rv-hint').textContent = bad.length + (bad.length === 1 ? ' client was' : ' clients were') + ' not started. ' + (okN ? okN + ' started and ' + (okN === 1 ? 'is' : 'are') + ' on the Runs page.' : 'Nothing was started.');
+            scrim.querySelector('.dialog-foot').innerHTML = '<span class="grow"></span><button type="button" class="btn" data-rv="close">Close</button>' + (okN ? '<button type="button" class="btn btn-primary" data-rv="runs">Open Runs</button>' : '');
+            const f = scrim.querySelector('.dialog-foot .btn-primary') || scrim.querySelector('.dialog-foot .btn'); if (f) f.focus();
+        });
+        const go = scrim.querySelector('[data-rv="go"]'); if (go) go.focus();
+    }
     /** "Options": hanya folder tujuan (keputusan pemilik 2026-11-14). Terbuka/tertutup diingat. */
     function optionsHtml() {
         const open = !!P.store.get('optsOpen', false);
@@ -99,7 +176,12 @@
         const st = {};
         let root = null;
         let busy = false;
-        const api = { st, entity: () => E.current(), sel: () => E.selected, redraw, updateRail, def };
+        let override = null; // klien yang sedang dikirim saat banyak klien
+        let bcur = null; // { id, label, total, i }: batch yang sedang dikirim
+        const api = { st, entity: () => override || E.current(), sel: () => E.selected, redraw, updateRail, def,
+            inBatch: () => !!bcur, nextBatch: () => (bcur ? { id: bcur.id, label: bcur.label, total: bcur.total, index: bcur.i++ } : undefined),
+            /** Perorangan / sesi manual saja yang boleh dipakai jenis tertentu: berlaku bila SEMUA klien terpilih begitu. */
+            allIndividual: () => { const rows = def.batch ? P.multi.rows() : []; const cur = api.entity(); return !!cur && (rows.length ? rows.map((r) => r.entity) : [cur]).every((e) => e.project === 'manual' || e.individual); } };
         Object.assign(st, def.init(api));
 
         function railHtml() {
@@ -111,8 +193,8 @@
             const ent = api.entity();
             if (def.normalize) def.normalize(st, api);
             const need = def.needsEntity !== false;
-            const main = (need ? (ent ? manualBanner(ent) : entityGuard()) : '') + def.main(st, api) + (def.folder ? optionsHtml() : '');
-            return P.run.summaryHtml() + (def.batch ? P.batch.barHtml() : '') + '<div class="col-main">' + main + '</div><div class="abar" id="abar">' + railHtml() + '</div>';
+            const main = (need ? (ent ? manualBanner(ent) : entityGuard()) : '') + (def.batch && ent ? forRowHtml() : '') + def.main(st, api) + (def.folder ? optionsHtml() : '');
+            return P.run.summaryHtml() + '<div class="col-main">' + main + '</div><div class="abar" id="abar">' + railHtml() + '</div>';
         }
         function afterDraw() {
             P.bindFolderField(root);
@@ -148,25 +230,39 @@
             if (!t || !root.contains(t) || t.closest('.pp')) return;
             const act = t.dataset.act;
             if (act === 'open-palette') return E.openPalette();
-            if (act === 'batch-clear') { P.batch.clear(); return; }
+            if (act === 'multi-add') return E.openPalette({ multi: true });
+            if (act === 'multi-rm') {
+                const chip = t.closest('.cchip'); if (chip) chip.classList.add('leaving');
+                setTimeout(() => P.multi.remove(t.dataset.key), chip ? 160 : 0);
+                return;
+            }
             if (act === 'open-coretax') return P.manual.open();
             if (act === 'check-session') return P.manual.check(true);
             if (act === 'start') {
                 if (busy) return;
+                if (def.batch && P.multi.count() > 1) return startMany();
                 busy = true; t.disabled = true;
-                try {
-                    if (def.batch && P.batch.count() >= 2) {
-                        // Antrean banyak entitas: tiap entitas dijalankan berurutan lewat start() yang sama.
-                        await P.batch.run(async () => { await def.start(st, api); });
-                    } else { await def.start(st, api); P.run.poll(); }
-                } catch (err) { alert('Failed to start: ' + err.message); }
+                try { await def.start(st, api); P.run.poll(); }
+                catch (err) { alert('Failed to start: ' + err.message); }
                 busy = false;
                 updateRail();
                 return;
             }
             if (def.act && def.act(act, t.dataset, st, api) !== false) redraw();
         }
+        /** Banyak klien: tinjau, lalu kirim satu permintaan aksi biasa per klien (batch yang sama); antrean server mengatur batas paralel. */
+        function startMany() {
+            const rows = P.multi.rows(); if (rows.some((r) => r.pending)) return;
+            const units = def.units ? def.units(st) : 1, total = rows.length * units;
+            const label = (def.batchLabel(st) + ' for ' + rows.length + ' clients').slice(0, 120);
+            const id = batchId(); let n = 0;
+            return reviewDialog(rows, total, label, async (flat) => {
+                override = flat; bcur = { id, label, total, i: n * units }; n++;
+                try { await def.start(st, api); } finally { override = null; bcur = null; }
+            });
+        }
         function onInput(e) {
+            if (e.target.dataset && e.target.dataset.multiPic !== undefined) { if (e.type === 'change') P.multi.setPic(e.target.dataset.multiPic, e.target.value || null); return; }
             if (e.target.id === 'save-root-input' && e.type === 'input') { P.store.set('saveRoot', e.target.value.trim()); updateRail(); return; }
             const key = e.target.dataset && e.target.dataset.bind;
             if (!key) return;
@@ -215,8 +311,7 @@
                 ppM: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }), ppY: P.period.create({ mode: 'tahun', onChange: () => api.updateRail() }) };
         },
         normalize(st, api) {
-            const ent = api.entity();
-            const opAllowed = ent && (ent.project === 'manual' || ent.individual);
+            const opAllowed = api.allIndividual();
             if (!opAllowed) st.jenis.delete('spt_op');
             if (restricted()) st.jenis.delete('pph21');
             const onlyPph21 = st.jenis.size === 1 && st.jenis.has('pph21');
@@ -224,8 +319,7 @@
         },
         afterDraw(st) { (isAnnual(st) ? st.ppY : st.ppM).bind(); },
         main(st, api) {
-            const ent = api.entity();
-            const opAllowed = ent && (ent.project === 'manual' || ent.individual);
+            const opAllowed = api.allIndividual();
             const annual = isAnnual(st);
             const onlyPph21 = st.jenis.size === 1 && st.jenis.has('pph21');
             const tiles = (list, cols) => '<div class="tiles ' + cols + '">' + list.map(([k, code, title]) => {
@@ -265,8 +359,8 @@
             const names = Array.from(st.jenis).map((k) => (SPT_MONTHLY.concat(SPT_ANNUAL).find((x) => x[0] === k) || [])[2]).filter(Boolean);
             let blocked = '';
             if (!st.jenis.size) blocked = 'Select a Jenis Pajak'; else if (!pp.count()) blocked = annual ? 'Select a Tahun Pajak' : 'Select a Masa Pajak'; else if (!docs.length) blocked = 'Select at least one document';
-            return actionBar({ count: combos, unit: combos === 1 ? 'download' : 'downloads', parts: [esc(names.join(', ')), pp.count() ? esc(pp.unit() + ' ' + pp.code()) : '', esc(docs.join(', ')), esc(whoText(ent))],
-                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' });
+            return actionBar(withClients({ count: combos, unit: combos === 1 ? 'download' : 'downloads', parts: [esc(names.join(', ')), pp.count() ? esc(pp.unit() + ' ' + pp.code()) : '', esc(docs.join(', '))],
+                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' }, ent));
         },
         async start(st, api) {
             const annual = isAnnual(st); const pp = annual ? st.ppY : st.ppM;
@@ -275,8 +369,9 @@
             if (!st.bpe && !st.induk && !st.lampiran) throw new Error('Select at least one document to download.');
             const lampiranMode = st.fmt === 'excel' ? 'full' : st.isi;
             await P.post('/api/actions/download-spt', { entity: api.entity(), jenisPajakKeys, masaInput: pp.code(), saveRoot: P.saveRoot() || undefined, checkPph25: false,
-                includeLampiran: st.lampiran, includeBpe: st.bpe, includeInduk: st.induk, lampiranMode, lampiranFormat: st.fmt, outputLayout: 'combined', layoutStyle: 'coretax' });
-        }
+                includeLampiran: st.lampiran, includeBpe: st.bpe, includeInduk: st.induk, lampiranMode, lampiranFormat: st.fmt, outputLayout: 'combined', layoutStyle: 'coretax', batch: api.nextBatch() });
+        },
+        batchLabel(st) { const pp = isAnnual(st) ? st.ppY : st.ppM; return 'SPT · ' + pp.unit() + ' ' + pp.code(); }
     });
     function isAnnual(st) { return Array.from(st.jenis).some((k) => ANNUAL_KEYS.includes(k)); }
 
@@ -316,8 +411,8 @@
             const ent = api.entity(); const n = st.jenis.size * st.pp.count();
             const forceExcel = st.status === 'not_issued' || (st.jenis.size === 1 && st.jenis.has('bpmp'));
             let blocked = ''; if (!st.jenis.size) blocked = 'Select an e-Bupot type'; else if (!st.pp.count()) blocked = 'Select a Masa Pajak';
-            return actionBar({ count: n, unit: n === 1 ? 'download' : 'downloads', parts: [esc(Array.from(st.jenis).map((k) => k.toUpperCase()).join(', ')), st.status === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit', st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', forceExcel || !st.pdf ? 'Excel' : 'Excel + PDF', esc(whoText(ent))],
-                dest: true, sub: loginSub(ent) + (st.jenis.size > 1 ? ' · types run one after another' : ''), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' });
+            return actionBar(withClients({ count: n, unit: n === 1 ? 'download' : 'downloads', parts: [esc(Array.from(st.jenis).map((k) => k.toUpperCase()).join(', ')), st.status === 'not_issued' ? 'Belum Terbit' : 'Telah Terbit', st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', forceExcel || !st.pdf ? 'Excel' : 'Excel + PDF'],
+                dest: true, sub: loginSub(ent) + (st.jenis.size > 1 ? ' · types run one after another' : ''), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' }, ent));
         },
         async start(st, api) {
             const types = Array.from(st.jenis);
@@ -325,8 +420,12 @@
                 entity: api.entity(), bupotType, documentStatus: st.status, masaInput: st.pp.code(), kodeInput: KODE_TYPES.includes(bupotType) ? st.kode.trim() : '', saveRoot: P.saveRoot() || undefined, pageSize: st.pageSize,
                 outputMode: st.status === 'not_issued' || bupotType === 'bpmp' ? 'excel_only' : (st.pdf ? 'pdf_excel' : 'excel_only')
             }));
+            // Banyak klien: tiap jenis langsung dikirim (antrean server yang mengatur); satu klien: berantai di latar seperti biasa.
+            if (api.inBatch()) { for (const it of items) await P.post('/api/actions/download-ebupot', Object.assign(it, { batch: api.nextBatch() })); return; }
             P.run.runQueue(items); // berantai di latar; halaman berpindah ke tampilan proses lewat polling
-        }
+        },
+        units: (st) => st.jenis.size,
+        batchLabel: (st) => 'e-Bupot · Masa Pajak ' + st.pp.code()
     });
 
     // =========================================================
@@ -338,13 +437,12 @@
         id: 'bpsaya', batch: true, folder: true, cta: 'Start download', ctaIcon: 'download',
         init(api) { return { jenis: new Set(['bppu']), pdf: true, pageSize: 'auto', pp: P.period.create({ mode: 'masa', onChange: () => api.updateRail() }) }; },
         normalize(st, api) {
-            const ent = api.entity();
-            const personalOk = ent && (ent.project === 'manual' || ent.individual);
+            const personalOk = api.allIndividual();
             MYBUPOT.forEach(([k, , , personal]) => { if ((personal && !personalOk) || (restricted() && (k === 'bpmp' || k === 'bpa1'))) st.jenis.delete(k); });
         },
         afterDraw(st) { st.pp.bind(); },
         main(st, api) {
-            const ent = api.entity(); const personalOk = ent && (ent.project === 'manual' || ent.individual);
+            const personalOk = api.allIndividual();
             const group = (title, personal) => '<div class="stack"><div class="eyebrow">' + title + '</div><div class="tiles c2">' + MYBUPOT.filter((m) => m[3] === personal).map(([k, code, title]) => {
                 const dis = (personal && !personalOk) || (restricted() && (k === 'bpmp' || k === 'bpa1'));
                 const why = restricted() && (k === 'bpmp' || k === 'bpa1') ? 'Not allowed for Restricted Editor.' : (personal && !personalOk ? 'Individual (PIC) accounts only.' : '');
@@ -364,12 +462,13 @@
         rail(st, api) {
             const ent = api.entity(); let blocked = ''; if (!st.jenis.size) blocked = 'Select a Bukti Potong type'; else if (!st.pp.count()) blocked = 'Select a Masa Pajak';
             const n = st.jenis.size * st.pp.count();
-            return actionBar({ count: n, unit: n === 1 ? 'download' : 'downloads', parts: [esc(Array.from(st.jenis).map((k) => (MYBUPOT.find((m) => m[0] === k) || [])[2] || k).join(', ')), st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', st.pdf ? 'Excel + PDF' : 'Excel', esc(whoText(ent))],
-                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' });
+            return actionBar(withClients({ count: n, unit: n === 1 ? 'download' : 'downloads', parts: [esc(Array.from(st.jenis).map((k) => (MYBUPOT.find((m) => m[0] === k) || [])[2] || k).join(', ')), st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', st.pdf ? 'Excel + PDF' : 'Excel'],
+                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' }, ent));
         },
         async start(st, api) {
-            await P.post('/api/actions/download-mybupot', { entity: api.entity(), buktiTypeKeys: Array.from(st.jenis), masaInput: st.pp.code(), saveRoot: P.saveRoot() || undefined, pageSize: st.pageSize, outputMode: st.pdf ? 'pdf_excel' : 'excel_only' });
-        }
+            await P.post('/api/actions/download-mybupot', { entity: api.entity(), buktiTypeKeys: Array.from(st.jenis), masaInput: st.pp.code(), saveRoot: P.saveRoot() || undefined, pageSize: st.pageSize, outputMode: st.pdf ? 'pdf_excel' : 'excel_only', batch: api.nextBatch() });
+        },
+        batchLabel: (st) => 'Bukti Potong Saya · Masa Pajak ' + st.pp.code()
     });
 
     // =========================================================
@@ -404,10 +503,11 @@
             const fmt = [st.excel ? 'Excel' : '', st.csv ? 'Official CSV' : ''].filter(Boolean).join(' + ') || '-';
             let blocked = '';
             if (!st.types.length) blocked = 'Select a document type'; else if (!st.pp.count()) blocked = 'Select a Masa Pajak'; else if (!st.excel && !st.csv) blocked = 'Select a format';
-            return actionBar({ count: st.types.length, unit: st.types.length === 1 ? 'document type' : 'document types', parts: [st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', esc(fmt), esc(whoText(ent))],
-                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' });
+            return actionBar(withClients({ count: st.types.length, unit: st.types.length === 1 ? 'document type' : 'document types', parts: [st.pp.count() ? esc('Masa Pajak ' + st.pp.code()) : '', esc(fmt)],
+                dest: true, sub: loginSub(ent), ready: readiness(ent), blocked, cta: 'Start download', icon: 'download' }, ent));
         },
-        async start(st, api) { await P.post('/api/actions/download-efaktur', { entity: api.entity(), masaInput: st.pp.code(), types: st.types, excel: st.excel, csv: st.csv, saveRoot: P.saveRoot() || undefined }); }
+        async start(st, api) { await P.post('/api/actions/download-efaktur', { entity: api.entity(), masaInput: st.pp.code(), types: st.types, excel: st.excel, csv: st.csv, saveRoot: P.saveRoot() || undefined, batch: api.nextBatch() }); },
+        batchLabel: (st) => 'e-Faktur · Masa Pajak ' + st.pp.code()
     });
 
     // =========================================================
@@ -441,10 +541,9 @@
     }
 
     // Halaman Mode A1 = Unduh setahun + Pembetulan NIK BPMP (nikForm) + XML BPA1 dari Draft SPT Desember (bpa1Form), dipilih di atas.
-    // Antrean banyak entitas hanya untuk Unduh: pembetulan memakai Excel satu entitas.
     let a1View = 'unduh';
     const a1 = createPage({
-        id: 'a1', folder: true, cta: 'Start', get batch() { return a1View === 'unduh'; },
+        id: 'a1', folder: true, cta: 'Start',
         init() {
             const y = P.today().getFullYear(), years = Array.from({ length: y - 2025 + 1 }, (_, i) => 2025 + i);
             return { view: a1View, year: y, years, fresh: false, nik: { file: null, submit: false, year: y, years }, bpa1: { file: null, year: y, years, result: null, error: '', outDir: '' } };
@@ -465,7 +564,7 @@
                     + (st.fresh ? '' : a1SourceHtml(st)));
         },
         act(act, d, st, api) {
-            if (act === 'a1view') { st.view = a1View = d.val; if (st.view === 'nik' && P.batch.count() >= 2) P.batch.clear(); return true; }
+            if (act === 'a1view') { st.view = a1View = d.val; return true; }
             if (st.view === 'nik') return nikForm.act(act, d, st.nik, api);
             if (st.view === 'bpa1') return bpa1Form.act(act, d, st.bpa1, api);
             if (act === 'a1src-excel') { P.pickFile('Select the previous recap Excel').then((f) => { if (f && f.filePath) { st.source = f.filePath; a1Inspect(st, api); } else if (f) alert('Could not read the file path - select it through the Windows dialog.'); }); return false; }

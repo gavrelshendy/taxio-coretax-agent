@@ -135,6 +135,14 @@
             + '<span class="rn-chev">' + P.icon('down', 15) + '</span></button><div class="rn-ctl">' + controlsHtml(r) + '</div></div>'
             + (body ? '<div class="rn-body">' + body + '</div>' : '') + (open ? detailHtml(r) : '') + '</li>';
     }
+    /** Baris kedua batch: nama fitur yang ramah (label menu) + parameter dari label proses pertama ("SPT · PPh 21/26 · Masa Pajak ..."). */
+    function batchSub(b) {
+        const meta = P.pages && P.pages.meta ? P.pages.meta(b.feature) : null;
+        const name = (meta && meta.label) || b.feature || 'Batch';
+        const first = b.members && b.members[0];
+        const params = first && first.label ? String(first.label).split(' · ').slice(1).join(' · ') : '';
+        return params ? name + ' · ' + params : name;
+    }
     function batchRow(b) {
         const key = 'batch:' + b.id, open = X.expanded.has(key);
         const c = b.counts, fin = c.done + c.failed + c.stopped, total = Math.max(b.total || 0, b.members.length + c.hold);
@@ -148,7 +156,7 @@
         const sub = fin + ' of ' + total + (total === 1 ? ' client' : ' clients');
         return '<li class="rn-row batch ' + (b.open ? 'open' : 'finished') + '" data-flip="' + esc(key) + '">'
             + '<div class="rn-main"><button type="button" class="rn-head" data-rn-toggle="' + esc(key) + '" aria-expanded="' + open + '">' + icoHtml(b.open ? 'layers' : ic[0], b.open ? 'run' : ic[1])
-            + '<span class="rn-txt"><span class="rn-t1"><b title="' + esc(b.label) + '">' + esc(b.label) + '</b></span><span class="rn-t2">' + esc(b.feature || 'Batch') + '</span></span>'
+            + '<span class="rn-txt"><span class="rn-t1"><b title="' + esc(b.label) + '">' + esc(b.label) + '</b></span><span class="rn-t2">' + esc(batchSub(b)) + '</span></span>'
             + '<span class="rn-chev">' + P.icon('down', 15) + '</span></button>'
             + '<div class="rn-ctl">' + (b.open ? '<button type="button" class="btn btn-sm btn-ghost" data-rn-stop-batch="' + esc(b.id) + '">' + P.icon('stop', 13) + 'Stop all</button>' : '') + '</div></div>'
             + '<div class="rn-body"><div class="rn-prog">' + barHtml(pct(fin, total)) + '<span class="rn-pt">' + esc(sub) + '</span>' + (bits.length ? '<span class="rn-cur">' + esc(bits.join(' · ')) + '</span>' : '') + '</div></div>'

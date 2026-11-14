@@ -46,6 +46,7 @@
     E.pickFor = (entity) => L.pickPic(entity, picPrefs()[L.entityKey(entity)]);
     E.current = () => (E.selected ? L.flattenSelection(E.selected.entity, E.selected.picId) : null);
     E.select = function (entity, picId) {
+        if (P.multi) P.multi._drop(entity);
         if (entity.project !== 'manual' && picId) { const p = picPrefs(); p[L.entityKey(entity)] = picId; P.store.set('picPref', p); }
         E.selected = { entity, picId: picId || null };
         P.store.set('sel', { key: L.entityKey(entity), picId: picId || null, name: entity.entity_name });
@@ -127,8 +128,7 @@
     // Satu sesi = satu jendela Chrome yang login sebagai satu PIC. Dari jendela itu entitas lain milik
     // PIC yang sama dibuka dengan impersonate ulang, TANPA jendela baru. Tab sesi selalu tampil di
     // topbar; tab aktif (yang sorotannya menyala) = sesi yang dipakai untuk unduhan. Panah di tab
-    // membuka daftar entitas sesi itu: klik nama = pindah entitas di jendela yang sama, kotak centang =
-    // masuk antrean unduh berurutan (P.batch).
+    // membuka daftar entitas sesi itu: klik nama = pindah entitas di jendela yang sama.
     const digits = (s) => String(s || '').replace(/\D/g, '');
     function sameNpwp(a, b) { const x = digits(a); const y = digits(b); return x.length >= 15 && y.length >= 15 && (x === y || x.endsWith(y) || y.endsWith(x)); }
     E.sessions = () => (P.state.sessions || []).filter((s) => s.open !== false);
@@ -222,67 +222,56 @@
         return queued.length ? '<span class="sess-queue" title="' + P.esc('Waiting for a free Coretax window:\n' + queued.map((r) => '#' + r.position + ' ' + r.label).join('\n')) + '">' + P.icon('loader', 12, '', 2.4) + queued.length + ' queued</span>' : '';
     };
 
-    // ---------- Antrean banyak entitas ----------
-    const batch = { items: new Map(), running: false, cancel: false, progress: null };
+    // ---------- Beberapa klien sekaligus (halaman Download) ----------
+    // Himpunan klien = entitas terpilih di topbar (selalu yang pertama) + `extra`. PIC klien tambahan dengan
+    // lebih dari satu PIC TIDAK pernah diisi otomatis: picId null = belum dipilih, tombol Start terkunci.
+    // Pindah entitas lewat topbar mengganti klien pertama saja; tambahan tetap. Halaman yang mengubah data
+    // di Coretax tidak memakai ini sama sekali. Tiap klien dikirim sebagai satu permintaan aksi biasa dengan
+    // `batch` yang sama; antrean server yang mengatur batas paralel (tidak ada lagi antrean berurutan di browser).
     const keyOf = (e) => L.entityKey(e);
-    P.batch = {
-        has: (e) => batch.items.has(keyOf(e)),
-        count: () => batch.items.size,
-        running: () => batch.running,
-        progress: () => batch.progress,
-        toggle(e, picId) { const k = keyOf(e); if (batch.items.has(k)) batch.items.delete(k); else batch.items.set(k, { entity: e, picId }); P.emit('batch'); },
-        setMany(list, picId, on) { list.forEach((e) => { if (on) batch.items.set(keyOf(e), { entity: e, picId }); else batch.items.delete(keyOf(e)); }); P.emit('batch'); },
-        clear() { if (batch.running) return; batch.items.clear(); P.emit('batch'); },
-        cancel() { batch.cancel = true; },
-        names: () => Array.from(batch.items.values()).map((x) => x.entity.entity_name),
-        flats: () => Array.from(batch.items.values()).map((x) => L.flattenSelection(x.entity, x.picId)),
-        /** Jalankan startOne(flat) untuk tiap entitas antrean secara berurutan: pindah entitas di
-         *  jendela sesinya, pastikan benar-benar berpindah, lalu unduh, tunggu selesai, berikutnya. */
-        async run(startOne) {
-            const flats = P.batch.flats();
-            if (!flats.length || batch.running) return;
-            batch.running = true; batch.cancel = false; P.emit('batch');
-            const done = [];
-            for (let i = 0; i < flats.length && !batch.cancel; i++) {
-                const f = flats[i];
-                batch.progress = { i: i + 1, n: flats.length, name: f.entity_name }; P.emit('batch');
-                P.emit('log-local', 'Queue ' + (i + 1) + '/' + flats.length + ': ' + f.entity_name);
-                try {
-                    // Tunggu proses ENTITAS INI saja (proses lain, juga di jendela lain PIC yang sama, boleh tetap berjalan).
-                    const skey = L.sessionKeyOf(f);
-                    const r1 = await P.post('/api/actions/login-entity', { entity: f });
-                    await P.run.waitIdle(r1 && r1.run ? 'run:' + r1.run : ((r1 && r1.session) || skey), f.entity_id);
-                    if (batch.cancel) break;
-                    // Jendela yang terakhir login sebagai entitas ini (PIC bisa punya beberapa jendela).
-                    const st = await P.post('/api/session/status', { picId: f.pic_id, entityId: f.entity_id });
-                    if (!st.loggedIn || (f.npwp && !sameNpwp(f.npwp, st.identity))) throw new Error('has not switched to this entity in the session window');
-                    E.select(all().find((e) => keyOf(e) === keyOf(f)) || f, f.pic_id);
-                    await startOne(f);
-                    await P.run.waitIdle(skey, f.entity_id);
-                    done.push({ name: f.entity_name, ok: true });
-                } catch (err) {
-                    done.push({ name: f.entity_name, ok: false, err: err.message });
-                    P.emit('log-local', 'Queue: ' + f.entity_name + ' skipped - ' + err.message);
-                }
+    const multi = { extra: [] };
+    const defaultPic = (e) => ((e.pics || []).length === 1 ? e.pics[0].pic_id : null);
+    P.multi = {
+        /** Klien terpilih: [{ key, entity, picId, flat, pending, primary }]; kosong bila belum ada entitas. */
+        rows() {
+            const cur = E.selected; if (!cur) return [];
+            const out = [{ key: keyOf(cur.entity), entity: cur.entity, picId: cur.picId, pending: false, primary: true, flat: E.current() }];
+            if (cur.entity.project === 'manual') return out;
+            multi.extra.forEach((x) => out.push({ key: keyOf(x.entity), entity: x.entity, picId: x.picId, pending: (x.entity.pics || []).length > 1 && !x.picId, primary: false, flat: L.flattenSelection(x.entity, x.picId) }));
+            return out;
+        },
+        count() { return P.multi.rows().length; },
+        pending() { return P.multi.rows().filter((r) => r.pending); },
+        has: (key) => multi.extra.some((x) => keyOf(x.entity) === key),
+        /** Daftar centang palet -> himpunan tambahan (PIC yang sudah dipilih dipertahankan). */
+        setExtras(entities) {
+            const old = new Map(multi.extra.map((x) => [keyOf(x.entity), x.picId]));
+            const cur = E.selected && keyOf(E.selected.entity);
+            multi.extra = entities.filter((e) => keyOf(e) !== cur).map((e) => ({ entity: e, picId: old.has(keyOf(e)) ? old.get(keyOf(e)) : defaultPic(e) }));
+            P.emit('multi');
+        },
+        setPic(key, picId) {
+            const cur = E.selected;
+            if (cur && keyOf(cur.entity) === key) { E.select(cur.entity, picId); return; }
+            const x = multi.extra.find((y) => keyOf(y.entity) === key); if (x) { x.picId = picId || null; P.emit('multi'); }
+        },
+        /** Hapus klien dari himpunan; klien pertama digantikan klien tambahan pertama yang PIC-nya sudah jelas. */
+        canRemove(key) {
+            const cur = E.selected;
+            if (!cur || keyOf(cur.entity) !== key) return true;
+            return multi.extra.some((x) => (x.entity.pics || []).length <= 1 || x.picId);
+        },
+        remove(key) {
+            const cur = E.selected;
+            if (cur && keyOf(cur.entity) === key) {
+                const nx = multi.extra.find((x) => (x.entity.pics || []).length <= 1 || x.picId); if (!nx) return;
+                E.select(nx.entity, nx.picId);
+                return;
             }
-            const cancelled = batch.cancel;
-            batch.running = false; batch.cancel = false; batch.progress = null; batch.items.clear(); P.emit('batch');
-            const bad = done.filter((d) => !d.ok);
-            P.info('Queue ' + (cancelled ? 'stopped' : 'finished') + ': ' + done.filter((d) => d.ok).length + ' of ' + flats.length + ' entities downloaded'
-                + (bad.length ? '. Skipped: ' + bad.map((d) => d.name).join(', ') : '.'));
-        }
-    };
-    P.batch.barHtml = function () {
-        const n = batch.items.size;
-        if (!batch.running && n < 2) return '';
-        if (batch.running && batch.progress) {
-            const pr = batch.progress;
-            return '<div class="banner info batch-bar"><span class="ico">' + P.icon('loader', 20, 'spin', 2.2) + '</span><div class="body"><b>Download queue · entity ' + pr.i + ' of ' + pr.n + '</b><span>' + P.esc(pr.name) + '</span></div></div>';
-        }
-        const names = P.batch.names();
-        const shown = names.slice(0, 3).map(P.esc).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) + ' more' : '');
-        return '<div class="banner info batch-bar"><span class="ico">' + P.icon('layers', 20) + '</span><div class="body"><b>Download queue: ' + n + ' entities</b><span>' + shown + ' · Start automation runs them in order.</span></div>'
-            + '<button type="button" class="btn btn-sm" data-act="batch-clear">Clear</button></div>';
+            multi.extra = multi.extra.filter((x) => keyOf(x.entity) !== key); P.emit('multi');
+        },
+        clear() { if (multi.extra.length) { multi.extra = []; P.emit('multi'); } },
+        _drop(entity) { multi.extra = multi.extra.filter((x) => keyOf(x.entity) !== keyOf(entity)); if (entity.project === 'manual') multi.extra = []; }
     };
 
     // ---------- Daftar entitas sesi (popover dari panah di tab) ----------
@@ -309,11 +298,10 @@
             const k = P.esc(keyOf(e));
             const isCur = !!(cur && keyOf(cur) === keyOf(e) && cur.pic_id === poolOfKey(popPic));
             const meta = (e.project === 'taxio_hub' ? P.esc(e.entity_id) : '') + (e.npwp ? (e.project === 'taxio_hub' ? ' · ' : '') + P.esc(L.formatNpwp(e.npwp)) : '');
-            return '<div class="sp-row' + (isCur ? ' cur' : '') + '"><label class="sp-cb" title="Add to download queue"><input type="checkbox" data-sp-cb="' + k + '"' + (P.batch.has(e) ? ' checked' : '') + '></label>'
+            return '<div class="sp-row' + (isCur ? ' cur' : '') + '">'
                 + '<button type="button" class="sp-pick" data-sp-pick="' + k + '"><b>' + P.esc(e.entity_name) + '</b><span>' + meta + '</span></button>'
                 + (isCur ? '<span class="sp-now" title="Entity currently being processed">' + P.icon('check', 15, '', 2.6) + '</span>' : '') + '</div>';
         }).join('') || '<div class="sp-empty">No matching entities.</div>';
-        const c = popEl.querySelector('.sp-count'); if (c) c.textContent = P.batch.count() + ' selected for queue';
     }
     E.openSessionPopover = function (picId, anchor) {
         if (popEl && popPic === picId) { closePop(); return; }
@@ -326,8 +314,7 @@
             + '<button type="button" class="icon-btn" data-sp-front aria-label="Show this session window" title="Show the Chrome window of this session">' + P.icon('globe', 15) + '</button></div>'
             + '<input type="text" class="sp-q" placeholder="Search entities in this session…" aria-label="Search entities in this session">'
             + '<div class="sp-list"></div>'
-            + '<div class="sp-foot"><span class="sp-count"></span><span class="sp-acts"><button type="button" class="link-btn" data-sp-all>Select all</button><button type="button" class="link-btn" data-sp-none>Clear</button></span></div>'
-            + '<div class="sp-hint">Click a name to switch entity. Tick several entities, then Start automation: they are downloaded in order in this window.</div>';
+            + '<div class="sp-hint">Click a name to switch entity in this window.</div>';
         document.body.appendChild(popEl);
         const r = anchor.getBoundingClientRect();
         const w = Math.min(380, window.innerWidth - 16);
@@ -337,11 +324,6 @@
         popEl.style.maxHeight = Math.max(240, window.innerHeight - r.bottom - 20) + 'px';
         paintPopList();
         popEl.querySelector('.sp-q').addEventListener('input', paintPopList);
-        popEl.addEventListener('change', (ev) => {
-            const cb = ev.target.closest('[data-sp-cb]'); if (!cb) return;
-            const e = E.sessionEntities(poolOfKey(popPic)).find((x) => keyOf(x) === cb.dataset.spCb); if (e) P.batch.toggle(e, poolOfKey(popPic));
-            const c = popEl && popEl.querySelector('.sp-count'); if (c) c.textContent = P.batch.count() + ' selected for queue';
-        });
         popEl.addEventListener('click', async (ev) => {
             const pick = ev.target.closest('[data-sp-pick]');
             if (pick) {
@@ -349,8 +331,6 @@
                 if (e) { E.select(e, poolOfKey(popPic)); closePop(); autoLoginAfterSelect(); }
                 return;
             }
-            if (ev.target.closest('[data-sp-all]')) { P.batch.setMany(popList((popEl.querySelector('.sp-q') || {}).value || ''), poolOfKey(popPic), true); paintPopList(); return; }
-            if (ev.target.closest('[data-sp-none]')) { P.batch.setMany(popList((popEl.querySelector('.sp-q') || {}).value || ''), poolOfKey(popPic), false); paintPopList(); return; }
             if (ev.target.closest('[data-sp-front]')) { try { await P.post('/api/sessions/front', { picId: popPic }); } catch (e) { /* jendela mungkin sudah tertutup */ } }
         });
         document.addEventListener('mousedown', popOutside, true);
@@ -363,7 +343,7 @@
     // ---------- Palet ----------
     // picCursor: PIC yang sedang di-highlight (bukan berarti sudah dipilih/login) saat pic-panel
     // suatu entitas sedang terbuka - digerakkan panah/Enter tanpa menyentuh mouse sama sekali.
-    const pal = { open: false, q: '', hover: 0, expanded: null, picCursor: null };
+    const pal = { open: false, q: '', hover: 0, expanded: null, picCursor: null, multi: false, checked: new Map() };
     let palKey = null;
     let dlgKey = null;
     let palNav = []; // urutan baris yang bisa dipilih (untuk keyboard)
@@ -399,18 +379,21 @@
         let tag = '';
         if (unlinked) tag = '<span class="tag warn lg">NO PIC YET</span>';
         else if (isManualRow) tag = '<span class="tag lg manual" style="margin-left:0">DETECTED</span>';
-        const picChip = multi ? '<span class="pic-chip">' + P.esc((chosen ? chosen.pic_name : '').split(' ')[0]) + P.icon(open ? 'up' : 'down', 15) + '</span>' : '';
-        const actions = isLocal ? '<span class="ent-actions"><button type="button" aria-label="Edit entity" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Delete entity" data-act="del" data-key="' + P.esc(key) + '" class="danger-ic">' + P.icon('trash', 15) + '</button></span>' : '';
+        const mm = pal.multi;
+        const isPrimary = mm && E.selected && keyOf(E.selected.entity) === key;
+        const isChecked = mm && (isPrimary || pal.checked.has(key));
+        const picChip = multi && !mm ? '<span class="pic-chip">' + P.esc((chosen ? chosen.pic_name : '').split(' ')[0]) + P.icon(open ? 'up' : 'down', 15) + '</span>' : '';
+        const actions = isLocal && !mm ? '<span class="ent-actions"><button type="button" aria-label="Edit entity" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Delete entity" data-act="del" data-key="' + P.esc(key) + '" class="danger-ic">' + P.icon('trash', 15) + '</button></span>' : '';
         const right = '<span class="row-right">' + picChip + tag + '</span>';
         const av = isManualRow ? 'SM' : L.initials(e.entity_name);
-        let html = '<div class="ent' + (cur ? ' current' : '') + (idx === pal.hover && !unlinked ? ' hover' : '') + (unlinked ? ' unlinked' : '') + '" data-idx="' + idx + '">'
-            + '<div class="ent-line"><button type="button" class="ent-main" data-act="ent" data-key="' + P.esc(key) + '"' + (unlinked ? ' aria-disabled="true"' : '') + '>'
+        let html = '<div class="ent' + (cur && !mm ? ' current' : '') + (mm && isChecked ? ' ticked' : '') + (idx === pal.hover && !unlinked ? ' hover' : '') + (unlinked ? ' unlinked' : '') + '" data-idx="' + idx + '">'
+            + '<div class="ent-line"><button type="button" class="ent-main" data-act="ent" data-key="' + P.esc(key) + '"' + (unlinked ? ' aria-disabled="true"' : '') + (mm ? ' role="checkbox" aria-checked="' + !!isChecked + '"' + (isPrimary ? ' aria-disabled="true" title="Already selected in the top bar"' : '') : '') + '>'
             + '<span class="ent-av">' + P.esc(av) + '</span><span class="ent-tx"><b>' + P.esc(isManualRow ? (P.state.manual.identity || 'Manual session') : e.entity_name) + '</b><span>' + metaFor(e) + '</span></span>' + right
-            + (cur ? P.icon('check', 18, 'ent-tick', 2.6) : '') + '</button>'
+            + (mm ? '<span class="ent-cb' + (isChecked ? ' on' : '') + '" aria-hidden="true">' + (isChecked ? P.icon('check', 13, '', 3) : '') + '</span>' : (cur ? P.icon('check', 18, 'ent-tick', 2.6) : '')) + '</button>'
             // Tombol ubah/hapus JANGAN di dalam .ent-main: <button> di dalam <button> membuat browser
             // menutup .ent-main lebih awal dan merusak tata letak baris. Jadi saudaranya, bukan anaknya.
             + actions + '</div>';
-        if (open) {
+        if (open && !mm) {
             // Baris yang di-highlight: picCursor (digerakkan panah ↑↓, dikonfirmasi Enter) kalau
             // ada, kalau tidak jatuh ke PIC yang sudah pernah dipilih/utama - SAMA sekali tidak
             // menyentuh mouse, supaya Enter dua kali (pilih entitas, lalu pilih PIC) benar-benar
@@ -440,14 +423,14 @@
         // Aksi global, bukan hasil pencarian - selalu di paling atas supaya tetap terlihat/bisa
         // dipakai kapan saja, tidak terkubur di bawah daftar (dan tidak ikut hilang saat mengetik
         // di kotak cari, beda dari daftar entitas lokal di bawah yang IKUT tersaring oleh q).
-        if (!P.isRestricted()) {
+        if (!P.isRestricted() && !pal.multi) {
             html += '<button type="button" class="pal-add" data-act="add"><span class="ent-av acc-av">' + P.icon('plus', 18, '', 2.2) + '</span><span>Add new entity</span></button>';
         }
         const seen = new Set();
         // Galat pemuatan (mis. sesi Taxio Hub kedaluwarsa) dulu hanya terlihat sebagai "Belum ada entitas."
         (E.errors || []).forEach((m) => { html += '<div class="pal-note err">' + P.icon('warn', 15) + '<span>' + P.esc(m) + '</span></div>'; });
 
-        const me = E.manualEntity();
+        const me = pal.multi ? null : E.manualEntity();
         if (me) { html += '<div class="pal-sec">CURRENTLY OPEN SESSION</div>' + rowHtml(me, push(me)); }
 
         const groupList = L.visibleEntities(E.group, q);
@@ -477,20 +460,39 @@
         return html;
     }
 
+    function multiSeed() { return multiExtras().map((e) => [keyOf(e), e]); }
+    function multiExtras() { return P.multi.rows().filter((r) => !r.primary).map((r) => r.entity); }
     function paintPalette() {
-        const body = P.$('pal-body'); if (body) body.innerHTML = bodyHtml();
+        const body = P.$('pal-body'); const top = body ? body.scrollTop : 0;
+        if (body) { body.innerHTML = bodyHtml(); body.scrollTop = top; }
         const foot = P.$('pal-foot');
-        if (foot) foot.innerHTML = '<span style="display:flex;gap:6px;align-items:center"><kbd>↑</kbd><kbd>↓</kbd> select</span><span style="display:flex;gap:6px;align-items:center"><kbd>Enter</kbd> use &amp; log in</span>';
+        if (foot && pal.multi) {
+            const n = newCount();
+            foot.innerHTML = '<span class="pal-keys"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Shift</kbd>+<kbd>Enter</kbd> tick</span><span><kbd>Enter</kbd> ' + (n ? 'add' : 'tick') + '</span></span><button type="button" class="btn btn-primary btn-sm" data-act="multi-ok">' + (n ? 'Add ' + n + (n === 1 ? ' client' : ' clients') : 'Done') + '</button>';
+        } else if (foot) foot.innerHTML = '<span style="display:flex;gap:6px;align-items:center"><kbd>↑</kbd><kbd>↓</kbd> select</span><span style="display:flex;gap:6px;align-items:center"><kbd>Enter</kbd> use &amp; log in</span>';
     }
 
     // Dipoll ringan selama palet terbuka - kalau jendelanya ditutup langsung (bukan lewat ikon X
     // di sini), baris "Sesi Aktif" ikut hilang tanpa perlu menutup-buka ulang palet.
-    E.openPalette = function () {
+    /** Jumlah klien BARU yang akan ditambahkan palet mode banyak klien (di luar yang sudah ada). */
+    function newCount() { let n = 0; pal.checked.forEach((e, k) => { if (!P.multi.has(k)) n++; }); return n; }
+    function toggleChecked(e) {
+        if (e.project === 'manual' || (e.project === 'taxio_hub' && e.linked === false)) return;
+        const k = keyOf(e);
+        if (E.selected && keyOf(E.selected.entity) === k) return;
+        if (pal.checked.has(k)) pal.checked.delete(k); else pal.checked.set(k, e);
+        paintPalette();
+    }
+    function commitMulti() { P.multi.setExtras(Array.from(pal.checked.values())); E.closePalette(); }
+    /** opts.multi: pilih beberapa klien (kotak centang per baris) untuk halaman Download; tanpa itu = memilih satu entitas. */
+    E.openPalette = function (opts) {
         if (pal.open) return;
+        pal.multi = !!(opts && opts.multi);
+        pal.checked = new Map(pal.multi ? multiSeed() : []);
         pal.open = true; pal.q = ''; pal.hover = 0; pal.expanded = null; pal.picCursor = null;
         const scrim = document.createElement('div');
         scrim.className = 'scrim'; scrim.id = 'palette';
-        scrim.innerHTML = '<div class="dialog" role="dialog" aria-label="Select entity">'
+        scrim.innerHTML = '<div class="dialog' + (pal.multi ? ' pal-multi' : '') + '" role="dialog" aria-label="' + (pal.multi ? 'Add clients' : 'Select entity') + '">'
             + '<div class="pal-search">' + P.icon('search', 18, 'acc', 2.2) + '<input id="pal-q" type="text" placeholder="Search entity or NPWP…" autocomplete="off" aria-label="Search entity"><kbd>Esc</kbd></div>'
             + '<div class="pal-list" id="pal-body"></div><div class="pal-foot" id="pal-foot"></div></div>';
         document.body.appendChild(scrim);
@@ -504,7 +506,8 @@
             if (!t) return;
             const act = t.dataset.act;
             const ent = t.dataset.key ? (findByKey(t.dataset.key) || (E.manualEntity() && L.entityKey(E.manualEntity()) === t.dataset.key ? E.manualEntity() : null)) : null;
-            if (act === 'ent' && ent) activate(ent);
+            if (act === 'ent' && ent) { if (pal.multi) toggleChecked(ent); else activate(ent); }
+            else if (act === 'multi-ok') commitMulti();
             else if (act === 'pic' && ent) { E.select(ent, t.dataset.pic); E.closePalette(); autoLoginAfterSelect(); }
             else if (act === 'use-manual' && ent) { useManualFor(ent); E.closePalette(); }
             else if (act === 'add') { E.closePalette(); E.openDialog(null); }
@@ -549,7 +552,11 @@
             }
             if (e.key === 'ArrowDown') { e.preventDefault(); pal.hover = Math.min(palNav.length - 1, pal.hover + 1); paintPalette(); scrollHover(); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); pal.hover = Math.max(0, pal.hover - 1); paintPalette(); scrollHover(); }
-            else if (e.key === 'Enter') { e.preventDefault(); if (palNav[pal.hover]) activate(palNav[pal.hover]); }
+            else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (pal.multi) { if (!e.shiftKey && newCount()) commitMulti(); else if (palNav[pal.hover]) toggleChecked(palNav[pal.hover]); }
+                else if (palNav[pal.hover]) activate(palNav[pal.hover]);
+            }
         };
         document.addEventListener('keydown', palKey);
     };
