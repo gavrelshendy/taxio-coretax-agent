@@ -66,6 +66,7 @@
       "perMachine": false,
       "artifactName": "taxio-pilot-setup-${version}.${ext}",
       "shortcutName": "Taxio Pilot",
+      "include": "installer/installer.nsh",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "runAfterFinish": true,
