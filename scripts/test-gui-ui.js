@@ -211,6 +211,10 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.deepStrictEqual(names, ['Budi Contoh Santoso', 'CV Sample Niaga Mandiri', 'MITRA KARYA ABADI, PT', 'PT Contoh Sejahtera Abadi']);
         assert.strictEqual(names.filter((n) => n.startsWith('MITRA KARYA')).length, 1, 'MKA hanya sekali walau 2 PIC');
         assert.ok((await text('#pal-body')).includes('2 Coretax PICs'));
+        assert.strictEqual(await page.locator('#pal-body .ent', { hasText: 'MITRA KARYA' }).locator('.pic-chip').innerText(), 'Choose PIC', 'entitas 2 PIC: tanpa PIC terpilih');
+        assert.strictEqual(await page.locator('#pal-body .ent', { hasText: 'Sejahtera' }).locator('.pic-chip').count(), 0, 'PIC tunggal: tanpa pemilih');
+        assert.strictEqual(await page.locator('#pal-body .pal-add').count(), 0, '"Add entity" tidak lagi di atas daftar');
+        assert.ok(await visible('#pal-foot .pal-add') && (await text('#pal-foot .pal-add')) === 'Add entity', '"Add entity" di footer');
         assert.ok((await text('#pal-body .pal-note')).includes('are hidden'));
         assert.ok(!(await text('#pal-body')).includes('MITRA LESTARI'), 'entitas tanpa PIC tidak di daftar awal');
         await shot('06-palet-grup');
@@ -234,7 +238,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         const radios = page.locator('#pal-body .radio-row');
         assert.strictEqual(await radios.count(), 2);
         assert.ok((await radios.first().innerText()).includes('PRIMARY'));
-        assert.strictEqual(await radios.first().getAttribute('aria-checked'), 'true', 'PIC utama terpilih bawaan');
+        assert.strictEqual(await page.locator('#pal-body .radio-row[aria-checked="true"]').count(), 0, 'tidak ada PIC terpilih bawaan');
+        assert.ok(!(await text('#entity-chip')).includes('MITRA KARYA'), 'mengklik baris tanpa PIC tidak memilih entitas');
+        assert.ok((await text('#pal-foot')).includes('choose PIC'));
         await shot('08-palet-pic');
         await radios.nth(1).click();
         await page.waitForSelector('#palette', { state: 'detached' });
@@ -244,10 +250,13 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(chip.includes('AUTO'));
         assert.ok((await text('.status-pill')).includes('Not signed in to Coretax'));
     });
-    await test('pilihan PIC terakhir diingat untuk entitas itu', async () => {
+    await test('pilihan PIC melekat di chip topbar, tetapi palet SELALU bertanya lagi (tanpa PIC bawaan/terakhir)', async () => {
         await page.click('#entity-chip');
-        await page.locator('#pal-body .ent', { hasText: 'MITRA KARYA ABADI' }).locator('.ent-main').click();
-        assert.strictEqual(await page.locator('#pal-body .radio-row').nth(1).getAttribute('aria-checked'), 'true');
+        const row = page.locator('#pal-body .ent', { hasText: 'MITRA KARYA ABADI' });
+        assert.strictEqual(await row.locator('.pic-chip').innerText(), 'RINA', 'baris entitas terpilih menampilkan PIC yang sedang dipakai (info)');
+        await row.locator('.ent-main').click();
+        assert.strictEqual(await page.locator('#pal-body .radio-row[aria-checked="true"]').count(), 0, 'dibuka lagi: tidak ada PIC ter-highlight');
+        assert.ok((await text('#entity-chip')).includes('PIC RINA WIJAYA'), 'chip tidak berubah selama belum memilih');
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
@@ -258,6 +267,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(await visible('#palette'), 'Enter pada entitas 2 PIC tidak boleh menutup palet');
         const radios = page.locator('#pal-body .radio-row');
         assert.strictEqual(await radios.count(), 2, 'Enter harus membuka pilihan PIC, sama seperti klik');
+        await page.keyboard.press('Enter');
+        assert.ok(await visible('#palette'), 'Enter kedua tanpa PIC terpilih tidak login');
         await radios.nth(1).click();
         await page.waitForSelector('#palette', { state: 'detached' });
         assert.ok((await text('#entity-chip')).includes('PIC RINA WIJAYA'));
@@ -267,9 +278,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.fill('#pal-q', 'mitra karya');
         await page.keyboard.press('Enter');
         assert.ok(await visible('#palette'), 'Enter pertama membuka pilihan PIC');
-        // Highlight awal = pilihan PIC TERAKHIR yang diingat (RINA WIJAYA, dari test sebelumnya),
-        // bukan selalu PIC utama - konsisten dengan "pilihan PIC terakhir diingat" di atas.
-        assert.strictEqual(await page.locator('#pal-body .radio-row[aria-checked="true"]').innerText(), 'RINA WIJAYA', 'PIC terakhir dipakai ter-highlight duluan');
+        assert.strictEqual(await page.locator('#pal-body .radio-row[aria-checked="true"]').count(), 0, 'awalnya tidak ada PIC ter-highlight');
+        await page.keyboard.press('ArrowDown');
+        await page.keyboard.press('ArrowDown');
         await page.keyboard.press('ArrowUp');
         const hi = await page.locator('#pal-body .radio-row[aria-checked="true"]').innerText();
         assert.ok(hi.includes('ANDI PRATAMA') && hi.includes('PRIMARY'), '↑ memindah highlight ke PIC lain, belum login');
@@ -284,13 +295,40 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         // diam-diam ditangkap dan diarahkan ke logika kotak cari.
         await page.click('#entity-chip');
         await page.locator('#pal-q').focus();
-        await page.keyboard.press('Tab'); // -> "Tambah entitas baru" (aksi global, selalu di atas)
         await page.keyboard.press('Tab'); // -> baris entitas pertama (Budi Contoh Santoso)
         await page.keyboard.press('Enter'); // harus memicu klik native baris yang fokus ini
         assert.ok((await text('#entity-chip')).includes('Budi Contoh Santoso'), 'Enter pada baris hasil Tab harus memicu baris itu sendiri, bukan diabaikan/diarahkan ke jalan pintas kotak cari');
         await page.click('#entity-chip'); // buka lagi untuk test berikutnya
         await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter'); // kembalikan pilihan
         await page.waitForSelector('#palette', { state: 'detached' });
+    });
+    await test('palet: kepadatan - minimal 10 baris entitas terlihat di 1280x860; "Add entity" di footer bisa dicapai keyboard', async () => {
+        fakes.ctl.fillerEntities = 20;
+        await page.setViewportSize({ width: 1280, height: 860 });
+        await page.reload(); await page.waitForSelector('#entity-chip');
+        await page.click('#entity-chip');
+        await page.waitForSelector('#palette .ent');
+        const vis = await page.evaluate(() => { const l = document.querySelector('#pal-body').getBoundingClientRect(); return [...document.querySelectorAll('#pal-body .ent')].filter((e) => { const r = e.getBoundingClientRect(); return r.top >= l.top - 1 && r.bottom <= l.bottom + 1; }).length; });
+        assert.ok(vis >= 10, 'baris terlihat: ' + vis);
+        await shot('06b-palet-padat');
+        await page.locator('#pal-foot .pal-add').focus();
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok(await visible('.dialog'), 'Enter pada "Add entity" membuka dialog tambah entitas');
+        await page.keyboard.press('Escape');
+        fakes.ctl.fillerEntities = 0;
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.reload(); await page.waitForSelector('#entity-chip');
+    });
+    await test('palet: entitas PIC tunggal langsung dipakai (Enter) dan hint footer sesuai', async () => {
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'sample niaga');
+        assert.ok((await text('#pal-foot')).includes('use & log in'));
+        await page.fill('#pal-q', 'mitra karya');
+        assert.ok((await text('#pal-foot')).includes('choose PIC') && !(await text('#pal-foot')).includes('log in'));
+        await page.fill('#pal-q', 'sample niaga'); await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok((await text('#entity-chip')).includes('CV Sample Niaga Mandiri'));
     });
     // Test berikut ini sengaja ditaruh TERAKHIR di blok palet: hasil akhirnya (entitas terpilih =
     // PT Contoh Sejahtera Abadi / PIC ANDI PRATAMA, PIC tunggal) dipakai sebagai titik awal
@@ -862,7 +900,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('#entity-chip');
         await page.waitForSelector('#palette');
         assert.strictEqual(await page.locator('#pal-body .ent-cb').count(), 0);
-        assert.ok(await visible('#pal-body .pal-add'));
+        assert.ok(await visible('#pal-foot .pal-add'));
         await page.keyboard.press('Escape');
         await page.waitForSelector('#palette', { state: 'detached' });
     });
@@ -999,6 +1037,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(await visible('#palette'), 'Enter pada entitas lokal 2 PIC tidak boleh menutup palet - sama seperti entitas Hub');
         const radios = page.locator('#pal-body .radio-row');
         assert.strictEqual(await radios.count(), 2, 'Enter harus membuka pilihan PIC, bukan langsung memakai PIC utama');
+        await page.keyboard.press('Enter');
+        assert.ok(await visible('#palette') && !calls.some((c) => c.url === '/api/actions/login-entity'), 'tanpa PIC terpilih: tidak login');
         await radios.first().click();
         await page.waitForSelector('#palette', { state: 'detached' });
         await pause(200);
@@ -1531,7 +1571,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.keyboard.press('Escape'); await page.waitForSelector('#palette', { state: 'detached' });
         assert.ok(single.length > 0);
         assert.deepStrictEqual(multi, single, 'Add clients: daftar sama dengan palet pilih-satu');
-        assert.ok(!/ADDED HERE|Add new entity|CURRENTLY OPEN SESSION/.test(singleText + multiText), 'Restricted: tanpa entitas lokal / manual');
+        assert.ok(!/ADDED HERE|Add entity|CURRENTLY OPEN SESSION/.test(singleText + multiText), 'Restricted: tanpa entitas lokal / manual / Add entity');
         await shot('20-restricted');
     });
 

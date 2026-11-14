@@ -19,6 +19,7 @@ function install() {
         manual: { open: false, loggedIn: false, identity: '' },
         run: null,          // bila diisi, /api/run/status mengembalikan ini
         runCalls: [],
+        fillerEntities: 0,
         sessions: []        // isi tes untuk mengetes bagian "Sesi Aktif" di palet entitas
     };
     const ok = (data) => Promise.resolve({ data, error: null });
@@ -52,7 +53,9 @@ function install() {
         r({ entity_id: 'MLU', entity_name: 'MITRA LESTARI UTAMA, PT', pic_id: 'unlinked', pic_name: 'Belum Taut PIC Coretax', is_primary: true }),
         r({ entity_id: 'BUDI', entity_name: 'Budi Contoh Santoso', npwp: '0456789012340000', pic_id: 'p-budi', pic_name: 'Budi Contoh Santoso', individual: true, is_primary: true })
     ];
-    entitiesLib.listAutomatableEntities = async (client, org, uid, owner, mode) => (mode === 'personal' ? [GROUP_ROWS[5]] : GROUP_ROWS).map((x) => Object.assign({}, x));
+    // ctl.fillerEntities = N menambah N entitas PIC tunggal dummy (untuk menguji kepadatan daftar palet).
+    const fillers = () => Array.from({ length: ctl.fillerEntities || 0 }, (_, i) => r({ entity_id: 'FIL' + i, entity_name: 'Filler Entity ' + String(i + 1).padStart(2, '0'), pic_id: 'p-andi', pic_name: 'ANDI PRATAMA', is_primary: true }));
+    entitiesLib.listAutomatableEntities = async (client, org, uid, owner, mode) => (mode === 'personal' ? [GROUP_ROWS[5]] : GROUP_ROWS.concat(fillers())).map((x) => Object.assign({}, x));
 
     chrome.getManualPage = () => null;
     chrome.getManualStatus = async () => Object.assign({}, ctl.manual);
