@@ -24,13 +24,24 @@
     StrCpy $pilotOldInstDir ""
     !insertmacro GetDParameter $R1
     ${If} $R1 == ""
+      # Folder berakhiran nama paket (coretax-agent) -> "Taxio Pilot" (PRODUCT_NAME, bukan PRODUCT_FILENAME yang
+      # sama dengan nama exe "taxio-pilot").
       StrLen $R2 "\${APP_FILENAME}"
       IntOp $R3 0 - $R2
       StrCpy $R0 $INSTDIR "" $R3
       ${If} $R0 == "\${APP_FILENAME}"
         StrCpy $pilotOldInstDir $INSTDIR
         StrCpy $R0 $INSTDIR $R3
-        StrCpy $INSTDIR "$R0\${PRODUCT_FILENAME}"
+        StrCpy $INSTDIR "$R0\${PRODUCT_NAME}"
+      ${EndIf}
+      # Build uji 2026-11-14 sempat memasang ke "...\taxio-pilot" (nama exe): pindahkan juga.
+      StrLen $R2 "\${PRODUCT_FILENAME}"
+      IntOp $R3 0 - $R2
+      StrCpy $R0 $INSTDIR "" $R3
+      ${If} $R0 == "\${PRODUCT_FILENAME}"
+        StrCpy $pilotOldInstDir $INSTDIR
+        StrCpy $R0 $INSTDIR $R3
+        StrCpy $INSTDIR "$R0\${PRODUCT_NAME}"
       ${EndIf}
     ${EndIf}
   !macroend
