@@ -156,10 +156,67 @@
         stack.appendChild(card);
         if ((n.level || 'info') === 'info') setTimeout(dismiss, 8000);
     };
-    // Peringatan dari jendela sendiri memakai kartu yang sama, bukan dialog alert() browser yang memblokir.
+    // Peringatan dari jendela sendiri memakai kartu yang sama (tanpa dialog bawaan browser yang memblokir).
     let localSeq = 0;
-    window.alert = (msg) => P.notice({ id: 'local-' + (++localSeq), local: true, level: /^(Gagal|Failed|Could not)/i.test(String(msg)) ? 'error' : 'warning', msg: String(msg) });
+    P.toast = (msg, level) => P.notice({ id: 'local-' + (++localSeq), local: true, level: level || (/^(Gagal|Failed|Could not)/i.test(String(msg)) ? 'error' : 'warning'), msg: String(msg) });
     P.info = (msg) => P.notice({ id: 'local-' + (++localSeq), local: true, level: 'info', msg: String(msg) });
+
+    // ---------- Dialog konfirmasi dalam aplikasi (pengganti dialog bawaan browser) ----------
+    // P.confirmDialog({ title, body, details:[[label,value]], list:[teks], confirmLabel, cancelLabel, danger, requireTick, tickLabel })
+    // -> Promise<boolean>. Fokus awal di Cancel bila danger/requireTick (Enter tidak menyetujui tanpa sengaja);
+    // Esc / klik latar = batal; Tab terkunci di dalam dialog; tombol konfirmasi mati sampai kotak dicentang.
+    P.confirmDialog = (o) => new Promise((resolve) => {
+        o = o || {};
+        const esc = P.esc, prev = document.activeElement;
+        const scrim = document.createElement('div'); scrim.className = 'scrim confirm-scrim'; scrim.id = 'confirm-dialog';
+        const safe = !!(o.danger || o.requireTick);
+        const details = (o.details || []).filter((r) => r && r[1] !== undefined && r[1] !== null && r[1] !== '');
+        scrim.innerHTML = '<div class="dialog narrow cfm" role="alertdialog" aria-modal="true" aria-labelledby="cfm-title"' + (o.body ? ' aria-describedby="cfm-body"' : '') + '>'
+            + '<div class="dialog-head"><h2 id="cfm-title">' + esc(o.title || 'Confirm') + '</h2></div>'
+            + '<div class="dialog-body">' + (o.body ? '<p class="cfm-body" id="cfm-body">' + esc(o.body) + '</p>' : '')
+            + (details.length ? P.kv(details.map(([k, v]) => [esc(k), esc(v)])) : '')
+            + (o.list && o.list.length ? '<ul class="rv-list cfm-list">' + o.list.map((t) => '<li class="rv-row"><span class="rv-tx"><b>' + esc(t) + '</b></span></li>').join('') + '</ul>' : '')
+            + (o.requireTick ? '<button type="button" class="check-row cfm-tick" role="checkbox" aria-checked="false" data-cfm="tick"><span class="check" aria-checked="false">' + P.icon('check', 13, '', 3) + '</span>' + esc(o.tickLabel || 'I have checked the list above') + '</button>' : '')
+            + '</div><div class="dialog-foot"><span class="grow"></span><button type="button" class="btn" data-cfm="cancel">' + esc(o.cancelLabel || 'Cancel') + '</button>'
+            + '<button type="button" class="btn ' + (o.danger ? 'btn-danger' : 'btn-primary') + '" data-cfm="ok"' + (o.requireTick ? ' disabled' : '') + '>' + esc(o.confirmLabel || 'Confirm') + '</button></div></div>';
+        document.body.appendChild(scrim);
+        const q = (sel) => scrim.querySelector(sel);
+        let done = false;
+        const finish = (v) => {
+            if (done) return; done = true;
+            document.removeEventListener('keydown', onKey, true);
+            scrim.classList.add('closing');
+            const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+            setTimeout(() => { scrim.remove(); }, reduce ? 0 : 120);
+            try { if (prev && prev.focus && document.contains(prev)) prev.focus(); } catch (e) { /* fokus tidak kembali */ }
+            resolve(v);
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); return; }
+            if (e.key === 'Tab') {
+                const f = Array.from(scrim.querySelectorAll('button:not(:disabled)')); if (!f.length) return;
+                const i = f.indexOf(document.activeElement);
+                if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+                else if (!e.shiftKey && (i === -1 || i === f.length - 1)) { e.preventDefault(); f[0].focus(); }
+                return;
+            }
+            if (e.key === 'Enter') e.stopPropagation();
+        };
+        document.addEventListener('keydown', onKey, true);
+        scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) finish(false); });
+        scrim.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-cfm]'); if (!b) return;
+            const a = b.dataset.cfm;
+            if (a === 'cancel') return finish(false);
+            if (a === 'tick') {
+                const on = b.getAttribute('aria-checked') !== 'true';
+                b.setAttribute('aria-checked', on); b.querySelector('.check').setAttribute('aria-checked', on);
+                q('[data-cfm="ok"]').disabled = !on; return;
+            }
+            if (a === 'ok' && !b.disabled) finish(true);
+        });
+        (safe ? q('[data-cfm="cancel"]') : q('[data-cfm="ok"]')).focus();
+    });
 
     // ---------- Potongan HTML bersama ----------
     // Satu baris formulir: label (+ keterangan pendek) di kiri, kontrol di kanan, garis tipis antar baris.
@@ -227,7 +284,7 @@
             input.onchange = async () => {
                 const f = input.files && input.files[0];
                 if (!f) return resolve(null);
-                try { resolve({ fileName: f.name, fileBase64: await P.readFileAsBase64(f) }); } catch (err) { alert('Failed to read file: ' + err.message); resolve(null); }
+                try { resolve({ fileName: f.name, fileBase64: await P.readFileAsBase64(f) }); } catch (err) { P.toast('Failed to read file: ' + err.message); resolve(null); }
             };
             input.click();
         });

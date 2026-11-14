@@ -39,6 +39,22 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     const errors = [];
+    // Penjaga: dialog bawaan browser (confirm/alert/prompt) tidak boleh dipakai di mana pun; tes gagal bila muncul.
+    const nativeHits = [];
+    await ctx.exposeFunction('__nativeDialogHit', (kind, msg) => { nativeHits.push(kind + ': ' + msg); });
+    await ctx.addInitScript(() => {
+        for (const k of ['confirm', 'alert', 'prompt']) window[k] = (m) => { window.__nativeDialogHit(k, String(m)); return k === 'confirm'; };
+    });
+    page.on('dialog', (d) => { nativeHits.push('dialog: ' + d.message()); d.dismiss().catch(() => {}); });
+    const dlgSel = '#confirm-dialog';
+    const confirmDlg = async () => {
+        await page.waitForSelector(dlgSel + ' [data-cfm="ok"]');
+        const tick = page.locator(dlgSel + ' [data-cfm="tick"]');
+        if ((await tick.count()) && (await tick.getAttribute('aria-checked')) !== 'true') await tick.click();
+        await page.click(dlgSel + ' [data-cfm="ok"]');
+        await page.waitForSelector(dlgSel, { state: 'detached' });
+    };
+    const cancelDlg = async () => { await page.waitForSelector(dlgSel + ' [data-cfm="cancel"]'); await page.click(dlgSel + ' [data-cfm="cancel"]'); await page.waitForSelector(dlgSel, { state: 'detached' }); };
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/fonts\.g|ERR_INTERNET|Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
 
@@ -444,7 +460,16 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(!(await page.locator('#abar [data-act="start"]').isDisabled()));
         assert.ok((await text('#abar')).includes('1.500.000'));
         await shot('13-billing');
-        await page.click('[data-act="start"]'); await pause(300);
+        {
+            const n0 = calls.length;
+            await page.click('[data-act="start"]'); await page.waitForSelector(dlgSel);
+            assert.ok((await text(dlgSel)).includes('Create Kode Billing') && (await text(dlgSel)).includes('1.500.000'), 'dialog satu langkah memuat jumlah');
+            assert.strictEqual(await page.locator(dlgSel + ' [data-cfm="tick"]').count(), 0, 'level 2: tanpa kotak centang');
+            assert.ok(!(await page.locator(dlgSel + ' [data-cfm="ok"]').isDisabled()));
+            await page.keyboard.press('Escape'); await page.waitForSelector(dlgSel, { state: 'detached' });
+            assert.strictEqual(calls.length, n0, 'Esc: tidak ada permintaan');
+            await page.click('[data-act="start"]'); await confirmDlg(); await pause(300);
+        }
         const c = lastCall();
         assert.strictEqual(c.url, '/api/actions/billing-pph25');
         assert.strictEqual(c.body.nominal, '1500000');
@@ -701,6 +726,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('#abar [data-act="start"]');
         await pause(300);
         assert.ok(!(await visible('#review')), 'satu klien: tanpa dialog tinjau');
+        assert.ok(!(await visible('#confirm-dialog')), 'unduhan (hanya membaca): tanpa dialog konfirmasi');
         const c = calls.slice(before).filter((x) => x.url === '/api/actions/download-spt');
         assert.strictEqual(c.length, 1);
         assert.ok(!('batch' in c[0].body), 'satu klien: tanpa batch');
@@ -997,7 +1023,20 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('.dropzone.filled');
         assert.ok((await text('.dropzone')).includes('faktur-uji.xlsx'));
         await page.click('[data-act="kmode"][data-val="fixed"]');
-        await page.click('[data-act="start"]'); await pause(300);
+        {
+            const n0 = calls.length;
+            await page.click('[data-act="start"]'); await page.waitForSelector(dlgSel);
+            assert.ok(await page.locator(dlgSel + ' [data-cfm="ok"]').isDisabled(), 'level 3: tombol mati sebelum dicentang');
+            assert.strictEqual(await page.evaluate(() => document.activeElement.getAttribute('data-cfm')), 'cancel', 'fokus awal di Cancel');
+            await page.keyboard.press('Enter'); await page.waitForSelector(dlgSel, { state: 'detached' });
+            assert.strictEqual(calls.length, n0, 'Enter pada Cancel membatalkan');
+            await page.click('[data-act="start"]'); await page.waitForSelector(dlgSel);
+            await page.click(dlgSel + ' [data-cfm="ok"]', { force: true, timeout: 800 }).catch(() => {});
+            assert.strictEqual(calls.length, n0, 'belum dicentang: tidak terkirim');
+            await page.click(dlgSel + ' [data-cfm="tick"]');
+            assert.ok(!(await page.locator(dlgSel + ' [data-cfm="ok"]').isDisabled()));
+            await confirmDlg(); await pause(300);
+        }
         c = lastCall();
         assert.strictEqual(c.url, '/api/actions/import-pajak-masukan');
         assert.strictEqual(c.body.entity.project, 'local');
@@ -1007,7 +1046,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
 
         await page.click('.nav-item[data-nav="billing"]');
         await page.fill('#bl-nominal', '250000');
-        await page.click('[data-act="start"]'); await pause(300);
+        await page.click('[data-act="start"]'); await confirmDlg(); await pause(300);
         c = lastCall();
         assert.strictEqual(c.url, '/api/actions/billing-pph25');
         assert.strictEqual(c.body.entity.project, 'local');
@@ -1019,13 +1058,13 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(!(await page.locator('.col-main .banner').count()), 'entitas berkredensial: tanpa banner login manual / pilih entitas');
         assert.ok((await text('#abar')).includes('Automatic · PIC'), 'ringkasan menyebut login otomatis');
         assert.ok(!(await page.locator('[data-act="create-case"]').isDisabled()), 'buat kasus tidak menunggu login manual');
-        await page.click('[data-act="create-case"]'); await pause(300);
+        await page.click('[data-act="create-case"]'); await confirmDlg(); await pause(300);
         c = lastCall();
         assert.strictEqual(c.url, '/api/actions/create-dividen-case');
         assert.strictEqual(c.body.entity.project, 'local');
         if (!(await page.locator('.dropzone.filled').count())) { await page.click('[data-act="pick-file"]'); await page.waitForSelector('.dropzone.filled'); }
         assert.ok(!(await page.locator('[data-act="import"]').isDisabled()), 'impor aktif tanpa login manual');
-        await page.click('[data-act="import"]'); await pause(300);
+        await page.click('[data-act="import"]'); await confirmDlg(); await pause(300);
         c = lastCall();
         assert.strictEqual(c.url, '/api/actions/import-dividen');
         assert.strictEqual(c.body.entity.project, 'local');
@@ -1041,11 +1080,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(!(await page.locator('[data-act="bmode"]').count()), 'satu tombol saja: Betulkan (cek sudah otomatis per bukti potong)');
         assert.ok((await text('#abar [data-act="start"]')).includes('Correct in Coretax'));
         const n = calls.length;
-        page.once('dialog', (dlg) => dlg.dismiss());
-        await page.click('#abar [data-act="start"]'); await pause(300);
+        await page.click('#abar [data-act="start"]'); await cancelDlg(); await pause(300);
         assert.strictEqual(calls.length, n, 'dibatalkan di dialog konfirmasi -> tidak ada permintaan');
-        page.once('dialog', (dlg) => dlg.accept());
-        await page.click('#abar [data-act="start"]'); await pause(300);
+        await page.click('#abar [data-act="start"]'); await confirmDlg(); await pause(300);
         c = lastCall();
         assert.strictEqual(c.url, '/api/actions/bpmp-amend');
         assert.strictEqual(c.body.submit, true);
@@ -1055,8 +1092,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         // "Pakai rekap terakhir": Excel hasil tab Unduh setahun dikirim lewat path-nya (tanpa template terpisah).
         await page.route('**/api/a1/inspect', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ excel: 'C:\\A1\\Mode A1 - 2026.xlsx', rows: [{ masa: 'Januari', excel: { revision: 0, data: 'Lengkap' }, cache: null, pdf: true }, { masa: 'Februari', excel: null, cache: null, pdf: false }] }) }));
         await page.click('[data-act="nik-latest"]'); await page.waitForFunction(() => /Mode A1 - 2026\.xlsx/.test(document.querySelector('.dropzone')?.innerText || ''));
-        page.once('dialog', (dlg) => dlg.accept());
-        await page.click('#abar [data-act="start"]'); await pause(300);
+        await page.click('#abar [data-act="start"]'); await confirmDlg(); await pause(300);
         assert.strictEqual(lastCall().url, '/api/actions/bpmp-amend');
         assert.strictEqual(lastCall().body.filePath, 'C:\\A1\\Mode A1 - 2026.xlsx');
         assert.ok(!lastCall().body.fileBase64);
@@ -1108,7 +1144,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
             await page.waitForSelector('.dropzone.filled');
         }
         assert.ok(!(await page.locator('[data-act="import"]').isDisabled()));
-        await page.click('[data-act="import"]'); await pause(300);
+        await page.click('[data-act="import"]'); await confirmDlg(); await pause(300);
         assert.strictEqual(lastCall().url, '/api/actions/import-dividen');
         assert.strictEqual(lastCall().body.fileName, 'faktur-uji.xlsx');
         assert.strictEqual(lastCall().body.entity.project, 'manual', 'entitas manual terpilih ikut dikirim');
@@ -1159,8 +1195,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('.banner.warn [data-run="retry"]'); await pause(150);
         await page.click('.banner.warn [data-run="skip"]'); await pause(150);
         await page.click('.ctl-grid [data-run="pause"]'); await pause(150); // paused=true -> Lanjut -> resume
-        page.once('dialog', (d) => d.accept());
-        await page.click('#abar [data-run="stop"]'); await pause(200);
+        await page.click('#abar [data-run="stop"]'); await page.waitForSelector(dlgSel);
+        assert.ok((await text(dlgSel)).includes('Stop run'), 'dialog Stop satu langkah');
+        await confirmDlg(); await pause(200);
         assert.deepStrictEqual(fakes.ctl.runCalls, ['retry', 'skip', 'resume', 'stop']);
     });
     await test('kontrol menurut fitur: hanya Stop + Jeda; "Stopping…" / "Pausing…" sampai titik aman berikutnya', async () => {
@@ -1211,8 +1248,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
             await page.click('[data-run-show]');
             await page.waitForSelector('#abar [data-run="stop"]', { timeout: 4000 });
             fakes.ctl.runCalls.length = 0;
-            page.once('dialog', (d) => d.accept());
-            await page.click('#abar [data-run="stop"]'); await pause(200);
+            await page.click('#abar [data-run="stop"]'); await confirmDlg(); await pause(200);
             assert.deepStrictEqual(fakes.ctl.runCalls, ['stop']);
         } finally { fakes.ctl.run = null; fakes.ctl.sessions = []; }
         await page.waitForSelector('.sess-queue', { state: 'detached', timeout: 6000 });
@@ -1305,12 +1341,10 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         rcalls.push({ path: u.pathname, session: u.searchParams.get('session'), body: req.postData() ? JSON.parse(req.postData()) : null });
         return json(200, { ok: true });
     });
-    const acceptDialogs = (d) => d.accept();
-    page.on('dialog', acceptDialogs);
     const pushRuns = async (data) => { if (data) runsData = data; uiEvents.emit('runs'); };
     const row = (key) => page.locator('[data-flip="' + key + '"]');
     const waitCall = async (n) => { for (let i = 0; i < 40 && rcalls.length <= n; i++) await pause(50); assert.ok(rcalls.length > n, 'permintaan terkirim'); return rcalls[rcalls.length - 1]; };
-    const clickCall = async (selector) => { const n = rcalls.length; await page.click(selector); return waitCall(n); };
+    const clickCall = async (selector) => { const n = rcalls.length; const needs = /stop-batch|rn-clear/.test(selector) || !!(await page.locator(selector).getAttribute('data-confirm')); await page.click(selector); if (needs) await confirmDlg(); return waitCall(n); };
 
     await test('Runs: item pertama sidebar (di atas Download) dengan lencana kuning = proses yang menunggu keputusan', async () => {
         await pushRuns();
@@ -1487,18 +1521,52 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.click('.nav-item[data-nav="ebupot"]');
         assert.ok(await page.locator('.tile[data-val="bpmp"]').isDisabled());
         assert.ok(await page.locator('.tile[data-val="bpa1"]').isDisabled());
+        // "Add clients" menawarkan daftar yang sama dengan palet pilih-satu (tanpa entitas lokal / manual) untuk Restricted.
+        const keysOf = () => page.$$eval('#palette [data-act="ent"][data-key]', (els) => els.map((e) => e.dataset.key).sort());
+        await page.locator('#entity-chip').click(); await page.waitForSelector('#palette .ent');
+        const single = await keysOf(); const singleText = await text('#palette');
+        await page.keyboard.press('Escape'); await page.waitForSelector('#palette', { state: 'detached' });
+        await page.click('[data-act="multi-add"]'); await page.waitForSelector('#palette.scrim .pal-multi .ent');
+        const multi = await keysOf(); const multiText = await text('#palette');
+        await page.keyboard.press('Escape'); await page.waitForSelector('#palette', { state: 'detached' });
+        assert.ok(single.length > 0);
+        assert.deepStrictEqual(multi, single, 'Add clients: daftar sama dengan palet pilih-satu');
+        assert.ok(!/ADDED HERE|Add new entity|CURRENTLY OPEN SESSION/.test(singleText + multiText), 'Restricted: tanpa entitas lokal / manual');
         await shot('20-restricted');
     });
 
+    await test('halaman Runs: strip Activity log di bawah tersembunyi dan bilah atas hanya judul + meter jendela; halaman fitur tetap lengkap', async () => {
+        await page.click('.nav-item[data-nav="runs"]'); await page.waitForSelector('.rn-sec');
+        assert.ok(!(await visible('#dock')), 'Runs: tanpa strip Activity log');
+        for (const sel of ['.topbar .status-pill', '#entity-chip', '#btn-refresh-session', '#btn-login']) assert.strictEqual(await page.locator(sel).count(), 0, 'Runs: tanpa ' + sel);
+        assert.ok(await visible('.topbar h1') && await visible('#sess-meter'), 'Runs: judul dan meter tetap ada');
+        await page.click('.nav-item[data-nav="spt"]'); await page.waitForSelector('.pp');
+        assert.ok(await visible('#dock'), 'halaman fitur: strip Activity log tampil');
+        assert.ok(await visible('.topbar .status-pill') && await visible('#entity-chip'), 'halaman fitur: kontrol entitas lengkap');
+        await page.click('.nav-item[data-nav="runs"]'); await page.waitForSelector('.rn-sec');
+    });
     await test('Runs: Restricted Editor juga melihat Runs (proses miliknya sendiri)', async () => {
         assert.ok(await visible('.sb-nav .nav-item[data-nav="runs"]'));
         await page.click('.nav-item[data-nav="runs"]');
         await page.waitForSelector('.rn-sec');
-        page.off('dialog', acceptDialogs);
         await page.unroute(runsRouteMatcher);
     });
 
+    await test('bilah atas: judul halaman tidak terpotong pada 1280 dan 1000 px (chip entitas yang menyusut)', async () => {
+        const vp = page.viewportSize();
+        try {
+            for (const w of [1280, 1000]) {
+                await page.setViewportSize({ width: w, height: 800 });
+                for (const nav of ['ebupot', 'dividen', 'kredit', 'billing']) {
+                    await page.click('.nav-item[data-nav="' + nav + '"]'); await page.waitForSelector('.topbar h1'); await pause(250);
+                    const r = await page.$eval('.topbar h1', (h) => ({ cut: h.scrollWidth > h.clientWidth, t: h.textContent }));
+                    assert.ok(!r.cut, w + 'px ' + nav + ': judul "' + r.t + '" terpotong');
+                }
+            }
+        } finally { await page.setViewportSize(vp); }
+    });
     await test('tidak ada error JavaScript selama seluruh alur', async () => { assert.deepStrictEqual(errors, []); });
+    await test('tidak ada confirm()/alert()/prompt() bawaan browser yang dipanggil selama seluruh alur', async () => { assert.deepStrictEqual(nativeHits, []); });
 
     await test('pemulihan sesi di latar: "Restoring Session…" (bukan form masuk), lalu offline -> Try again', async () => {
         const c2 = await browser.newContext({ viewport: { width: 1200, height: 800 } });

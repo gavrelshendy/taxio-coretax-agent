@@ -86,7 +86,7 @@
                 R.poll();
                 await waitForRunToFinish(r && r.run ? 'run:' + r.run : ((r && r.session) || key), ent);
             } catch (e) {
-                alert('Failed to start ' + next.bupotType.toUpperCase() + ': ' + e.message);
+                P.toast('Failed to start ' + next.bupotType.toUpperCase() + ': ' + e.message);
                 R.queue = [];
             }
         }
@@ -97,12 +97,15 @@
     async function control(act, body) {
         const run = P.state.run || {};
         const key = run.id ? 'run:' + run.id : run.key;
-        try { await P.post('/api/run/' + act + (key ? '?session=' + encodeURIComponent(key) : ''), body); R.poll(); } catch (e) { alert('Failed: ' + e.message); }
+        try { await P.post('/api/run/' + act + (key ? '?session=' + encodeURIComponent(key) : ''), body); R.poll(); } catch (e) { P.toast('Failed: ' + e.message); }
     }
     R.control = {
         pauseResume: () => control(P.state.run.paused ? 'resume' : 'pause'),
         skip: () => control('skip'), retry: () => control('retry'), back: () => control('back'),
-        stop: () => { if (confirm(P.state.run && P.state.run.queued ? 'Cancel this queued process? It has not started yet.' : 'Stop the process in this session? Other sessions keep running.')) { R.queue = []; control('stop'); } },
+        stop: async () => {
+            const q = !!(P.state.run && P.state.run.queued);
+            if (await P.confirmDialog({ title: q ? 'Cancel Queued Run' : 'Stop Run', body: q ? 'This run has not started yet; it is removed from the queue.' : 'This stops the process in this session. Other sessions keep running.', details: [['Task', P.state.run && P.state.run.label]], confirmLabel: q ? 'Cancel run' : 'Stop run', cancelLabel: 'Keep running', danger: true })) { R.queue = []; control('stop'); }
+        },
         pageSize: (n) => control('pagesize', { size: n })
     };
 

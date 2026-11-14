@@ -295,7 +295,7 @@ html:not([data-theme="light"]) .seg button[aria-pressed="true"] { background: va
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100vh; }
 .outdated { background: var(--danger-soft); color: var(--danger-text); border-bottom: 1px solid var(--danger-line); padding: 6px 16px; font-size: var(--fs-sm); text-align: center; }
 .topbar { min-height: var(--top-h); flex: none; padding: 8px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; border-bottom: 1px solid var(--line); background: var(--bg); }
-.topbar .title { flex: 1 1 150px; display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.topbar .title { flex: 1 1 auto; display: flex; flex-direction: column; gap: 0; min-width: min-content; }
 .topbar .crumb { font-size: var(--fs-sm); color: var(--text-3); }
 .topbar h1 { font: 650 var(--fs-lg)/1.25 var(--font-head); letter-spacing: -.01em; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status-pill { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px; border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 550; white-space: nowrap; background: var(--surface-2); color: var(--text-2); }
@@ -303,7 +303,7 @@ html:not([data-theme="light"]) .seg button[aria-pressed="true"] { background: va
 .status-pill.ok, .status-pill.manual { background: var(--ok-soft); color: var(--ok-text); } .status-pill.ok i, .status-pill.manual i { background: var(--ok); }
 .status-pill.run, .status-pill.wait { background: var(--warn-soft); color: var(--warn-text); } .status-pill.run i, .status-pill.wait i { background: var(--warn); }
 .status-pill.off { background: var(--surface-2); color: var(--text-3); }
-.entity-chip { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px 0 4px; border-radius: var(--r2); background: var(--surface); border: 1px solid var(--line-2); text-align: left; max-width: 420px; min-width: 0; color: var(--text-3); transition: border-color var(--d1); }
+.entity-chip { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px 0 4px; border-radius: var(--r2); background: var(--surface); border: 1px solid var(--line-2); text-align: left; max-width: 420px; flex: 0 1 420px; min-width: 150px; color: var(--text-3); transition: border-color var(--d1); }
 .entity-chip:hover { border-color: var(--text-4); }
 .entity-chip .av { width: 30px; height: 30px; border-radius: var(--r1); background: var(--accent-soft); color: var(--accent-text); font: 650 11px var(--font-mono); display: flex; align-items: center; justify-content: center; flex: none; }
 .entity-chip .tx { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
@@ -665,12 +665,12 @@ kbd { font: 500 11px/1 var(--font-mono); color: var(--text-3); background: var(-
 
 /* Topbar satu baris (56 px). */
 .topbar { position: relative; height: var(--top-h); min-height: 0; flex-wrap: nowrap; padding: 0 16px 0 24px; gap: 8px; z-index: 20; }
-.topbar .title { flex: 1 0 auto; flex-direction: row; align-items: center; gap: 10px; min-width: 60px; max-width: 60%; }
-.topbar h1 { flex: 0 1 auto; min-width: 0; }
+.topbar .title { flex: 1 0 auto; flex-direction: row; align-items: center; gap: 10px; min-width: min-content; }
+.topbar h1 { flex: none; overflow: visible; text-overflow: clip; }
 .topbar .crumb { white-space: nowrap; flex: none; }
 .topbar .tag.write { flex: none; }
 .topbar .status-pill { flex: none; }
-.topbar .entity-chip { flex: 0 1 300px; min-width: 150px; height: 36px; }
+.topbar .entity-chip { flex: 0 1 300px; min-width: 96px; height: 36px; }
 .topbar .btn { height: 32px; flex: none; }
 .topbar .icon-btn { flex: none; }
 .meter { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 8px 0 10px; border-radius: var(--r2); border: 1px solid transparent; background: transparent; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; flex: none; transition: background var(--d1), border-color var(--d1); }
@@ -684,7 +684,7 @@ kbd { font: 500 11px/1 var(--font-mono); color: var(--text-3); background: var(-
 .sw-head b { display: block; color: var(--text-1); font-size: var(--fs-md); }
 .sess-win .sess-strip { flex: none; }
 .sw-empty { font-size: var(--fs-sm); color: var(--text-3); }
-@media (max-width: 1240px) { .topbar .crumb { display: none; } }
+@media (max-width: 1340px) { .topbar .crumb { display: none; } }
 @media (max-width: 1160px) { .topbar .status-pill .pl { display: none; } .topbar .status-pill { padding: 0 9px; } }
 @media (max-width: 1040px) { .topbar .btn .bl { display: none; } .topbar .btn { padding: 0 9px; } .meter-l { display: none; } .topbar .tag.write { display: none; } }
 @media (max-width: 760px) { .topbar { padding: 0 10px 0 14px; } .topbar .entity-chip .tx span { display: none; } }
@@ -744,3 +744,17 @@ kbd { font: 500 11px/1 var(--font-mono); color: var(--text-3); background: var(-
 .rn-row.sub .rn-body, .rn-row.sub .rn-detail { margin-left: 36px; }
 .rn-empty { margin: 14vh auto 0; max-width: 380px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
 .rn-empty b { font: 600 var(--fs-lg) var(--font-head); color: var(--text-1); }
+
+/* ---------- Dialog konfirmasi (P.confirmDialog) ---------- */
+.confirm-scrim { z-index: 60; }
+.confirm-scrim.closing { animation: fadeOut var(--d1) var(--ease) both; pointer-events: none; }
+.confirm-scrim.closing .dialog { animation: dlgOut var(--d1) var(--ease) both; }
+@keyframes fadeOut { to { opacity: 0; } }
+@keyframes dlgOut { to { opacity: 0; transform: translateY(6px) scale(.985); } }
+.cfm .cfm-body { margin: 0; font-size: var(--fs-md); color: var(--text-1); line-height: 1.5; }
+.cfm .cfm-list { max-height: 200px; }
+.cfm .cfm-tick { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r3); background: var(--surface-2); color: var(--text-1); }
+.cfm .cfm-tick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Halaman Runs: log per proses sudah ada di barisnya, jadi strip Activity log di bawah disembunyikan. */
+body.on-runs #dock { display: none; }

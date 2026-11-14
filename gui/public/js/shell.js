@@ -15,7 +15,7 @@
     P.manual = {
         async open() {
             try { await P.post('/api/actions/open-coretax'); P.manual.poll(); }
-            catch (e) { alert('Failed to open Coretax: ' + e.message); }
+            catch (e) { P.toast('Failed to open Coretax: ' + e.message); }
         },
         async check(announce) {
             await P.manual.poll();
@@ -198,6 +198,9 @@
             buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 16) + '<span class="bl">Open Coretax</span></button>';
         }
         const effect = meta.kind === 'write' ? '<span class="tag write lg" title="This page changes data in Coretax"><i></i>Changes data in Coretax</span>' : '';
+        const onRunsPage = P.state.page === 'runs';
+        document.body.classList.toggle('on-runs', onRunsPage);
+        if (onRunsPage) return '<header class="topbar"><div class="title"><h1>' + esc(meta.full || meta.label) + '</h1><span class="crumb">' + esc(meta.crumb) + '</span></div>' + meterHtml() + winHtml() + '</header>';
         return '<header class="topbar"><div class="title"><h1>' + esc(meta.full || meta.label) + '</h1><span class="crumb">' + esc(meta.crumb) + '</span>' + effect + '</div>'
             + '<span class="status-pill ' + pill.kind + '" title="' + esc(pill.text) + '"><i></i><span class="pl">' + esc(pill.text) + '</span></span>' + E.chipHtml() + buttons + E.queuePillHtml() + meterHtml() + winHtml() + '</header>';
     }
@@ -269,7 +272,7 @@
             if (x === 'close') closeIt();
             else if (x === 'theme') { P.theme.set(b.dataset.val); scrim.querySelectorAll('[data-x="theme"]').forEach((t) => t.setAttribute('aria-pressed', String(t === b))); }
             else if (x === 'disconnect') { closeIt(); P.state.session = await P.post('/api/disconnect', { project: 'taxio_hub' }); E.clear(); P.auth.screen = 'masuk'; P.emit('session'); }
-            else if (x === 'quit') { if (confirm('Quit Taxio Pilot completely?')) await P.post('/api/quit'); }
+            else if (x === 'quit') { if (await P.confirmDialog({ title: 'Quit Taxio Pilot', body: 'Runs in progress stop and all Coretax windows close.', confirmLabel: 'Quit app', danger: true })) await P.post('/api/quit'); }
             else if (x === 'update') {
                 const t = P.$('upd-text'); b.disabled = true; t.textContent = 'Checking for updates…';
                 try {
@@ -386,11 +389,11 @@
     async function deleteStaleProfiles() {
         const dirs = Array.from(document.querySelectorAll('#prof-list input[data-prof]:checked')).map((i) => i.dataset.prof);
         if (!dirs.length) return P.info('Select at least one profile.');
-        if (!confirm('Delete ' + dirs.length + ' Chrome profile' + (dirs.length === 1 ? '' : 's') + '? The PICs will sign in automatically again the next time they are used.')) return;
+        if (!await P.confirmDialog({ title: 'Delete Chrome Profiles', body: 'The PICs will sign in automatically again the next time they are used.', details: [['Profiles', String(dirs.length)]], confirmLabel: 'Delete ' + dirs.length + ' profile' + (dirs.length === 1 ? '' : 's'), danger: true })) return;
         try {
             const r = await P.post('/api/profiles/delete', { days: staleDays, dirs });
             P.info(r.deleted.length + ' profile' + (r.deleted.length === 1 ? '' : 's') + ' deleted (' + fmtBytes(r.freedBytes) + ' freed)' + (r.skipped.length ? ', ' + r.skipped.length + ' skipped.' : '.'));
-        } catch (e) { alert('Could not delete profiles: ' + e.message); }
+        } catch (e) { P.toast('Could not delete profiles: ' + e.message); }
         await loadStaleProfiles();
     }
 
@@ -452,7 +455,7 @@
         const ent = E.current(); if (!ent) return;
         btn.disabled = true;
         try { await P.post('/api/actions/login-entity', { entity: ent }); P.run.poll(); }
-        catch (e) { alert('Failed to start login: ' + e.message); btn.disabled = false; }
+        catch (e) { P.toast('Failed to start login: ' + e.message); btn.disabled = false; }
     }
     async function checkUpdateFromBanner() {
         const t = P.$('outdated-text'); const b = P.$('outdated-check'); b.disabled = true; t.textContent = 'Checking for updates…';
