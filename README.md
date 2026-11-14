@@ -320,3 +320,48 @@ pratinjau / cek NIK) menunggu antrean maks. 30 detik lalu 409 dengan pesan lama.
 `withRules`): perintah IDENTIK yang masih antre/berjalan ditolak 409, fitur yang sama untuk entitas yang sama antre di
 belakangnya, fitur lain paralel; penulis Excel bersama dikunci per berkas (`lib/file-lock.js`). Deep link memakai
 antrean yang sama. Tes: `node scripts/test-parallel-runs.js`, `node scripts/test-runcontrol-sessions.js`.
+
+## Halaman Runs: kontrak API (server)
+
+Riwayat proses sesi aplikasi ini disimpan di memori (`lib/runcontrol.js`, maks. 300 proses selesai, yang tertua dibuang
+dulu; proses antre/berjalan tidak pernah dibuang; hilang saat aplikasi ditutup). Semua route lewat token/Host/Origin biasa.
+
+- `GET /api/runs` -> `{ needsYou: [], inProgress: [], done: [], limits: { perPic, total, running } }`. `needsYou` = ditahan
+  menunggu keputusan; `inProgress` = berjalan/dijeda/berhenti dulu, lalu yang antre (urut posisi); `done` = selesai, gagal,
+  dihentikan HARI INI, terbaru dulu.
+- `GET /api/runs/<key>` (atau `/api/runs/detail?key=`) -> satu proses + `lines` (baris log terakhir, `&lines=N`); 404 bila tidak ada.
+  `GET /api/run/log?session=run:<id>` dan semua route lama (`/api/run/status`, kontrol, `?session=`) tidak berubah.
+- `POST /api/runs/open-folder` `{ key }` -> membuka `outputDir` yang DICATAT server untuk proses itu di Explorer
+  (`lib/shell.js` `openPath`; Electron: `shell.openPath`). Path dari body tidak pernah dipakai; kunci tak dikenal / belum ada
+  folder -> 404. `POST /api/runs/clear-done` -> `{ ok, cleared }` membuang proses selesai dari riwayat.
+- **Batch ("unduh untuk banyak klien")**: setiap aksi latar (route yang memakai `runInBackground`) menerima `batch` opsional di body:
+  `{ id, label, index, total }` - `id` dibuat klien (1-64 karakter `[A-Za-z0-9_-]`), `label` teks maks. 120 karakter, `index` 0..total-1,
+  `total` 1..10000. Dashboard mengirim satu permintaan aksi biasa per klien dengan `id` yang sama; antrean / batas paralel tidak berubah
+  dan aturan perintah identik (`withRules`) tetap berlaku per klien (409 untuk klien yang sama + parameter yang sama). `batch` yang tidak
+  valid -> 400. Batch HANYA untuk fitur hanya-baca: bila `changesCoretax` fitur itu true (termasuk kasus bersyarat: BPMP `submit`,
+  Konsep SPT `post`) -> 400 "Batch hanya boleh untuk unduhan yang hanya membaca ..." dan tidak ada proses dibuat. Setiap proses di
+  `GET /api/runs` dan `GET /api/runs/<key>` membawa `batch` (objek di atas) atau `null`.
+- `GET /api/runs` juga mengembalikan `batches: [{ id, label, feature, total, counts: { queued, running, hold, done, failed, stopped },
+  startedAt, endedAt }]`, dihitung dari proses yang membawa id itu. `running` = berjalan + dijeda + berhenti dulu; `total` = nilai
+  terbesar yang dilaporkan proses-prosesnya; `startedAt` = waktu antre paling awal; `endedAt` = null selagi masih ada yang antre /
+  berjalan / ditahan, selain itu waktu selesai terakhir. Sebuah batch tetap terdaftar selama salah satu prosesnya ada di riwayat hari ini.
+- `POST /api/runs/stop-batch` `{ id }` -> `{ ok, stopped }`: Stop untuk setiap proses batch itu yang masih aktif (berhenti di titik aman)
+  atau antre (dibatalkan); proses yang sudah selesai tidak dihitung (`stopped: 0` bila semuanya sudah selesai). Id tidak valid -> 400;
+  id yang tidak punya proses sama sekali -> 404. Tes: `node scripts/test-runs-batch.js`.
+- Kabar SSE di `/events`: `data: {"event":"runs"}` setiap daftar berubah (mulai, antre maju, ditahan, lanjut, langkah
+  kemajuan, selesai), maks. 4 per detik; klien lalu memuat ulang `GET /api/runs`. (`"run"` lama tetap dikirim.)
+
+Satu proses: `key` (selalu `run:<id>`), `id`, `state`, `section`, `feature`, `label`, `entity {id,name,npwp,tag}`, `pic`
+(kunci PIC), `window`/`windowNo`, `queue` (hanya saat antre: `position` = urutan antre keseluruhan, `poolPosition`,
+`reason` `lock|busy|total`, `reasonText`, `waitingFor {key,label}`), `queuedAt`, `startedAt`, `endedAt`,
+`progress {total, done, hold, current {index,label,short}, items [{label,short,state: wait|run|ok|skip|hold}]}` atau null,
+`hold {reason, item, choices [{id: retry|skip|stop, label, action}]}` (hanya saat `hold`; Skip hanya bila fitur mendukung),
+`controls` (stop/pause/skip/retry/back/pageSize), `stopRequested`, `pauseRequested`, `changesCoretax` (boolean per fitur,
+`lib/run-controls.js`), `outcome {kind, text, custom}` (hanya selesai: baris "SELESAI:/GAGAL:/Dihentikan:" yang dicatat dari
+log; `custom:false` = teks bawaan karena fitur tidak mencatat baris penutup), `outputDir` atau null.
+
+`state`: `queued` | `running` | `paused` | `hold` | `stopping` | `done` | `failed` | `stopped`. `choices[].action` = nilai untuk
+route kontrol lama (`/api/run/retry|skip|stop|resume?session=run:<id>`); fitur tanpa Ulang memakai `resume`.
+`outputDir` dicatat lewat `runcontrol.setOutput(dir)` di tempat setiap fitur menentukan folder hasilnya (SPT/A1, e-Bupot, Bukti Potong
+Saya, Kode Billing, e-Faktur, Pajak Masukan unduh/kredit, Dividen, Konsep SPT, laporan e-Bupot upload/issue, pembetulan e-Bupot,
+pembetulan NIK BPMP + penyisiran, rekam API, refresh rekap). Tidak tercakup karena tidak menulis berkas (outputDir = null): login, cari / pratinjau / cek NIK, Create Konsep, Create Dividen case, Upload e-Bupot tanpa laporan. Tes: `node scripts/test-runs-api.js`.

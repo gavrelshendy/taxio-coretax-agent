@@ -278,6 +278,7 @@ async function downloadComboData(ctx) {
     const pending = []; // rows sent with ZERO_DOC_ID that weren't ready yet - retried below
     if (pdfEnabled) {
         fs.mkdirSync(saveDir, { recursive: true });
+        runcontrol.setOutput(saveDir); // folder hasil proses ini (halaman Runs)
         for (let i = 0; i < rows.length; i++) {
             await runcontrol.checkpoint(); // pause/skip/stop takes effect between rows
             const row = rows[i];

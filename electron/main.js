@@ -191,6 +191,7 @@ function main() {
             return r.canceled ? null : (r.filePaths[0] || null);
         },
         showErrorBox: (title, msg) => dialog.showErrorBox(title || 'Taxio Pilot', String(msg)),
+        openPath: (p) => eshell.openPath(String(p)), // '' bila berhasil (folder hasil proses, dicatat server)
         canEncrypt: () => safeStorage.isEncryptionAvailable(),
         encryptString: (text) => safeStorage.encryptString(String(text)).toString('base64'),
         decryptString: (b64) => safeStorage.decryptString(Buffer.from(String(b64), 'base64')),

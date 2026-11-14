@@ -24,6 +24,7 @@
 const { log } = require('../lib/log');
 const runcontrol = require('../lib/runcontrol');
 const runContext = require('../lib/run-context');
+const runControls = require('../lib/run-controls');
 const { sendJson } = require('./http-util');
 
 const limits = { LINGER_MAX_MS: 10 * 60 * 1000, STOP_POLL_MS: 500, RESULT_QUEUE_MS: 30 * 1000 };
@@ -60,6 +61,11 @@ function releaseRun(run) {
  *  mengikat proses ke konteks AsyncLocalStorage permintaan itu (runcontrol.isolate). */
 async function runInBackground(res, { label, session, extra, onStart }, work, { stopMsg, failPrefix, quiet, cleanup } = {}) {
     let run, ready;
+    // Batch ("unduh untuk banyak klien", divalidasi action() di gui/server.js): hanya fitur hanya-baca.
+    if (res.taxioBatch) {
+        if (runControls.changesCoretax(session && session.feature, session && session.changesCoretax)) return sendJson(res, 400, { error: 'Batch hanya boleh untuk unduhan yang hanya membaca. Perintah yang mengubah data di Coretax harus dijalankan satu per satu.' });
+        session = Object.assign({}, session, { batch: res.taxioBatch });
+    }
     try { ({ run, ready } = runcontrol.enqueue(label, session)); }
     catch (e) { return sendJson(res, 409, { error: e.message }); }
     if (onStart) onStart();
@@ -69,9 +75,9 @@ async function runInBackground(res, { label, session, extra, onStart }, work, { 
         await ready;
         await work();
     } catch (e) {
-        if (quiet && quiet(e)) { /* sudah dilaporkan */ }
-        else if (e && e.isStop) log(stopMsg || 'Proses dihentikan oleh pengguna.');
-        else log((failPrefix || 'Gagal: ') + (e && e.message));
+        if (quiet && quiet(e)) runcontrol.markFailed(run, e && e.message); // sudah dilaporkan
+        else if (e && e.isStop) { const m = stopMsg || 'Proses dihentikan oleh pengguna.'; log(m); runcontrol.markStopped(run, m); }
+        else { const m = (failPrefix || 'Gagal: ') + (e && e.message); log(m); runcontrol.markFailed(run, m); }
     } finally {
         releaseRun(run);
         if (cleanup) await cleanup();
@@ -92,6 +98,7 @@ async function runForResult(res, { label, session }, work, { failPrefix, errorPr
     try { await ready; }
     catch (e) {
         if (watch) res.removeListener('close', onClose);
+        if (e && e.isStop) runcontrol.markStopped(run, 'Dibatalkan sebelum mulai (antrean).'); else runcontrol.markFailed(run, e && e.message);
         runcontrol.finish(run);
         if (e && e.isStop) { log(failPrefix + 'dihentikan oleh pengguna.'); if (!res.headersSent) sendJson(res, 400, { error: (errorPrefix || '') + 'dihentikan oleh pengguna.' }); return; }
         if (!res.headersSent) sendJson(res, 409, { error: e.message });
@@ -99,7 +106,10 @@ async function runForResult(res, { label, session }, work, { failPrefix, errorPr
     }
     if (watch) res.removeListener('close', onClose);
     try { return sendJson(res, 200, await work()); }
-    catch (e) { log(failPrefix + e.message); if (!res.headersSent) sendJson(res, 400, { error: (errorPrefix || '') + e.message }); }
+    catch (e) {
+        log(failPrefix + e.message);
+        if (e && e.isStop) runcontrol.markStopped(run, failPrefix + e.message); else runcontrol.markFailed(run, failPrefix + e.message);
+        if (!res.headersSent) sendJson(res, 400, { error: (errorPrefix || '') + e.message }); }
     finally { releaseRun(run); }
 }
 
