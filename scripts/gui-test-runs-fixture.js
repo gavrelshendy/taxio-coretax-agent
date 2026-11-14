@@ -3,7 +3,7 @@
    batch yang sudah selesai. Nama perusahaan dan NPWP fiktif. Bentuk data mengikuti README "Halaman Runs". */
 const ENT = {
     CSA: { id: 'CSA', name: 'PT Contoh Sejahtera Abadi', npwp: '0123456780910000', tag: 'CSA' },
-    MKA: { id: 'MKA', name: 'MITRA KARYA ABADI, PT', npwp: '0317927093541000', tag: 'MKA' },
+    MKA: { id: 'MKA', name: 'MITRA KARYA ABADI, PT', npwp: '0000000000000317', tag: 'MKA' },
     SNM: { id: 'SNM', name: 'CV Sample Niaga Mandiri', npwp: '0000000000000000', tag: 'SNM' },
     BUDI: { id: 'BUDI', name: 'Budi Contoh Santoso', npwp: '0456789012340000', tag: 'BUDI' },
     MLU: { id: 'MLU', name: 'MITRA LESTARI UTAMA, PT', npwp: '0000000000000001', tag: 'MLU' },
