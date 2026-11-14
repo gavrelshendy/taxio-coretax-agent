@@ -620,12 +620,13 @@ async function processSptCombo(ctx) {
                     a1ConfidentialOk=fs.existsSync(bpePath)&&fs.existsSync(sptPath);
                     removeIntermediateFiles(secret.paths.filter(file=>/\.pdf$/i.test(file)),secretPath,emit);
                     emit('PDF confidential tersimpan: '+path.basename(secretPath));
-                  } catch(e) { if(e.isSessionExpired||e.isStop)throw e;emit('PDF rahasia gagal: '+e.message); }
+                  } catch(e) { if(e.isSessionExpired||e.isStop||e.isSkip||e.isRetry||e.isBack)throw e;emit('PDF rahasia gagal: '+e.message); }
                 }
                 downloadedAny = true;
                 emit('Lampiran selesai: ' + lampiranResult.count + ' file (' + outputLayout + ').');
             } catch (e) {
-                if (e.isSessionExpired) throw e;
+                // Stop / Lewati / Ulang / Mundur dari pengguna bukan kegagalan Lampiran: teruskan ke atas.
+                if (e.isSessionExpired || e.isStop || e.isSkip || e.isRetry || e.isBack) throw e;
                 rowOk = false;
                 emit('Baris ke-' + (i + 1) + ': Lampiran gagal dibuat - ' + e.message + '.');
             }
@@ -1025,4 +1026,4 @@ async function runSptDownload(opts) {
 }
 
 module.exports = { runSptDownload, JENIS_PAJAK, JENIS_PAJAK_LABELS, SPT_URL,
-    __test: { buildSptFilename, buildLampiranViewCandidates, parseModelSptSuffix, a1SaveRoot } };
+    __test: { processSptCombo, buildSptFilename, buildLampiranViewCandidates, parseModelSptSuffix, a1SaveRoot } };

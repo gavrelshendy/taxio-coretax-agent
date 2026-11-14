@@ -528,6 +528,40 @@ function apiPage({ route, onPost }) {
         assert.ok(emitted.some((m) => new RegExp('^Dihentikan: 1 dari ' + planned + ' BPMP bernilai 0 sudah dibatalkan; ' + (planned - 1) + ' belum diproses\\.').test(m)), emitted.join('\n'));
     });
 
+    // ------------------------------------------------------------------ SPT: Stop/Lewati saat langkah Lampiran
+    await test('SPT Lampiran: Stop/Lewati dari pengguna diteruskan, bukan dicatat "Lampiran gagal"; kegagalan nyata tetap', async () => {
+        const spt = require('../automation/spt').__test;
+        const lamp = require('../automation/lampiran');
+        const row = { RecordId: 'R1', TaxTypeCode: 'ICT_RCIT', TaxPeriodCode: '01012026', ReturnSheetModel: 'Normal', TaxpayerAggregateIdentifier: 'TP-1', AggregateIdentifier: 'AG-1' };
+        const page = {
+            evaluate: async () => ({ status: 200, json: { Payload: { Data: [row] } } }),
+            goto: async () => {}, waitForSelector: async () => {}, context: () => ({ on() {}, off() {} })
+        };
+        const run = async (behave) => {
+            const emitted = [];
+            const orig = lamp.downloadLampiran;
+            lamp.downloadLampiran = async () => behave();
+            try {
+                const h = inRun('download-spt', () => spt.processSptCombo({
+                    page, authState: { taxpayerId: 'TP-1', authorization: 'x', dgtCode: 'y' }, saveDir: path.join(TMP, 'spt-out'), entityCode: 'UJI', entityNpwp: '0000000000000009',
+                    mmYY: '0126', taxTypeCodes: ['ICT_RCIT'], sizeState: { current: 100 }, compFolder: null, signParam: null, isAnnual: false,
+                    includeLampiran: true, includeBpe: false, includeInduk: false, lampiranMode: 'full', lampiranFormat: 'pdf', outputLayout: 'separate', layoutStyle: 'default',
+                    saveRoot: path.join(TMP, 'spt-out'), log: (m) => emitted.push(m)
+                }));
+                const r = await h.done;
+                return { r, emitted };
+            } finally { lamp.downloadLampiran = orig; }
+        };
+        for (const [flag, make] of [['isStop', () => new runcontrol.StopRunError()], ['isSkip', () => new runcontrol.SkipComboError()]]) {
+            const { r, emitted } = await run(() => { throw make(); });
+            assert.ok(r.error && r.error[flag], flag + ' diteruskan');
+            assert.ok(!emitted.some((m) => /Lampiran gagal/.test(m)), 'tidak dicatat sebagai Lampiran gagal: ' + emitted.join(' | '));
+        }
+        const bad = await run(() => ({ ok: false, error: 'tab L1 rusak' }));
+        assert.ok(!bad.r.error, 'kegagalan nyata tidak menghentikan proses');
+        assert.ok(bad.emitted.some((m) => /Lampiran gagal dibuat - tab L1 rusak/.test(m)));
+    });
+
     const failed = results.filter((x) => !x).length;
     console.log((results.length - failed) + '/' + results.length + ' tes lulus.');
     try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) { /* abaikan */ }
