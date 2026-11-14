@@ -9,19 +9,23 @@
     const esc = P.esc;
 
     // ---------- Navigasi ----------
+    // Dikelompokkan menurut akibatnya (proposal 4.1): Download (hanya membaca), Change in Coretax (mengubah data),
+    // Year-End. kind 'write' memberi label "Changes data in Coretax" di topbar. Halaman yang sama seperti sebelumnya.
     const NAV = [
-        { title: 'DOWNLOAD', items: [
+        { title: 'Download', items: [
             { id: 'spt', label: 'SPT', icon: 'file', crumb: 'Download' },
             { id: 'ebupot', label: 'e-Bupot', icon: 'fileCheck', crumb: 'Download' },
             { id: 'bpsaya', label: 'Bukti Potong Saya', icon: 'inbox', crumb: 'Download' },
             { id: 'faktur', label: 'e-Faktur', icon: 'receipt', crumb: 'Download' }
         ] },
-        { title: 'AUTOMATION', items: [
-            { id: 'a1', label: 'Annual PPh 21 Recap', icon: 'cal', crumb: 'Automation · download, recap & NIK Pembetulan', hideForRestricted: true },
-            { id: 'dividen', label: 'e-Reporting', full: 'Laporan Realisasi Investasi (Dividen)', icon: 'coins', crumb: 'Automation · e-Reporting AS.39-01' },
-            { id: 'kredit', label: 'Credit Faktur Masukan', icon: 'badge', crumb: 'Automation' },
-            { id: 'billing', label: 'PPh 25 Kode Billing', icon: 'bank', crumb: 'Automation' },
-            { id: 'impor', label: 'e-Bupot Upload & Issue', full: 'e-Bupot Upload, Issue & Sign', icon: 'upload', crumb: 'Automation · upload to Belum Terbit, issue & sign, Konsep SPT', hideForRestricted: true }
+        { title: 'Change in Coretax', items: [
+            { id: 'impor', label: 'e-Bupot Upload & Issue', full: 'e-Bupot Upload, Issue & Sign', icon: 'upload', crumb: 'Change in Coretax', kind: 'write', hideForRestricted: true },
+            { id: 'kredit', label: 'Credit Faktur Masukan', icon: 'badge', crumb: 'Change in Coretax', kind: 'write' },
+            { id: 'billing', label: 'PPh 25 Kode Billing', icon: 'bank', crumb: 'Change in Coretax', kind: 'write' },
+            { id: 'dividen', label: 'e-Reporting', full: 'Laporan Realisasi Investasi (Dividen)', icon: 'coins', crumb: 'Change in Coretax', kind: 'write' }
+        ] },
+        { title: 'Year-End', items: [
+            { id: 'a1', label: 'Annual PPh 21 Recap', icon: 'cal', crumb: 'Year-End', hideForRestricted: true }
         ] }
     ];
 

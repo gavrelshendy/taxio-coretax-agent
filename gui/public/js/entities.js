@@ -186,7 +186,7 @@
     };
     E.sessionStripHtml = function () {
         const sess = E.sessions();
-        if (!sess.length) return '';
+        if (!sess.length) return '<div class="sess-strip" role="group" aria-label="Active Coretax sessions"><span class="sw-empty">No Coretax window is open. One opens by itself when you sign in or start a run.</span><button type="button" class="sess-new" id="sess-new">' + P.icon('plus', 14, '', 2.4) + 'New session</button></div>';
         const cur = E.current();
         // Jendela per PIC: PIC dengan lebih dari satu jendela diberi nomor jendela ("Andi #2"); tab yang menyala =
         // jendela entitas terpilih (bila PIC-nya punya beberapa jendela: yang terakhir login sebagai entitas itu).
@@ -214,10 +214,12 @@
                 + (manual ? '' : '<button type="button" class="sess-drop" data-sess-drop="' + id + '" aria-label="Select entity in this session" title="Switch entity in this window · ' + n + (n === 1 ? ' entity' : ' entities') + '">' + P.icon('down', 14) + '</button>')
                 + '<button type="button" class="sess-x" data-sess-close="' + id + '" aria-label="Close this session" title="Close this window">' + P.icon('x', 13) + '</button></div>';
         }).join('');
-        // Proses yang menunggu jendela bebas (batas sesi paralel, atau perintah yang sama untuk entitasnya masih berjalan).
+        return '<div class="sess-strip" role="group" aria-label="Active Coretax sessions">' + tabs + '<button type="button" class="sess-new" id="sess-new">' + P.icon('plus', 14, '', 2.4) + 'New session</button></div>';
+    };
+    /** Proses yang menunggu jendela bebas (batas sesi paralel, atau perintah yang sama untuk entitasnya masih berjalan): pil di topbar. */
+    E.queuePillHtml = function () {
         const queued = (P.state.runs || []).filter((r) => r.queued);
-        const qPill = queued.length ? '<span class="sess-queue" title="' + P.esc('Waiting for a free Coretax window:\n' + queued.map((r) => '#' + r.position + ' ' + r.label).join('\n')) + '">' + P.icon('loader', 12, '', 2.4) + queued.length + ' queued</span>' : '';
-        return '<div class="sess-strip" role="group" aria-label="Active Coretax sessions">' + tabs + qPill + '<button type="button" class="sess-new" id="sess-new">' + P.icon('plus', 14, '', 2.4) + 'New session</button></div>';
+        return queued.length ? '<span class="sess-queue" title="' + P.esc('Waiting for a free Coretax window:\n' + queued.map((r) => '#' + r.position + ' ' + r.label).join('\n')) + '">' + P.icon('loader', 12, '', 2.4) + queued.length + ' queued</span>' : '';
     };
 
     // ---------- Antrean banyak entitas ----------
