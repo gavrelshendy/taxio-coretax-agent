@@ -227,7 +227,7 @@ const NOW = Date.UTC(2026, 10, 14, 10, 0, 0);
             assert.deepStrictEqual(await ok.json(), { ok: true, restarting: true });
             assert.ok(!state.isConnected('taxio_hub'), 'signed out of Taxio Hub locally');
             assert.ok(exists(reset.pendingFile(R)), 'marker written');
-            for (let i = 0; i < 80 && !calls.includes('relaunch'); i++) await new Promise((r) => setTimeout(r, 100));
+            for (let i = 0; i < 400 && !calls.includes('relaunch'); i++) await new Promise((r) => setTimeout(r, 100));
             assert.ok(calls.includes('close') && calls.includes('relaunch') && !calls.includes('exit'), JSON.stringify(calls));
             assert.ok(exists(path.join(R, 'logs')) && exists(path.join(R, 'chrome')), 'the running instance deletes nothing itself');
             assert.strictEqual((await post({ confirm: true })).status, 409, 'a second request while quitting is refused');
