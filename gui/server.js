@@ -28,6 +28,7 @@ const entitiesLib = require('../lib/entities');
 const PROJECTS = require('../lib/supabase-projects');
 const runcontrol = require('../lib/runcontrol');
 const chrome = require('../lib/chrome');
+const paths = require('../lib/paths');
 const loginStatus = require('../lib/login-status');
 const { runEbupotDownload } = require('../automation/ebupot');
 const { runMyBuktiPotongDownload } = require('../automation/mybupot');
@@ -1311,6 +1312,35 @@ function gracefulQuit({ finalize } = {}) {
     return _quitting;
 }
 
+/** "Reset all data" (Settings): menolak bila ada proses berjalan / antre atau aplikasi sedang menutup; selain itu keluar dari
+ *  Taxio Hub secara lokal, menulis penanda (lib/reset.js), menutup aplikasi lewat jalur "Keluar" biasa (jendela Chrome otomasi
+ *  ditutup), menghentikan sisa proses Chrome milik profil kita, lalu membuka ulang aplikasi - penghapusan sebenarnya dikerjakan
+ *  lib/reset.js runPending() di awal start berikutnya, sebelum ada yang membuka berkas-berkasnya. Tidak ada pengguna Restricted
+ *  yang dikecualikan: yang dihapus hanya data di PC ini (sama dengan "Bersihkan profil Chrome"). */
+function isQuitting() { return !!_quitting; }
+const handleResetAll = action({ outdated: false, entity: false }, async (req, res, body) => {
+    if (body.confirm !== true) return sendJson(res, 400, { error: 'Konfirmasi reset belum diberikan.' });
+    if (runcontrol.anyActive()) return sendJson(res, 409, { error: 'Masih ada proses yang berjalan atau antre. Hentikan atau tunggu sampai selesai, lalu coba lagi.' });
+    if (isQuitting()) return sendJson(res, 409, { error: 'Taxio Pilot sedang ditutup.' });
+    const reset = require('../lib/reset');
+    try { reset.request({ version: pkg.version }); }
+    catch (e) { log('Reset semua data gagal dimulai: ' + e.message); return sendJson(res, 500, { error: 'Tidak bisa menyiapkan reset: ' + e.message }); }
+    // Keluar dari Taxio Hub di PC ini saja (tanpa jaringan: token di Hub dibiarkan kedaluwarsa sendiri).
+    for (const projectId of Object.keys(PROJECTS)) {
+        try { sessionRestore.cancel(projectId); sessionStore.forgetStored(projectId); state.clear(projectId); state.clearPending(projectId); } catch (e) { /* abaikan */ }
+    }
+    log('Reset semua data diminta: aplikasi menutup jendela Chrome otomasi, lalu dibuka ulang dan data lokal dihapus.');
+    sendJson(res, 200, { ok: true, restarting: true });
+    gracefulQuit({ finalize: () => { killOwnProfileChrome().catch(() => {}).then(() => shell.relaunch()); } }).catch(() => {});
+});
+/** Sisa proses Chrome (mis. dari sesi lama) yang masih memegang folder profil milik kita - dihentikan supaya folder bisa dihapus. */
+async function killOwnProfileChrome() {
+    const hk = require('../lib/profile-housekeeping');
+    const roots = [paths.profileRoot('terpasang'), paths.profileRoot('bawaan')];
+    const all = await hk.scan({ roots, sizes: false });
+    for (const p of all.profiles) { try { await chrome.terminateProfileProcesses(p.dir); } catch (e) { /* abaikan */ } }
+}
+
 async function handleQuit(req, res) {
     sendJson(res, 200, { ok: true });
     gracefulQuit().catch(() => {});
@@ -1630,7 +1660,8 @@ const ROUTE_FEATURES = {
     'POST /api/run/stop': [], 'POST /api/run/pagesize': [],
     'POST /api/runs/open-folder': [], 'POST /api/runs/clear-done': [], 'POST /api/runs/stop-batch': [],
     'POST /api/quit': [], 'POST /api/check-update': [], 'POST /api/tray/open': [], 'POST /api/log/clear': [],
-    'POST /api/diagnostics/export': [], 'POST /api/profiles/stale': [], 'POST /api/profiles/delete': [], 'POST /api/notices/ack': []
+    'POST /api/diagnostics/export': [], 'POST /api/profiles/stale': [], 'POST /api/profiles/delete': [], 'POST /api/notices/ack': [],
+    'POST /api/settings/reset-all': []
 };
 
 // Tabel route: 'METODE /path' -> handler(req, res, { url, sess }). Selain yang tercantum: berkas
@@ -1718,6 +1749,7 @@ const ROUTES = {
     'POST /api/diagnostics/export': handleDiagnosticsExport,
     'POST /api/profiles/stale': handleProfilesStale,
     'POST /api/profiles/delete': handleProfilesDelete,
+    'POST /api/settings/reset-all': handleResetAll,
     'POST /api/notices/ack': (req, res, { url }) => { ackNotice(url.searchParams.get('id') || 'all'); return sendJson(res, 200, { ok: true }); }
 };
 

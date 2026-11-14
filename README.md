@@ -2,7 +2,8 @@
 
 *Autopilot untuk Coretax.* Sebelumnya bernama "Coretax Agent" (nama paket npm dan repositori belum
 diubah). Sejak Tahap 2 aplikasi desktopnya Electron, dipasang per pengguna lewat installer NSIS ke
-`%LOCALAPPDATA%\Programs\taxio-pilot\taxio-pilot.exe` (tanpa admin, tanpa tanda tangan kode).
+`%LOCALAPPDATA%\Programs\Taxio Pilot\taxio-pilot.exe` (tanpa admin, tanpa tanda tangan kode; sebelum perubahan ini foldernya
+`coretax-agent`, lihat "Pasang, upgrade, hapus").
 
 ## Lokasi data, port dan token
 
@@ -17,6 +18,7 @@ Semua lokasi ditentukan `lib/paths.js`, di bawah satu akar `%LOCALAPPDATA%\Taxio
 | `chrome\`, `unduhan-sementara\` | Chrome bawaan, transit unduhan otomatis | sama |
 | `runtime.json` | `{ port, pid, token, version, startedAt }` instance yang berjalan | - |
 | `electron\` | userData Electron: cookie dashboard, cache, kunci satu-instance | - |
+| `reset-pending.json`, `skip-legacy-migration.json` | penanda "Reset all data" (lihat "Pasang, upgrade, hapus") | - |
 
 Hasil unduhan untuk pengguna tetap di `~/Downloads/CoretaxAgent/...`.
 
@@ -97,6 +99,41 @@ besar dependensi transitif (terukur 2026-11-12: 15 modul di `app.asar` alih-alih
 memuat modul itu). Build dari folder dengan `node_modules` sungguhan. Periksa sesudah build:
 `node -e "console.log(require('@electron/asar').listPackage('dist-electron/win-unpacked/resources/app.asar').filter(f=>/node_modules[\\\/]builder-util-runtime[\\\/]package.json/.test(f)))"`
 harus mencetak satu path.
+
+## Pasang, upgrade, hapus
+
+**Nama folder program** = `%LOCALAPPDATA%\Programs\Taxio Pilot\`. electron-builder menurunkan folder oneClick per-pengguna dari
+`package.json` "name" (`coretax-agent`) - bukan productName - dan pada PC yang sudah terpasang mengambilnya dari registry
+(`HKCU\Software\<GUID appId>\InstallLocation`), jadi mengganti "name" tidak memberi "Taxio Pilot" dan tidak memindahkan
+instalasi lama. "name" sengaja TIDAK diubah (ia juga menentukan cache electron-updater `%LOCALAPPDATA%\coretax-agent-updater`
+dan `app.getName()`; userData Electron sudah dipaksa ke `<akar>\electron`). Folder ditetapkan oleh
+`installer/installer.nsh` (`build.nsis.include`, makro `customInit`): path yang berakhir `\coretax-agent` (bawaan instalasi
+baru atau InstallLocation instalasi 4.0.0) diganti `\Taxio Pilot`; `/D=<folder>` dari pengguna tidak disentuh.
+
+**Upgrade di tempat** (4.0.0 di `Programs\coretax-agent` -> versi ini): appId sama => GUID sama => entri "Apps" yang sama.
+Template NSIS membaca lokasi LAMA dari registry (bukan dari $INSTDIR) dan menjalankan uninstaller lama diam-diam dengan
+`--updated`: aplikasi lama ditutup, folder `coretax-agent`, pintasan, dan kunci registry-nya dihapus; berkas baru masuk ke
+`Taxio Pilot` dan registry/pintasan ditulis ulang di sana. `customInstall` menghapus sisa folder lama bila uninstaller lama
+meninggalkannya (hanya bila berisi taxio-pilot.exe). Data di `%LOCALAPPDATA%\TaxioPilot` tidak disentuh. Pintasan yang
+disematkan ke taskbar menunjuk exe lama dan perlu disematkan ulang. Protokol `taxio-coretax://` didaftarkan ulang ke exe
+baru pada start pertama; `lib/legacy-handover.js` tidak menganggap `Programs\coretax-agent\taxio-pilot.exe` sebagai exe pkg
+lama (yang dinilai nama berkas `coretax-agent*.exe`, bukan nama folder).
+
+**Hapus lewat Windows (Apps)**: uninstaller menanyakan "Also delete your Taxio Pilot data?" (bawaan No). Hanya pada hapus
+sungguhan - tidak saat update/pasang ulang (`--updated`) dan tidak saat uninstaller dijalankan dengan `/S` (tanpa
+pengawasan: data dipertahankan). Ya = hapus `%LOCALAPPDATA%\TaxioPilot` (data, log, profil Chrome, Chrome bawaan, cache
+electron), cache updater, dan kunci protokol `taxio-coretax` bila masih menunjuk ke exe ini. Tidak pernah menyentuh
+`Downloads\CoretaxAgent`, folder lama `~/.coretax-agent*`, atau exe pkg lama.
+
+**Settings -> Reset all data** (`POST /api/settings/reset-all`, `lib/reset.js`): ditolak bila ada proses berjalan/antre;
+keluar dari Taxio Hub di PC ini, menulis `<akar>\reset-pending.json`, menutup aplikasi lewat jalur "Keluar" (jendela Chrome
+otomasi ditutup) dan membukanya ulang (`shell.relaunch`). Penghapusan dikerjakan di AWAL start berikutnya
+(`electron/main.js` sesudah `app.setPath`, dan `lib/app.js`), sebelum ada yang membuka berkas: dihapus `data`, `logs`,
+`profiles`, `unduhan-sementara`, `electron`, `runtime.json`, `update-cache`; dipertahankan `chrome\` (185 MB, bukan data
+pengguna), `legacy-v3.json`, `update-install.json`, serta di luar akar: hasil di `Downloads\CoretaxAgent` dan folder lama
+`~/.coretax-agent*` (migrasi dimatikan oleh `skip-legacy-migration.json` supaya entitas versi 3 tidak hidup lagi). Yang gagal
+dihapus (terkunci) dicatat di log dan dibiarkan; penanda selalu dibuang (tidak pernah diulang) dan lebih dari 15 menit
+dianggap basi - start tidak pernah terhalang.
 
 ## Rilis dan update otomatis
 
@@ -181,7 +218,7 @@ menampilkan langkah yang sama dan path exe lama bila tercatat saat serah-terima)
 1. **Tutup Taxio Pilot versi 4** (Settings -> Quit app, atau "Keluar" di ikon tray). Jangan jalankan dua
    versi bersamaan.
 2. Buka `coretax-agent.exe` lama (versi 4 tidak pernah menghapus/mengubahnya; installer NSIS hanya menulis
-   ke `%LOCALAPPDATA%\Programs\taxio-pilot` dan pintasannya), atau unduh lagi dari
+   ke `%LOCALAPPDATA%\Programs\Taxio Pilot` dan pintasannya), atau unduh lagi dari
    https://github.com/gavrelshendy/taxio-coretax-agent/releases/tag/v3.0.50.
 
 Yang terjadi:
@@ -252,8 +289,11 @@ akun ke grup. Selama menunggu, sesi tetap tersimpan tapi akun belum dianggap ter
 - `main.js` - the same core without any window, under plain `node` (smoke runs, tests, development).
 - `lib/app.js` - core startup order shared by both: data migration -> session restore (+ encrypting
   legacy plaintext secrets) -> dashboard server + `runtime.json` -> background health check.
+- `lib/reset.js` - "Reset all data": pending-marker + start-time deletion of the app's own data under the root
+  (see "Pasang, upgrade, hapus"); `installer/installer.nsh` - NSIS customisation (install folder, upgrade clean-up,
+  uninstall data question).
 - `lib/shell.js` - the platform seam: show/close dashboard, pick file/folder, native error box, bring the
-  automation Chrome to the front, encrypt/decrypt secrets, isPackaged/exePath, exit. Headless defaults
+  automation Chrome to the front, encrypt/decrypt secrets, isPackaged/exePath, exit, relaunch. Headless defaults
   (no-ops / plaintext) unless `electron/main.js` registers the Electron implementation. The core never
   `require('electron')`s.
 - `lib/updater.js` - update policy (schedule, retries, 426 gate, never during a run) over an injected
@@ -305,6 +345,7 @@ node scripts/test-run-wrappers.js     # batas waktu / Stop: sesi tetap sibuk sam
 node scripts/test-run-controls.js     # Stop / Jeda di titik aman setiap fitur (Coretax tiruan) + kontrol per fitur (lib/run-controls.js)
 node scripts/test-chrome-front.js     # jendela Chrome otomasi ke depan lewat pid; cache status jendela; kabar /events
 node scripts/test-profile-housekeeping.js # pemilihan & penghapusan profil Chrome PIC yang lama
+node scripts/test-reset.js                # "Reset all data" (fs tiruan + folder sementara + route) dan cek statis installer/installer.nsh
 ```
 
 ## Sesi paralel (beberapa jendela per PIC)
