@@ -40,14 +40,13 @@
     const findByKey = (key) => all().find((e) => L.entityKey(e) === key) || null;
 
     // ---------- Pilihan aktif ----------
-    // Preferensi PIC diingat untuk entitas apa pun yang punya lebih dari satu PIC (Taxio Hub
-    // ATAU Badan lokal) - keduanya login otomatis, jadi keduanya berhak mengingat pilihan.
-    const picPrefs = () => P.store.get('picPref', {});
-    E.pickFor = (entity) => L.pickPic(entity, picPrefs()[L.entityKey(entity)]);
+    // Entitas ber-PIC banyak (Hub ATAU Badan lokal) TIDAK punya PIC bawaan di palet: setiap pilihan baru
+    // dari palet selalu menanyakan PIC (keputusan pemilik - tidak pernah diam-diam memakai PIC utama
+    // maupun PIC terakhir). PIC yang sudah dipilih tetap melekat di E.selected (chip topbar) selama
+    // entitasnya masih terpilih; memilih entitas lain lalu kembali = ditanya lagi.
     E.current = () => (E.selected ? L.flattenSelection(E.selected.entity, E.selected.picId) : null);
     E.select = function (entity, picId) {
         if (P.multi) P.multi._drop(entity);
-        if (entity.project !== 'manual' && picId) { const p = picPrefs(); p[L.entityKey(entity)] = picId; P.store.set('picPref', p); }
         E.selected = { entity, picId: picId || null };
         P.store.set('sel', { key: L.entityKey(entity), picId: picId || null, name: entity.entity_name });
         P.emit('entity');
@@ -368,7 +367,8 @@
         // login otomatis, jadi keduanya butuh pemilih PIC yang sama.
         const multi = !unlinked && (e.pics || []).length > 1;
         const open = multi && pal.expanded === key;
-        const chosen = multi ? E.pickFor(e) : null;
+        // PIC yang tampil di chip hanya milik entitas yang SEDANG terpilih (info); baris lain: "Choose PIC".
+        const chosen = multi && cur && E.selected.picId ? e.pics.find((p) => p.pic_id === E.selected.picId) || null : null;
         const isLocal = e.project === 'local';
         const isManualRow = e.project === 'manual';
         // Label OTOMATIS dihapus dari sini - hampir semua baris di palet ini otomatis (Hub
@@ -382,7 +382,7 @@
         const mm = pal.multi;
         const isPrimary = mm && E.selected && keyOf(E.selected.entity) === key;
         const isChecked = mm && (isPrimary || pal.checked.has(key));
-        const picChip = multi && !mm ? '<span class="pic-chip">' + P.esc((chosen ? chosen.pic_name : '').split(' ')[0]) + P.icon(open ? 'up' : 'down', 15) + '</span>' : '';
+        const picChip = multi && !mm ? '<span class="pic-chip' + (chosen ? '' : ' need') + '">' + P.esc(chosen ? chosen.pic_name.split(' ')[0] : 'Choose PIC') + P.icon(open ? 'up' : 'down', 15) + '</span>' : '';
         const actions = isLocal && !mm ? '<span class="ent-actions"><button type="button" aria-label="Edit entity" data-act="edit" data-key="' + P.esc(key) + '">' + P.icon('pencil', 15) + '</button><button type="button" aria-label="Delete entity" data-act="del" data-key="' + P.esc(key) + '" class="danger-ic">' + P.icon('trash', 15) + '</button></span>' : '';
         const right = '<span class="row-right">' + picChip + tag + '</span>';
         const av = isManualRow ? 'SM' : L.initials(e.entity_name);
@@ -394,12 +394,10 @@
             // menutup .ent-main lebih awal dan merusak tata letak baris. Jadi saudaranya, bukan anaknya.
             + actions + '</div>';
         if (open && !mm) {
-            // Baris yang di-highlight: picCursor (digerakkan panah ↑↓, dikonfirmasi Enter) kalau
-            // ada, kalau tidak jatuh ke PIC yang sudah pernah dipilih/utama - SAMA sekali tidak
-            // menyentuh mouse, supaya Enter dua kali (pilih entitas, lalu pilih PIC) benar-benar
-            // bisa dipakai dari keyboard, bukan cuma klik.
-            const cursorId = pal.picCursor || (chosen && chosen.pic_id);
-            html += '<div class="pic-panel"><div class="cap">Log in with PIC</div>' + e.pics.map((p) =>
+            // Baris yang di-highlight: picCursor (digerakkan panah ↑↓, dikonfirmasi Enter). Awalnya
+            // KOSONG - tidak ada PIC yang terpilih sebelum pengguna memilihnya sendiri.
+            const cursorId = pal.picCursor;
+            html += '<div class="pic-panel"><div class="cap">Choose PIC to log in with</div>' + e.pics.map((p) =>
                 '<button type="button" class="radio-row" role="radio" aria-checked="' + (cursorId === p.pic_id) + '" data-act="pic" data-key="' + P.esc(key) + '" data-pic="' + P.esc(p.pic_id) + '"><span class="rd"></span><span class="grow">' + P.esc(p.pic_name) + '</span>' + (p.is_primary ? '<span class="tag auto" style="margin-left:0">PRIMARY</span>' : '') + '</button>').join('')
                 + '<div class="hint" style="padding:4px 2px 0">If an SPT was signed by another PIC, the SPT download is automatically retried with that PIC.</div></div>';
         }
@@ -420,12 +418,7 @@
         const q = pal.q.trim();
         const push = (e) => { palNav.push(e); return palNav.length - 1; };
         let html = '';
-        // Aksi global, bukan hasil pencarian - selalu di paling atas supaya tetap terlihat/bisa
-        // dipakai kapan saja, tidak terkubur di bawah daftar (dan tidak ikut hilang saat mengetik
-        // di kotak cari, beda dari daftar entitas lokal di bawah yang IKUT tersaring oleh q).
-        if (!P.isRestricted() && !pal.multi) {
-            html += '<button type="button" class="pal-add" data-act="add"><span class="ent-av acc-av">' + P.icon('plus', 18, '', 2.2) + '</span><span>Add new entity</span></button>';
-        }
+        // "Add entity" ada di footer palet (paintFoot), bukan lagi baris pertama daftar.
         const seen = new Set();
         // Galat pemuatan (mis. sesi Taxio Hub kedaluwarsa) dulu hanya terlihat sebagai "Belum ada entitas."
         (E.errors || []).forEach((m) => { html += '<div class="pal-note err">' + P.icon('warn', 15) + '<span>' + P.esc(m) + '</span></div>'; });
@@ -452,8 +445,6 @@
             }
         }
 
-        // Dicek terpisah dari `html` sekarang - tombol "Tambah entitas baru" selalu ada di atas
-        // (aksi global, bukan hasil pencarian), jadi `html` sendiri tidak pernah kosong lagi.
         const hadListContent = palNav.length > 0 || !!me;
         if (!hadListContent) html += '<div class="pal-empty">' + (q ? 'No entities match "' + P.esc(q) + '".' : (E.loaded ? 'No entities yet.' : 'Loading entities…')) + '</div>';
         if (pal.hover >= palNav.length) pal.hover = Math.max(0, palNav.length - 1);
@@ -465,11 +456,27 @@
     function paintPalette() {
         const body = P.$('pal-body'); const top = body ? body.scrollTop : 0;
         if (body) { body.innerHTML = bodyHtml(); body.scrollTop = top; }
+        paintFoot();
+    }
+    /** Petunjuk Enter mengikuti apa yang SEBENARNYA dilakukan Enter pada baris/keadaan saat ini. */
+    function enterHint() {
+        if (pal.expanded) return pal.picCursor ? 'use & log in' : '';
+        const e = palNav[pal.hover];
+        if (!e) return '';
+        if (e.project === 'manual') return 'use';
+        return (e.pics || []).length > 1 ? 'choose PIC' : 'use & log in';
+    }
+    function paintFoot() {
         const foot = P.$('pal-foot');
-        if (foot && pal.multi) {
+        if (!foot) return;
+        if (pal.multi) {
             const n = newCount();
             foot.innerHTML = '<span class="pal-keys"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Shift</kbd>+<kbd>Enter</kbd> tick</span><span><kbd>Enter</kbd> ' + (n ? 'add' : 'tick') + '</span></span><button type="button" class="btn btn-primary btn-sm" data-act="multi-ok">' + (n ? 'Add ' + n + (n === 1 ? ' client' : ' clients') : 'Done') + '</button>';
-        } else if (foot) foot.innerHTML = '<span style="display:flex;gap:6px;align-items:center"><kbd>↑</kbd><kbd>↓</kbd> select</span><span style="display:flex;gap:6px;align-items:center"><kbd>Enter</kbd> use &amp; log in</span>';
+            return;
+        }
+        const h = enterHint();
+        foot.innerHTML = '<span class="pal-keys"><span><kbd>↑</kbd><kbd>↓</kbd> ' + (pal.expanded ? 'choose PIC' : 'select') + '</span>' + (h ? '<span><kbd>Enter</kbd> ' + P.esc(h) + '</span>' : '') + '</span>'
+            + (P.isRestricted() ? '' : '<button type="button" class="pal-add" data-act="add">' + P.icon('plus', 14, '', 2.4) + 'Add entity</button>');
     }
 
     // Dipoll ringan selama palet terbuka - kalau jendelanya ditutup langsung (bukan lewat ikon X
@@ -500,7 +507,7 @@
         paintPalette(); input.focus();
         input.addEventListener('input', () => { pal.q = input.value; pal.hover = 0; pal.expanded = null; pal.picCursor = null; paintPalette(); });
         scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) E.closePalette(); });
-        scrim.addEventListener('mouseover', (e) => { const row = e.target.closest('.ent'); if (row && row.dataset.idx !== undefined && Number(row.dataset.idx) >= 0 && Number(row.dataset.idx) !== pal.hover) { pal.hover = Number(row.dataset.idx); scrim.querySelectorAll('.ent.hover').forEach((n) => n.classList.remove('hover')); if (!row.classList.contains('unlinked')) row.classList.add('hover'); } });
+        scrim.addEventListener('mouseover', (e) => { const row = e.target.closest('.ent'); if (row && row.dataset.idx !== undefined && Number(row.dataset.idx) >= 0 && Number(row.dataset.idx) !== pal.hover) { pal.hover = Number(row.dataset.idx); scrim.querySelectorAll('.ent.hover').forEach((n) => n.classList.remove('hover')); if (!row.classList.contains('unlinked')) row.classList.add('hover'); paintFoot(); } });
         scrim.addEventListener('click', async (e) => {
             const t = e.target.closest('[data-act]');
             if (!t) return;
@@ -536,14 +543,14 @@
                 if (!pics.length) return;
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                     e.preventDefault();
-                    let idx = pics.findIndex((p) => p.pic_id === pal.picCursor);
-                    if (idx < 0) idx = 0;
-                    idx = e.key === 'ArrowDown' ? Math.min(pics.length - 1, idx + 1) : Math.max(0, idx - 1);
+                    const at = pics.findIndex((p) => p.pic_id === pal.picCursor);
+                    const idx = at < 0 ? (e.key === 'ArrowDown' ? 0 : pics.length - 1) : (e.key === 'ArrowDown' ? Math.min(pics.length - 1, at + 1) : Math.max(0, at - 1));
                     pal.picCursor = pics[idx].pic_id;
                     paintPalette();
                 } else if (e.key === 'Enter') {
                     e.preventDefault();
-                    const pic = pics.find((p) => p.pic_id === pal.picCursor) || pics[0];
+                    const pic = pics.find((p) => p.pic_id === pal.picCursor);
+                    if (!pic) return; // belum ada PIC yang dipilih: Enter tidak login
                     E.select(ent, pic.pic_id);
                     E.closePalette();
                     autoLoginAfterSelect();
@@ -576,12 +583,11 @@
         if (multi) {
             const key = L.entityKey(e);
             if (pal.expanded === key) { pal.expanded = null; pal.picCursor = null; }
-            else { pal.expanded = key; const c = E.pickFor(e); pal.picCursor = c ? c.pic_id : ((e.pics[0] || {}).pic_id || null); }
+            else { pal.expanded = key; pal.picCursor = null; }
             paintPalette();
             return;
         }
-        const pic = (e.pics || []).length ? E.pickFor(e) : null;
-        E.select(e, pic ? pic.pic_id : null);
+        E.select(e, (e.pics || []).length ? e.pics[0].pic_id : null);
         E.closePalette();
         autoLoginAfterSelect();
     }
