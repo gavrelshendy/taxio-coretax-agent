@@ -58,7 +58,7 @@ test('masaLabel', () => { assert.strictEqual(L.masaLabel('0826'), 'August 2026')
 
 test('initials: tanpa bentuk badan hukum, biasanya tiga huruf (satu kata pakai tiga huruf pertama)', () => {
     assert.strictEqual(L.initials('PT Contoh Sejahtera Abadi'), 'CSA');
-    assert.strictEqual(L.initials('MITRA KARYA ABADI, PT'), 'BKA');
+    assert.strictEqual(L.initials('MITRA KARYA ABADI, PT'), 'MKA');
     assert.strictEqual(L.initials('Yayasan Contoh Peduli'), 'CP');
     assert.strictEqual(L.initials('Budi'), 'BUD');
     assert.strictEqual(L.initials('PT'), 'E');

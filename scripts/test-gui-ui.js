@@ -648,6 +648,38 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.emulateMedia({ colorScheme: null });
         await sessionsGoneThenReselect(); // muat ulang melepas pilihan entitas (tidak ada jendela Coretax): pilih lagi
     });
+    await test('palet: di jendela kecil (1000x700) memuat >= 9 baris, di 1280x860 >= 11 baris, dan tetap di dalam layar', async () => {
+        const cap = async () => {
+            await page.click('#entity-chip'); await page.waitForSelector('#palette .ent');
+            const r = await page.evaluate(() => {
+                const list = document.getElementById('pal-body'), row = document.querySelector('#pal-body .ent'), dlg = document.querySelector('#palette .dialog');
+                return { maxH: parseFloat(getComputedStyle(list).maxHeight), rowH: row.getBoundingClientRect().height, bottom: dlg.getBoundingClientRect().bottom, h: window.innerHeight };
+            });
+            await page.keyboard.press('Escape'); await page.waitForSelector('#palette', { state: 'detached' });
+            return Object.assign(r, { rows: Math.floor(r.maxH / r.rowH) });
+        };
+        await page.setViewportSize({ width: 1000, height: 700 }); await pause(300);
+        const small = await cap();
+        assert.ok(small.rows >= 9, 'palet 1000x700 memuat ' + small.rows + ' baris (maks ' + small.maxH + ' px, baris ' + small.rowH + ' px)');
+        await page.setViewportSize({ width: 1280, height: 860 }); await pause(300);
+        const mid = await cap();
+        assert.ok(mid.rows >= 11, 'palet 1280x860 memuat ' + mid.rows + ' baris');
+        await page.setViewportSize({ width: 1440, height: 900 }); await pause(200);
+    });
+    await test('topbar: di halaman yang mengubah data, chip entitas tetap terbaca di 1280 dan 1000 px; judul halaman tidak terpotong', async () => {
+        await page.click('.nav-item[data-nav="impor"]'); await page.waitForSelector('.topbar .tag.write');
+        for (const w of [1280, 1000]) {
+            await page.setViewportSize({ width: w, height: 800 }); await pause(300);
+            const m = await page.evaluate(() => {
+                const h1 = document.querySelector('.topbar h1'), chip = document.getElementById('entity-chip'), b = chip.querySelector('.tx b');
+                return { h1Cut: h1.scrollWidth > h1.clientWidth + 1, chipW: chip.getBoundingClientRect().width, nameCut: b.scrollWidth > b.clientWidth + 1, name: b.textContent, scrollW: document.documentElement.scrollWidth, w: window.innerWidth };
+            });
+            assert.ok(!m.h1Cut, 'judul halaman terpotong di ' + w + ' px');
+            assert.ok(m.chipW >= 200, 'chip entitas terpotong di ' + w + ' px: ' + m.chipW + ' px, ' + m.name);
+            assert.ok(m.scrollW <= m.w + 1, 'scroll horizontal di ' + w + ' px');
+        }
+        await page.setViewportSize({ width: 1440, height: 900 }); await pause(200);
+    });
     await test('sidebar: diciutkan ke rel ikon (tombol, Ctrl+B) dengan tooltip dan badge proses aktif, diingat; otomatis rel di bawah 1100 px; topbar satu baris', async () => {
         const st = () => page.evaluate(() => ({ collapsed: document.querySelector('#app').classList.contains('sb-collapsed'), overlay: document.querySelector('#app').classList.contains('sb-overlay'),
             sbW: document.querySelector('.sidebar').getBoundingClientRect().width, mainL: document.querySelector('.main').getBoundingClientRect().left, store: localStorage.getItem('pilot.sb'),
@@ -1007,6 +1039,13 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('simpan entitas: terpilih dengan tag OTOMATIS (kredensial tersimpan, bukan lagi MANUAL)', async () => {
         await page.click('#entity-dialog [data-act="save"]');
         await page.waitForSelector('#entity-dialog', { state: 'detached' });
+        await pause(200);
+        // Aturan pemilik: entitas lokal 2+ PIC tidak pernah dipilih dengan PIC bawaan - palet terbuka menanyakan PIC.
+        assert.ok(await visible('#palette'), 'palet pilihan PIC terbuka setelah simpan');
+        assert.strictEqual(await page.locator('#pal-body .radio-row').count(), 2, 'dua PIC ditawarkan');
+        assert.ok(!(await text('#entity-chip')).includes('CV Klien Baru Sejahtera'), 'belum terpilih dengan PIC bawaan');
+        await page.locator('#pal-body .radio-row', { hasText: 'Ani Sample Wijaya' }).click();
+        await page.waitForSelector('#palette', { state: 'detached' });
         await pause(200);
         const chip = await text('#entity-chip');
         assert.ok(chip.includes('CV Klien Baru Sejahtera') && chip.includes('AUTO') && chip.includes('PIC Ani Sample Wijaya'));

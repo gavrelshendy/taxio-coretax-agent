@@ -718,10 +718,18 @@
                 await E.load();
                 const saved = E.personal.find((x) => x.local_id === r.entity.local_id);
                 if (saved) {
-                    E.select(saved, null);
-                    // Satu PIC = tidak ada yang perlu dipilih, langsung login otomatis seperti memilih dari palet.
-                    // 2+ PIC: biarkan terpilih dulu; PIC dipilih lewat palet sebelum login.
-                    if ((saved.pics || []).length <= 1) autoLoginAfterSelect();
+                    if ((saved.pics || []).length <= 1) {
+                        // Satu PIC = tidak ada yang perlu dipilih, langsung login otomatis seperti memilih dari palet.
+                        E.select(saved, null);
+                        autoLoginAfterSelect();
+                    } else {
+                        // 2+ PIC: aturan pemilik - selalu tanya. Tidak dipilih dengan PIC bawaan; palet dibuka dengan
+                        // pilihan PIC entitas ini, login baru berjalan setelah PIC dipilih.
+                        E.closePalette();
+                        E.openPalette();
+                        pal.q = saved.entity_name; const q = P.$('pal-q'); if (q) q.value = pal.q;
+                        pal.expanded = L.entityKey(saved); pal.picCursor = null; paintPalette();
+                    }
                 }
                 P.info('Entity "' + r.entity.entity_name + '" saved.');
             } catch (err) { dlg.busy = false; dlg.error = err.message; paintDialog(); }
