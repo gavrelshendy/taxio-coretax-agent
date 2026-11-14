@@ -61,6 +61,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     const lastCall = () => calls[calls.length - 1];
     const pause = (ms) => page.waitForTimeout(ms);
     // Kosongkan sesi palsu; pilihan entitas otomatis lepas (jendela hilang), lalu pilih lagi Sejahtera/ANDI.
+    // Popover "Coretax windows" (meter di topbar satu baris) memuat tab sesi; buka bila belum terbuka.
+    const openWin = async () => { if (!(await page.locator('#sess-win').count())) await page.click('#sess-meter'); await page.waitForSelector('#sess-win'); };
     const sessionsGoneThenReselect = async () => {
         fakes.ctl.sessions = [];
         await page.waitForFunction(() => document.querySelector('#entity-chip').textContent.includes('Select entity'), null, { timeout: 7000 });
@@ -143,20 +145,21 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     });
 
     // ------------------------------------------------ kerangka aplikasi
-    await test('sidebar: grup DOWNLOAD dan AUTOMATION, urutan menu terbaru; PPh 25 Kode Billing di AUTOMATION tanpa badge', async () => {
+    await test('sidebar: grup Download / Change in Coretax / Year-End (menurut akibatnya), semua halaman tetap ada; tanpa Fix Bukti Potong', async () => {
         const titles = await page.locator('.nav-title').allInnerTexts();
-        assert.deepStrictEqual(titles, ['DOWNLOAD', 'AUTOMATION']);
+        assert.deepStrictEqual(titles.map((t) => t.trim()), ['Download', 'Change in Coretax', 'Year-End']);
         const items = await page.locator('.nav-item[data-nav]').allInnerTexts();
-        assert.deepStrictEqual(items.map((t) => t.trim()), ['SPT', 'e-Bupot', 'Bukti Potong Saya', 'e-Faktur', 'Annual PPh 21 Recap', 'e-Reporting', 'Credit Faktur Masukan', 'PPh 25 Kode Billing', 'e-Bupot Upload & Issue'], 'urutan & nama menu sidebar');
+        assert.deepStrictEqual(items.map((t) => t.trim()), ['SPT', 'e-Bupot', 'Bukti Potong Saya', 'e-Faktur', 'e-Bupot Upload & Issue', 'Credit Faktur Masukan', 'PPh 25 Kode Billing', 'e-Reporting', 'Annual PPh 21 Recap'], 'urutan & nama menu sidebar');
         assert.ok((await text('#open-settings')).includes('Settings'));
-        assert.ok(items.join('|').includes('PPh 25 Kode Billing'));
-        const billing = page.locator('.nav-item[data-nav="billing"]');
-        assert.ok(!(await billing.innerText()).includes('NEW'), 'tanpa badge NEW');
-        const otomasi = page.locator('.nav-group').nth(1);
-        assert.ok((await otomasi.innerText()).includes('PPh 25 Kode Billing'));
+        assert.ok(!(await text('.sidebar')).includes('Fix Bukti Potong'), 'tanpa halaman Fix Bukti Potong (keputusan pemilik)');
+        assert.ok(!(await page.locator('.nav-item[data-nav="billing"]').innerText()).includes('NEW'), 'tanpa badge NEW');
+        const change = page.locator('.nav-group').nth(1);
+        assert.ok((await change.innerText()).includes('PPh 25 Kode Billing') && (await change.innerText()).includes('Credit Faktur Masukan'));
         assert.ok(!(await page.locator('.nav-group').nth(0).innerText()).includes('Billing'));
-        assert.ok((await otomasi.innerText()).includes('Annual PPh 21 Recap'), 'Annual PPh 21 Recap (Mode A1) di AUTOMATION, tersedia untuk anggota biasa');
-        assert.ok(!(await page.locator('.nav-group').nth(0).innerText()).includes('PPh 21 Recap'));
+        assert.ok((await page.locator('.nav-group').nth(2).innerText()).includes('Annual PPh 21 Recap'), 'Annual PPh 21 Recap di Year-End, tersedia untuk anggota biasa');
+        // Label tidak terpotong di sidebar terbuka.
+        const cut = await page.evaluate(() => Array.from(document.querySelectorAll('.nav-item .grow')).filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
+        assert.deepStrictEqual(cut, [], 'label sidebar tidak terpotong');
     });
     await test('tanpa entitas: formulir tetap tampil dengan banner pilih entitas, tombol mulai nonaktif', async () => {
         const main = await text('.col-main');
@@ -579,11 +582,54 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.emulateMedia({ colorScheme: null });
         await sessionsGoneThenReselect(); // muat ulang melepas pilihan entitas (tidak ada jendela Coretax): pilih lagi
     });
+    await test('sidebar: diciutkan ke rel ikon (tombol, Ctrl+B) dengan tooltip dan badge proses aktif, diingat; otomatis rel di bawah 1100 px; topbar satu baris', async () => {
+        const st = () => page.evaluate(() => ({ collapsed: document.querySelector('#app').classList.contains('sb-collapsed'), overlay: document.querySelector('#app').classList.contains('sb-overlay'),
+            sbW: document.querySelector('.sidebar').getBoundingClientRect().width, mainL: document.querySelector('.main').getBoundingClientRect().left, store: localStorage.getItem('pilot.sb'),
+            topH: document.querySelector('.topbar').getBoundingClientRect().height, scrollW: document.documentElement.scrollWidth, w: window.innerWidth }));
+        const s0 = await st();
+        assert.ok(!s0.collapsed && s0.sbW >= 220, 'bawaan: sidebar terbuka');
+        assert.ok(s0.topH <= 57, 'topbar satu baris (' + s0.topH + ' px)');
+        await page.click('.sb-collapse'); await pause(400);
+        const s1 = await st();
+        assert.ok(s1.collapsed && s1.sbW <= 60 && s1.mainL <= 60, 'diciutkan: rel ikon, konten mengisi lebar');
+        assert.strictEqual(s1.store, '"collapsed"', 'diingat');
+        assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.nav-item .grow')).opacity), '0', 'label disembunyikan');
+        await page.hover('.nav-item[data-nav="ebupot"]'); await pause(250);
+        assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.nav-item[data-nav="ebupot"]'), '::after').opacity), '1', 'tooltip label saat diciutkan');
+        assert.strictEqual(await page.getAttribute('.nav-item[data-nav="ebupot"]', 'data-tip'), 'e-Bupot');
+        // Badge proses aktif tetap terlihat di rel.
+        fakes.ctl.run = { active: false, paused: false, label: '', jenisRequested: [], jenisTally: {}, holdReason: '', plan: null, runs: [{ key: 'p-rina', active: true, label: 'e-Bupot BPPU · CV Sample Niaga Mandiri' }], anyActive: true };
+        await page.waitForSelector('#sb-runs .nb', { timeout: 5000 });
+        assert.strictEqual(await text('#sb-runs .nb'), '1');
+        assert.ok((await page.getAttribute('#sb-runs', 'data-tip')).includes('e-Bupot BPPU'));
+        fakes.ctl.run = null;
+        await page.waitForSelector('#sb-runs', { state: 'detached', timeout: 5000 });
+        // Diingat setelah muat ulang (dipasang sebelum paint).
+        await page.reload(); await page.waitForSelector('#app .sidebar');
+        assert.ok((await st()).collapsed, 'tetap diciutkan setelah muat ulang');
+        await page.keyboard.press('Control+b'); await pause(400);
+        const s2 = await st();
+        assert.ok(!s2.collapsed && s2.store === '"expanded"', 'Ctrl+B membuka lagi dan diingat');
+        // Lebar sempit: otomatis rel; dibuka = di atas konten (scrim), konten tidak bergeser.
+        await page.setViewportSize({ width: 1000, height: 700 }); await pause(300);
+        const s3 = await st();
+        assert.ok(s3.collapsed && s3.mainL <= 60, 'di bawah 1100 px otomatis rel');
+        await page.click('.brand-logo'); await pause(400);
+        const s4 = await st();
+        assert.ok(s4.overlay && s4.sbW >= 220 && Math.abs(s4.mainL - s3.mainL) < 2, 'dibuka di atas konten tanpa menggeser');
+        assert.ok(s4.topH <= 57 && s4.scrollW <= s4.w + 1, 'topbar satu baris, tanpa scroll horizontal di 1000 px');
+        await page.keyboard.press('Escape'); await pause(300);
+        assert.ok(!(await st()).overlay, 'Esc menutup sidebar yang melayang');
+        assert.strictEqual((await st()).store, '"expanded"', 'lebar sempit tidak mengubah pilihan yang diingat');
+        await page.setViewportSize({ width: 1440, height: 900 }); await pause(200);
+        await sessionsGoneThenReselect(); // muat ulang melepas pilihan entitas (tidak ada jendela Coretax): pilih lagi
+    });
     await test('topbar: tab sesi menampilkan jendela yang benar-benar terbuka, tab entitas terpilih menyala, X menutupnya; tidak terpotong di jendela sempit', async () => {
         fakes.ctl.sessions = [
             { picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT CONTOH SEJAHTERA ABADI' },
             { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }
         ];
+        await openWin(); // tab sesi kini di popover "Coretax windows" (meter di topbar)
         await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 2, null, { timeout: 6000 });
         const tabs = page.locator('.sess-tab');
         assert.ok((await tabs.nth(0).getAttribute('class')).includes('active'), 'tab sesi entitas terpilih (p-andi) menyala');
@@ -594,11 +640,13 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await pause(200);
         const fit = await page.evaluate(() => {
             const w = window.innerWidth;
-            const els = Array.from(document.querySelectorAll('.topbar .title, .topbar .status-pill, #entity-chip, .sess-tab, .sess-new'));
+            const els = Array.from(document.querySelectorAll('.topbar .title, .topbar .status-pill, #entity-chip, #sess-meter, #sess-win, .sess-tab, .sess-new'));
             return { over: els.filter((e) => { const r = e.getBoundingClientRect(); return r.left < -1 || r.right > w + 1; }).map((e) => e.className || e.id), scrollW: document.documentElement.scrollWidth, w };
         });
         assert.deepStrictEqual(fit.over, [], 'tidak ada bagian topbar yang melewati tepi layar');
         assert.ok(fit.scrollW <= fit.w + 1, 'tidak ada scroll horizontal halaman');
+        const topH = await page.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height);
+        assert.ok(topH <= 57, 'topbar tetap satu baris (' + topH + ' px)');
         await shot('sesi-tab-sempit');
         await page.setViewportSize({ width: 1440, height: 900 });
         await tabs.nth(1).locator('[data-sess-close]').click();
@@ -610,6 +658,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
             { picId: 'p-andi', kind: 'entity', open: true, loggedIn: true, identity: '0123456780910000 · PT CONTOH SEJAHTERA ABADI' },
             { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }
         ];
+        await openWin(); // tab sesi kini di popover "Coretax windows" (meter di topbar)
         await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 2, null, { timeout: 6000 });
         await page.locator('.sess-tab').nth(1).locator('.sess-main').click();
         await page.waitForFunction(() => /MITRA KARYA ABADI/.test((document.querySelector('#entity-chip') || {}).textContent || ''), null, { timeout: 3000 });
@@ -634,6 +683,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         fakes.ctl.sessions = [{ picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }];
         await page.click('.nav-item[data-nav="faktur"]');
         await page.waitForSelector('.pp');
+        await openWin(); // tab sesi kini di popover "Coretax windows" (meter di topbar)
         await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 1, null, { timeout: 6000 });
         await page.locator('.sess-tab .sess-drop').click();
         await page.waitForSelector('.sess-pop');
@@ -661,6 +711,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     });
     await test('sesi kedaluwarsa ("Belum login"): tombol Login ulang login lagi di jendela PIC yang sama', async () => {
         fakes.ctl.sessions = [{ picId: 'p-andi', kind: 'entity', open: true, loggedIn: false, identity: '' }, { picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0123 · CV Sample Niaga Mandiri' }];
+        await openWin(); // tab sesi kini di popover "Coretax windows" (meter di topbar)
         await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 2, null, { timeout: 6000 });
         const tabs = page.locator('.sess-tab');
         assert.ok((await tabs.nth(0).textContent()).includes('Not logged in'), 'tab sesi kedaluwarsa bertuliskan Not logged in');
@@ -703,6 +754,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         fakes.ctl.sessions = [{ picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0123 · CV Sample Niaga Mandiri' }];
         try {
             await page.waitForFunction(() => (window.Pilot.state.runs || []).length === 1 && window.Pilot.state.sessions.length === 1, null, { timeout: 6000 });
+            await openWin(); // tab sesi kini di popover "Coretax windows" (meter di topbar)
             await page.waitForSelector('.sess-tab.busy', { timeout: 4000 });
             assert.ok((await text('.sess-tab.busy')).includes('Running'), 'tab sesi yang sibuk diberi penanda');
             calls.length = 0;
@@ -1008,6 +1060,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         const queued = { key: 'run:9', id: 9, pool: 'p-andi', entity: 'CSA', tag: 'CSA', label: 'SPT pph21 · PT Contoh Sejahtera Abadi', active: true, queued: true, position: 1, waitReason: 'busy' };
         fakes.ctl.run = () => Object.assign({ jenisRequested: [], jenisTally: {}, holdReason: '', plan: null, paused: false, runs: [queued], anyActive: true }, queued);
         try {
+            await openWin(); // tab sesi kini di popover "Coretax windows" (meter di topbar)
             await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 2, null, { timeout: 6000 });
             const strip = await text('.sess-strip');
             assert.ok(strip.includes('#1') && strip.includes('#2'), 'jendela PIC yang sama bernomor: ' + strip);

@@ -91,14 +91,95 @@
         if (r.includes('restricted')) return 'Restricted Editor';
         return r ? r.charAt(0).toUpperCase() + r.slice(1) : 'Member';
     }
+    // Sidebar bisa diciutkan ke rel ikon (tombol, logo, Ctrl+B; diingat). Di bawah 1100 px otomatis rel; membukanya di
+    // lebar sempit menampilkan sidebar DI ATAS konten (dengan scrim), tanpa menggeser konten.
+    const NARROW = 1100;
+    let sbOverlay = false;
+    const isNarrow = () => window.innerWidth < NARROW;
+    const sbPref = () => (P.store.get('sb', 'expanded') === 'collapsed' ? 'collapsed' : 'expanded');
+    function sbClasses() {
+        const narrow = isNarrow();
+        if (!narrow) sbOverlay = false;
+        const collapsed = narrow ? !sbOverlay : sbPref() === 'collapsed';
+        return (collapsed ? 'sb-collapsed' : '') + (narrow && sbOverlay ? ' sb-overlay' : '');
+    }
+    function applySidebar(animate) {
+        const app = P.$('app'); if (!app) return;
+        const main = app.querySelector('.main');
+        const before = main ? main.getBoundingClientRect().left : 0;
+        const cls = sbClasses();
+        app.classList.toggle('sb-collapsed', /sb-collapsed/.test(cls));
+        app.classList.toggle('sb-overlay', /sb-overlay/.test(cls));
+        const tg = app.querySelector('.sb-collapse'); if (tg) tg.setAttribute('aria-expanded', String(!/sb-collapsed/.test(cls)));
+        // Konten bergeser dengan FLIP (transform), bukan melompat.
+        if (animate && main && !P.reducedMotion()) {
+            const after = main.getBoundingClientRect().left;
+            if (Math.abs(before - after) > 1) { main.style.transition = 'none'; main.style.transform = 'translateX(' + (before - after) + 'px)'; void main.offsetWidth; main.style.transition = ''; main.style.transform = ''; }
+        }
+    }
+    S.toggleSidebar = function () {
+        if (isNarrow()) sbOverlay = !sbOverlay;
+        else P.store.set('sb', sbPref() === 'collapsed' ? 'expanded' : 'collapsed');
+        applySidebar(true);
+    };
+    let wasNarrow = isNarrow();
+    window.addEventListener('resize', () => { const n = isNarrow(); if (n !== wasNarrow) { wasNarrow = n; sbOverlay = false; applySidebar(false); } });
+    document.addEventListener('keydown', (e) => {
+        if (view !== 'app') return;
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); S.toggleSidebar(); return; }
+        if (e.key === 'Escape') {
+            if (winOpen && !document.querySelector('.sess-pop')) { closeWin(); return; }
+            if (sbOverlay) { sbOverlay = false; applySidebar(true); }
+        }
+    });
+
+    const activeRuns = () => (P.state.runs || []).filter((r) => r.active);
+    function runsBadgeHtml() {
+        const list = activeRuns();
+        if (!list.length) return '';
+        const queued = list.filter((r) => r.queued).length;
+        const tip = list.length + (list.length === 1 ? ' run' : ' runs') + ' active' + (queued ? ' (' + queued + ' queued)' : '') + ': ' + list.map((r) => r.label || 'Process').join(' · ');
+        return '<button type="button" class="nav-item sb-runs" id="sb-runs" data-tip="' + esc(tip) + '" aria-label="' + esc(tip) + '">' + P.icon('loader', 17, 'spin', 2.2)
+            + '<span class="grow fade-l">' + list.length + (list.length === 1 ? ' run active' : ' runs active') + '</span><span class="nb">' + list.length + '</span></button>';
+    }
+    S.renderRunsBadge = function () { const el = P.$('sb-runs-slot'); if (el) { const h = runsBadgeHtml(); if (el.innerHTML !== h) el.innerHTML = h; } };
     function sidebarHtml() {
         const cur = P.state.page;
-        const groups = P.pages.NAV.map((g) => '<div class="nav-group"><div class="nav-title">' + g.title + '</div>' + g.items.filter((it) => !(it.hideForRestricted && P.isRestricted())).map((it) =>
-            '<button type="button" class="nav-item" data-nav="' + it.id + '" title="' + esc(it.full || it.label) + '"' + (it.id === cur ? ' aria-current="page"' : '') + '>' + P.icon(it.icon, 18) + '<span class="grow">' + esc(it.label) + '</span>' + (it.badge ? '<span class="nav-badge">' + it.badge + '</span>' : '') + '</button>').join('') + '</div>').join('');
+        const groups = P.pages.NAV.map((g) => {
+            const items = g.items.filter((it) => !(it.hideForRestricted && P.isRestricted()));
+            if (!items.length) return '';
+            return '<div class="nav-group"><div class="nav-title"><span class="fade-l">' + g.title + '</span></div>' + items.map((it) =>
+                '<button type="button" class="nav-item" data-nav="' + it.id + '" data-tip="' + esc(it.label) + '" title="' + esc(it.full || it.label) + '"' + (it.id === cur ? ' aria-current="page"' : '') + '>' + P.icon(it.icon, 18) + '<span class="grow fade-l">' + esc(it.label) + '</span>' + (it.badge ? '<span class="nav-badge fade-l">' + it.badge + '</span>' : '') + '</button>').join('') + '</div>';
+        }).join('');
         const email = P.hub().email || '';
-        return '<aside class="sidebar"><div class="brand"><div class="brand-logo"><img src="/assets/taxio-pilot-logo.png" alt="Taxio Pilot"></div><div class="brand-name"><b>Taxio Pilot</b><span id="ver-badge">' + esc(P.state.version ? 'v' + P.state.version.version : '') + '</span></div></div>'
-            + groups + '<div class="spacer"></div><div class="stack" style="gap:6px"><button type="button" class="nav-item" id="open-settings">' + P.icon('gear', 18) + '<span class="grow">Settings</span></button>'
-            + '<div class="userbox"><span class="avatar">' + esc((email[0] || 'T').toUpperCase() + ((email.split('@')[0] || '')[1] || '').toUpperCase()) + '</span><div class="who"><b title="' + esc(email) + '">' + esc(email || 'Taxio Hub') + '</b><span><i class="dot"></i>Connected · ' + esc(roleLabel()) + '</span></div></div></div></aside>';
+        const ver = esc(P.state.version ? 'v' + P.state.version.version : '');
+        return '<aside class="sidebar" aria-label="Main navigation"><div class="sb-bg"></div><div class="sb-edge"></div><div class="sb-in">'
+            + '<div class="brand"><button type="button" class="brand-logo" data-sb-toggle title="Expand or collapse the sidebar (Ctrl+B)" aria-label="Toggle sidebar"><img src="/assets/taxio-pilot-logo.png" alt=""></button>'
+            + '<div class="brand-name fade-l"><b>Taxio Pilot</b><span id="ver-badge">' + ver + '</span></div>'
+            + '<button type="button" class="icon-btn sb-collapse fade-l" data-sb-toggle title="Collapse sidebar (Ctrl+B)" aria-label="Collapse sidebar" aria-expanded="true">' + P.icon('side', 17) + '</button></div>'
+            + '<nav class="sb-nav">' + groups + '</nav>'
+            + '<div class="sb-foot"><div id="sb-runs-slot">' + runsBadgeHtml() + '</div><button type="button" class="nav-item" id="open-settings" data-tip="Settings">' + P.icon('gear', 18) + '<span class="grow fade-l">Settings</span></button>'
+            + '<div class="userbox" title="' + esc(email) + '"><span class="avatar">' + esc((email[0] || 'T').toUpperCase() + ((email.split('@')[0] || '')[1] || '').toUpperCase()) + '</span><div class="who fade-l"><b>' + esc(email || 'Taxio Hub') + '</b><span><i class="dot"></i>Connected · ' + esc(roleLabel()) + '</span></div></div></div>'
+            + '</div></aside><div class="sb-scrim" data-sb-close></div>';
+    }
+
+    // ---------- Topbar satu baris: judul + grup (+ label efek), status, entitas, aksi, jendela Coretax ----------
+    // Tab sesi (jendela Chrome per PIC) pindah ke popover "Coretax windows" dari meter di topbar - semua tombolnya
+    // (pilih sesi, ganti entitas, login ulang, tutup, sesi baru) tetap sama.
+    let winOpen = false;
+    // Menutup tanpa menggambar ulang topbar: elemen di bawah kursor (mis. chip entitas) tidak diganti di antara tekan dan lepas mouse.
+    function closeWin() { if (!winOpen) return; winOpen = false; const w = P.$('sess-win'); if (w) w.remove(); const m = P.$('sess-meter'); if (m) m.setAttribute('aria-expanded', 'false'); }
+    function meterHtml() {
+        const sess = E.sessions();
+        const segs = sess.slice(0, 8).map((s) => '<i class="' + (P.run.busy(s.picId) ? 'on' : '') + '"></i>').join('');
+        const busy = sess.filter((s) => P.run.busy(s.picId)).length;
+        const label = sess.length ? sess.length + (sess.length === 1 ? ' window' : ' windows') : 'No windows';
+        return '<button type="button" class="meter" id="sess-meter" aria-haspopup="dialog" aria-expanded="' + winOpen + '" title="Coretax windows' + (busy ? ' · ' + busy + ' running' : '') + '">'
+            + (segs ? '<span class="segs">' + segs + '</span>' : P.icon('globe', 15)) + '<span class="meter-l">' + label + '</span>' + P.icon('down', 14) + '</button>';
+    }
+    function winHtml() {
+        if (!winOpen) return '';
+        return '<div class="sess-win" id="sess-win" role="dialog" aria-label="Coretax windows"><div class="sw-head"><b>Coretax windows</b><span class="hint">One Chrome window per PIC session. Click a window to work with its entity.</span></div>' + E.sessionStripHtml() + '</div>';
     }
     function topbarHtml() {
         const meta = P.pages.meta(P.state.page) || { label: '', crumb: '' };
@@ -107,15 +188,17 @@
         const busy = P.state.run.active;
         let buttons = '';
         if (ent && L.isManualLike(ent)) {
-            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Open Coretax</button><button type="button" class="btn" id="btn-check-session">' + P.icon('shield', 17) + 'Check session</button>';
+            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 16) + '<span class="bl">Open Coretax</span></button><button type="button" class="btn" id="btn-check-session">' + P.icon('shield', 16) + '<span class="bl">Check session</span></button>';
         } else if (ent) {
             buttons = '<button type="button" class="icon-btn" id="btn-refresh-session" title="Re-check who is signed in to Coretax right now" aria-label="Refresh session status">' + P.icon('retry', 16) + '</button>'
                 + (P.isRestricted() ? '' : '<button type="button" class="icon-btn" id="btn-manual-for-entity" title="Manual login for this entity - you type the Coretax password yourself, without using saved credentials" aria-label="Manual login for this entity"' + (busy ? ' disabled' : '') + '>' + P.icon('user', 16) + '</button>')
-                + '<button type="button" class="btn" id="btn-login"' + (busy ? ' disabled' : '') + ' title="Log in and impersonate this entity, without filling any form">' + P.icon('globe', 17) + 'Sign in to Coretax</button>';
+                + '<button type="button" class="btn" id="btn-login"' + (busy ? ' disabled' : '') + ' title="Log in and impersonate this entity, without filling any form">' + P.icon('globe', 16) + '<span class="bl">Sign in to Coretax</span></button>';
         } else if (!P.isRestricted()) {
-            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 17) + 'Open Coretax</button>';
+            buttons = '<button type="button" class="btn" id="btn-open-coretax"' + (busy ? ' disabled' : '') + '>' + P.icon('globe', 16) + '<span class="bl">Open Coretax</span></button>';
         }
-        return '<header class="topbar"><div class="title"><span class="crumb">' + esc(meta.crumb) + '</span><h1>' + esc(meta.full || meta.label) + '</h1></div><span class="status-pill ' + pill.kind + '"><i></i>' + esc(pill.text) + '</span>' + E.chipHtml() + buttons + E.sessionStripHtml() + '</header>';
+        const effect = meta.kind === 'write' ? '<span class="tag write lg" title="This page changes data in Coretax"><i></i>Changes data in Coretax</span>' : '';
+        return '<header class="topbar"><div class="title"><h1>' + esc(meta.full || meta.label) + '</h1><span class="crumb">' + esc(meta.crumb) + '</span>' + effect + '</div>'
+            + '<span class="status-pill ' + pill.kind + '" title="' + esc(pill.text) + '"><i></i><span class="pl">' + esc(pill.text) + '</span></span>' + E.chipHtml() + buttons + E.queuePillHtml() + meterHtml() + winHtml() + '</header>';
     }
     function appHtml() {
         return sidebarHtml() + '<div class="main"><div class="outdated" id="outdated" hidden><span id="outdated-text"></span> <button type="button" class="btn btn-sm" id="outdated-check">Check for updates</button></div><div id="topbar-slot">' + topbarHtml() + '</div><div class="content" id="content"></div>' + P.dock.html() + '</div>';
@@ -321,7 +404,7 @@
     function showApp() {
         view = 'app'; mode = '';
         const root = P.$('root');
-        root.innerHTML = '<div id="app">' + appHtml() + '</div>';
+        root.innerHTML = '<div id="app" class="' + sbClasses() + '">' + appHtml() + '</div>';
         P.dock.bind(); P.dock.restore();
         bindApp();
         updateOutdated();
@@ -329,15 +412,19 @@
     }
     function bindApp() {
         const app = P.$('app');
+        if (!S._winBound) { S._winBound = true; document.addEventListener('mousedown', (e) => { if (winOpen && !e.target.closest('#sess-win, #sess-meter, #sb-runs, .sess-pop, .scrim')) closeWin(); }, true); }
         app.addEventListener('click', (e) => {
-            const nav = e.target.closest('[data-nav]'); if (nav) return S.go(nav.dataset.nav);
+            const nav = e.target.closest('[data-nav]'); if (nav) { if (sbOverlay) { sbOverlay = false; applySidebar(true); } return S.go(nav.dataset.nav); }
+            if (e.target.closest('[data-sb-toggle]')) return S.toggleSidebar();
+            if (e.target.closest('[data-sb-close]')) { sbOverlay = false; return applySidebar(true); }
+            if (e.target.closest('#sess-meter, #sb-runs')) { winOpen = !winOpen; if (sbOverlay) { sbOverlay = false; applySidebar(true); } return S.renderTopbar(); }
             if (e.target.closest('[data-run-show]')) { P.run.hidden = null; return S.renderContent(true); }
             if (e.target.closest('#entity-chip')) return E.openPalette();
             const sr = e.target.closest('[data-sess-relogin]'); if (sr) return E.reloginSession(sr.dataset.sessRelogin, sr);
             const sm = e.target.closest('[data-sess]'); if (sm) return E.selectSession(sm.dataset.sess);
             const sd = e.target.closest('[data-sess-drop]'); if (sd) return E.openSessionPopover(sd.dataset.sessDrop, sd);
             const sc = e.target.closest('[data-sess-close]'); if (sc) return closeSession(sc.dataset.sessClose, sc);
-            if (e.target.closest('#sess-new')) return E.openPalette();
+            if (e.target.closest('#sess-new')) { winOpen = false; S.renderTopbar(); return E.openPalette(); }
             if (e.target.closest('#open-settings')) return openSettings();
             if (e.target.closest('#btn-open-coretax')) return P.manual.open();
             if (e.target.closest('#btn-check-session')) return P.manual.check(true);
@@ -397,6 +484,7 @@
     P.on('login', () => { if (view === 'app') S.renderTopbar(); });
     P.on('manual', () => { if (view === 'app') { S.renderTopbar(); if (!P.state.run.active) S.renderContent(false); } });
     P.on('sessions', () => { if (view === 'app') S.renderTopbar(); });
+    P.on('run', () => { if (view === 'app') S.renderRunsBadge(); });
     P.on('batch', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); } });
     P.on('run', (st) => {
         if (view !== 'app') return;
