@@ -12,6 +12,9 @@
     // Dikelompokkan menurut akibatnya (proposal 4.1): Download (hanya membaca), Change in Coretax (mengubah data),
     // Year-End. kind 'write' memberi label "Changes data in Coretax" di topbar. Halaman yang sama seperti sebelumnya.
     const NAV = [
+        { title: '', items: [
+            { id: 'runs', label: 'Runs', icon: 'runs', crumb: 'Activity' }
+        ] },
         { title: 'Download', items: [
             { id: 'spt', label: 'SPT', icon: 'file', crumb: 'Download' },
             { id: 'ebupot', label: 'e-Bupot', icon: 'fileCheck', crumb: 'Download' },

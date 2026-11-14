@@ -83,4 +83,4 @@ function install() {
     return { ctl, GROUP_ROWS };
 }
 
-module.exports = { install };
+module.exports = Object.assign({ install }, require('./gui-test-runs-fixture')); // + runsFixture(), runDetail(): data tiruan halaman Runs

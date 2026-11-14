@@ -142,14 +142,15 @@
         return '<button type="button" class="nav-item sb-runs" id="sb-runs" data-tip="' + esc(tip) + '" aria-label="' + esc(tip) + '">' + P.icon('loader', 17, 'spin', 2.2)
             + '<span class="grow fade-l">' + list.length + (list.length === 1 ? ' run active' : ' runs active') + '</span><span class="nb">' + list.length + '</span></button>';
     }
+    S.renderRunsNavBadge = function () { const el = P.$('nav-runs-slot'); if (el) { const h = P.runsPage.navBadgeHtml(); if (el.innerHTML !== h) el.innerHTML = h; } };
     S.renderRunsBadge = function () { const el = P.$('sb-runs-slot'); if (el) { const h = runsBadgeHtml(); if (el.innerHTML !== h) el.innerHTML = h; } };
     function sidebarHtml() {
         const cur = P.state.page;
         const groups = P.pages.NAV.map((g) => {
             const items = g.items.filter((it) => !(it.hideForRestricted && P.isRestricted()));
             if (!items.length) return '';
-            return '<div class="nav-group"><div class="nav-title"><span class="fade-l">' + g.title + '</span></div>' + items.map((it) =>
-                '<button type="button" class="nav-item" data-nav="' + it.id + '" data-tip="' + esc(it.label) + '" title="' + esc(it.full || it.label) + '"' + (it.id === cur ? ' aria-current="page"' : '') + '>' + P.icon(it.icon, 18) + '<span class="grow fade-l">' + esc(it.label) + '</span>' + (it.badge ? '<span class="nav-badge fade-l">' + it.badge + '</span>' : '') + '</button>').join('') + '</div>';
+            return '<div class="nav-group">' + (g.title ? '<div class="nav-title"><span class="fade-l">' + g.title + '</span></div>' : '') + items.map((it) =>
+                '<button type="button" class="nav-item" data-nav="' + it.id + '" data-tip="' + esc(it.label) + '" title="' + esc(it.full || it.label) + '"' + (it.id === cur ? ' aria-current="page"' : '') + '>' + P.icon(it.icon, 18) + '<span class="grow fade-l">' + esc(it.label) + '</span>' + (it.badge ? '<span class="nav-badge fade-l">' + it.badge + '</span>' : '') + (it.id === 'runs' ? '<span class="nb-slot" id="nav-runs-slot">' + P.runsPage.navBadgeHtml() + '</span>' : '') + '</button>').join('') + '</div>';
         }).join('');
         const email = P.hub().email || '';
         const ver = esc(P.state.version ? 'v' + P.state.version.version : '');
@@ -212,7 +213,9 @@
         const content = P.$('content'); if (!content) return;
         const run = P.state.run;
         // "Start another command" (P.run.hidden): halaman fitur tampil lagi selagi proses entitas ini berjalan / antre.
-        const showRun = run.active && !P.run.isHidden(run);
+        // Halaman Runs selalu tampil sebagai dirinya sendiri (daftar semua proses); tampilan proses hanya di halaman fitur.
+        const onRuns = P.state.page === 'runs';
+        const showRun = run.active && !P.run.isHidden(run) && !onRuns;
         const want = showRun ? 'run' : 'page:' + P.state.page;
         const fresh = document.createElement('div'); fresh.className = 'page';
         if (showRun) {
@@ -230,7 +233,7 @@
         }
         // Penanda "proses entitas ini masih berjalan / antre - View progress" di atas halaman fitur.
         let back = content.querySelector(':scope > .run-back');
-        const backHtml = showRun ? '' : P.run.backBannerHtml(run);
+        const backHtml = showRun || onRuns ? '' : P.run.backBannerHtml(run);
         if (!backHtml) { if (back) back.remove(); }
         else {
             if (!back) { back = document.createElement('div'); back.className = 'run-back'; content.prepend(back); }
@@ -485,6 +488,7 @@
     P.on('manual', () => { if (view === 'app') { S.renderTopbar(); if (!P.state.run.active) S.renderContent(false); } });
     P.on('sessions', () => { if (view === 'app') S.renderTopbar(); });
     P.on('run', () => { if (view === 'app') S.renderRunsBadge(); });
+    P.on('runs-data', () => { if (view === 'app') S.renderRunsNavBadge(); });
     P.on('batch', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); } });
     P.on('run', (st) => {
         if (view !== 'app') return;
@@ -503,6 +507,7 @@
         if (!view) showAuth();
         // Semua polling berhenti selama dashboard tersembunyi (P.every, core.js) dan mengejar saat terlihat lagi.
         P.run.startPolling();
+        P.runsPage.start();
         P.every(P.manual.poll, 2000);
         P.every(pollLogin, 3000);
         pollLogin();
