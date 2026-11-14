@@ -243,7 +243,7 @@
                 if (def.batch && P.multi.count() > 1) return startMany();
                 busy = true; t.disabled = true;
                 try { await def.start(st, api); P.run.poll(); }
-                catch (err) { alert('Failed to start: ' + err.message); }
+                catch (err) { P.toast('Failed to start: ' + err.message); }
                 busy = false;
                 updateRail();
                 return;
@@ -567,7 +567,7 @@
             if (act === 'a1view') { st.view = a1View = d.val; return true; }
             if (st.view === 'nik') return nikForm.act(act, d, st.nik, api);
             if (st.view === 'bpa1') return bpa1Form.act(act, d, st.bpa1, api);
-            if (act === 'a1src-excel') { P.pickFile('Select the previous recap Excel').then((f) => { if (f && f.filePath) { st.source = f.filePath; a1Inspect(st, api); } else if (f) alert('Could not read the file path - select it through the Windows dialog.'); }); return false; }
+            if (act === 'a1src-excel') { P.pickFile('Select the previous recap Excel').then((f) => { if (f && f.filePath) { st.source = f.filePath; a1Inspect(st, api); } else if (f) P.toast('Could not read the file path - select it through the Windows dialog.'); }); return false; }
             if (act === 'a1src-clear') { st.source = null; a1Inspect(st, api); return false; }
             if (act === 'a1src-check') { a1Inspect(st, api); return false; }
             if (act === 'year') { st.year = Number(d.val); st.inspect = null; } else if (act === 'a1fresh') st.fresh = d.val === '1'; else return false;
@@ -605,7 +605,7 @@
         },
         async act(act, d, st, api) {
             if (act === 'bpa1-year') { st.year = Number(d.val); return true; }
-            if (act === 'bpa1-outdir') { try { const r = await P.post('/api/actions/pick-folder', { title: 'Select a folder to save the BPA1 XML' }); if (r && r.folderPath) { st.outDir = r.folderPath; api.redraw(); } } catch (e) { alert(e.message); } return false; }
+            if (act === 'bpa1-outdir') { try { const r = await P.post('/api/actions/pick-folder', { title: 'Select a folder to save the BPA1 XML' }); if (r && r.folderPath) { st.outDir = r.folderPath; api.redraw(); } } catch (e) { P.toast(e.message); } return false; }
             if (act === 'bpa1-outdir-clear') { st.outDir = ''; return true; }
             if (act === 'bpa1-pick') { const f = await P.pickFile('Select the Annual PPh 21 recap Excel (A1)'); if (f) { st.file = f; st.result = null; st.error = ''; const m = /(20\d{2})/.exec(f.fileName); if (m && st.years.includes(Number(m[1]))) st.year = Number(m[1]); api.redraw(); } return false; }
             if (act === 'bpa1-latest') {
@@ -665,7 +665,7 @@
                 api.redraw(); return false;
             }
             if (act === 'nik-refresh') {
-                if (!st.file || !st.file.filePath) { alert('Use the latest recap or pick the file from its folder first.'); return false; }
+                if (!st.file || !st.file.filePath) { P.toast('Use the latest recap or pick the file from its folder first.'); return false; }
                 if (st.refreshing) return false;
                 try {
                     const r = await P.post('/api/actions/a1-refresh', { filePath: st.file.filePath, entity: api.entity() }); P.run.poll();
@@ -676,17 +676,17 @@
                         try { const s = await P.api('/api/run/status' + (key ? '?session=' + encodeURIComponent(key) : '')); if (s && s.active) return; } catch (e) { /* coba lagi */ }
                         clearInterval(wait); st.refreshing = false; api.redraw();
                     }, 2000);
-                } catch (e) { alert(e.message); }
+                } catch (e) { P.toast(e.message); }
                 return false;
             }
             if (act === 'year') { st.year = Number(d.val); return true; }
             if (act === 'nik-similar') { st.allowSimilar = !st.allowSimilar; return true; }
             if (act === 'nik-sweep') {
-                if (restricted()) { alert('Not available for Restricted users.'); return false; }
+                if (restricted()) { P.toast('Not available for Restricted users.'); return false; }
                 const ent = api.entity();
-                if (!ent) { alert('Select an entity first.'); return false; }
+                if (!ent) { P.toast('Select an entity first.'); return false; }
                 try { await P.post('/api/actions/bpmp-amend', { entity: ent, year: String(st.year), sweepOnly: true, saveRoot: P.saveRoot() || undefined }); }
-                catch (e) { alert(e.message); }
+                catch (e) { P.toast(e.message); }
                 return false;
             }
             return false;
@@ -702,12 +702,14 @@
             let pv = null;
             try { pv = await P.post('/api/bpmp-amend/preview', { fileBase64: st.file.fileBase64 || undefined, filePath: st.file.filePath || undefined }); } catch (e) { throw new Error(e.message); }
             const name = api.entity().entity_name || 'this entity', fixes = pv.byNik + pv.perSlip;
-            if (fixes && !window.confirm('Correct NIKs in Coretax for ' + name + '?\n\n' + pv.byNik + ' NIK from sheet NIK, ' + pv.perSlip + ' Bukti Potong from sheet Pembetulan (per slip). Each NIK Baru is checked first; only Bukti Potong whose official name matches Nama Baru' + (st.allowSimilar ? ' or is similar (using the official Coretax name)' : '') + ' are corrected. Results are written to the Pembetulan and Ringkasan sheets in this Excel.')) return;
+            if (fixes && !await P.confirmDialog({ title: 'Correct NIKs in Coretax', body: 'Each NIK Baru is checked first; only Bukti Potong whose official name matches Nama Baru' + (st.allowSimilar ? ' or is similar (using the official Coretax name)' : '') + ' are corrected. Results are written to the Pembetulan and Ringkasan sheets in this Excel.',
+                details: [['Entity', name], ['From sheet NIK', String(pv.byNik) + ' NIK'], ['From sheet Pembetulan', String(pv.perSlip) + ' Bukti Potong']], requireTick: true, tickLabel: 'I have checked the list above', confirmLabel: 'Submit Pembetulan' })) return;
             // Tindakan = Batalkan: daftar bukti potong ditampilkan dan harus dikonfirmasi terpisah (pembatalan tidak bisa dikembalikan).
             let confirmCancel = [];
             if (pv.cancels.length) {
-                const list = pv.cancels.slice(0, 25).map((c) => '• ' + c.number + ' · ' + c.masa + ' · ' + c.nik + ' ' + c.name + (c.gross !== null && c.gross !== undefined && c.gross !== '' ? ' · bruto ' + Number(c.gross).toLocaleString('id-ID') : '')).join('\n') + (pv.cancels.length > 25 ? '\n… and ' + (pv.cancels.length - 25) + ' more' : '');
-                if (window.confirm('CANCEL ' + pv.cancels.length + ' BPMP in Coretax for ' + name + '? (Tindakan = Batalkan)\n\n' + list + '\n\nCancelling cannot be undone. If a slip was already reported, its SPT Masa needs a Pembetulan.')) confirmCancel = pv.cancels.map((c) => c.number);
+                if (await P.confirmDialog({ title: 'Batalkan Bukti Potong', body: 'These Bukti Potong are cancelled in Coretax (Tindakan = Batalkan). Cancelling cannot be undone. If a slip was already reported, its SPT Masa needs a Pembetulan.',
+                    details: [['Entity', name], ['Bukti Potong', String(pv.cancels.length)]], list: pv.cancels.slice(0, 25).map((c) => c.number + ' · ' + c.masa + ' · ' + c.nik + ' ' + c.name + (c.gross !== null && c.gross !== undefined && c.gross !== '' ? ' · bruto ' + Number(c.gross).toLocaleString('id-ID') : '')).concat(pv.cancels.length > 25 ? ['… and ' + (pv.cancels.length - 25) + ' more'] : []),
+                    requireTick: true, tickLabel: 'I have checked the list above', danger: true, confirmLabel: 'Batalkan' })) confirmCancel = pv.cancels.map((c) => c.number);
                 else if (!fixes) return;
             }
             if (!fixes && !confirmCancel.length) return;
@@ -730,11 +732,15 @@
         async act(act, d, st, api) {
             if (act === 'pick-file') { const f = await P.pickFile('Select the Dividen template file (.xlsx)'); if (f) { st.file = f; api.redraw(); } return false; }
             const entity = api.entity();
-            if (act === 'create-case') { try { await P.post('/api/actions/create-dividen-case', { entity }); P.run.poll(); } catch (e) { alert('Failed to create case: ' + e.message); } return false; }
+            if (act === 'create-case') {
+                if (!await P.confirmDialog({ title: 'Create New Case', body: 'This opens a new e-Reporting case (AS.39-01) in Coretax.', details: [['Entity', entity && entity.entity_name]], confirmLabel: 'Create case' })) return false;
+                try { await P.post('/api/actions/create-dividen-case', { entity }); P.run.poll(); } catch (e) { P.toast('Failed to create case: ' + e.message); } return false;
+            }
             if (act === 'import' || act === 'check') {
-                if (!st.file) { alert('Select a .xlsx template file first.'); return false; }
+                if (!st.file) { P.toast('Select a .xlsx template file first.'); return false; }
+                if (act === 'import' && !await P.confirmDialog({ title: 'Import Dividen', body: 'This imports the file into the open e-Reporting case in Coretax.', details: [['Entity', entity && entity.entity_name], ['File', st.file.fileName]], requireTick: true, tickLabel: 'I have checked the file above', confirmLabel: 'Import to Coretax' })) return false;
                 try { await P.post(act === 'import' ? '/api/actions/import-dividen' : '/api/actions/check-dividen', { entity, fileBase64: st.file.fileBase64 || undefined, filePath: st.file.fileBase64 ? undefined : st.file.filePath, fileName: st.file.fileName }); P.run.poll(); }
-                catch (e) { alert('Failed to start: ' + e.message); }
+                catch (e) { P.toast('Failed to start: ' + e.message); }
                 return false;
             }
             return false;
@@ -774,6 +780,7 @@
                 sub: loginSub(ent) + ' · results are written back to the Excel', ready: readiness(ent), blocked, cta: 'Import to Coretax', icon: 'upload' });
         },
         async start(st, api) {
+            if (!await P.confirmDialog({ title: 'Credit Faktur Masukan', body: 'This credits the Faktur Masukan listed in the file in Coretax. Credited invoices cannot be undone from this tool.', details: [['Entity', api.entity().entity_name], ['File', st.file.fileName], ['Masa Pajak', st.mode === 'fixed' && st.pp.single() ? L.masaLabel(st.pp.single()) : 'From each row']], requireTick: true, tickLabel: 'I have checked the file above', confirmLabel: 'Credit Faktur Masukan' })) return;
             await P.post('/api/actions/import-pajak-masukan', { entity: api.entity(), fileBase64: st.file.fileBase64 || undefined, filePath: st.file.fileBase64 ? undefined : st.file.filePath, targetMasaInput: st.mode === 'fixed' && st.pp.single() ? st.pp.single() : undefined });
         }
     });
@@ -797,6 +804,8 @@
                 dest: true, sub: loginSub(ent) + ' · you still make the payment yourself', ready: readiness(ent), blocked, cta: 'Create Kode Billing', icon: 'bank' });
         },
         async start(st, api) {
+            const digits = String(st.nominal).replace(/\D/g, '');
+            if (!await P.confirmDialog({ title: 'Create Kode Billing', body: 'This creates a PPh 25 Kode Billing in Coretax. You still make the payment yourself.', details: [['Entity', api.entity().entity_name], ['Masa Pajak', st.pp.single() ? L.masaLabel(st.pp.single()) : ''], ['Amount', 'Rp ' + L.rupiah(digits)]], confirmLabel: 'Create Kode Billing' })) return;
             await P.post('/api/actions/billing-pph25', { entity: api.entity(), masaInput: st.pp.single(), nominal: String(st.nominal).replace(/\D/g, ''), saveRoot: P.saveRoot() || undefined });
         }
     });
@@ -848,7 +857,7 @@
             if (act === 'kaction') { st.konsepAction = d.val; return true; }
             if (act === 'itype') { st.issueType = d.val; st.preview = null; st.previewError = ''; return true; }
             if (act === 'ipreview') {
-                const masa = st.ipp.single(); if (!masa) { alert('Select a Masa Pajak first.'); return false; }
+                const masa = st.ipp.single(); if (!masa) { P.toast('Select a Masa Pajak first.'); return false; }
                 st.previewing = true; st.preview = null; st.previewError = ''; api.redraw();
                 try { st.preview = { ...(await P.post('/api/ebupot/issue-preview', { entity: api.entity(), type: st.issueType, period: masa })), forType: st.issueType, forPeriod: masa }; }
                 catch (e) { st.previewError = e.message; }
@@ -890,14 +899,23 @@
         async start(st, api) {
             if (st.view === 'issue') {
                 const pv = st.preview, rp = (n) => Number(n || 0).toLocaleString('id-ID');
-                if (!confirm((pv.needsSign ? 'Issue & sign ' : 'Issue ') + pv.count + ' ' + pv.label + ' for Masa Pajak ' + pv.period + ' (bruto ' + rp(pv.totalGross) + ', PPh ' + rp(pv.totalTax) + ')' + (pv.needsSign ? ', signed with the PIC passphrase' : '') + '?\n\nThis cannot be undone easily.')) return;
+                const ok = await P.confirmDialog({ title: pv.needsSign ? 'Issue & Sign Bukti Potong' : 'Issue Bukti Potong', body: pv.needsSign ? 'This issues and signs the list from the preview in Coretax. It cannot be undone easily.' : 'This issues the list from the preview in Coretax. It cannot be undone easily.',
+                    details: [['Entity', api.entity().entity_name], ['Masa Pajak', pv.period], ['Type', pv.label], ['Bukti Potong', String(pv.count)], ['Total bruto', 'Rp ' + rp(pv.totalGross)], ['Total PPh', 'Rp ' + rp(pv.totalTax)], ['Signature', pv.needsSign ? 'Signed with the PIC passphrase' : 'None (not signed)']],
+                    requireTick: true, tickLabel: 'I have checked the list above', confirmLabel: pv.needsSign ? 'Issue & sign' : 'Issue' });
+                if (!ok) return;
                 await P.post('/api/actions/issue-ebupot', { entity: api.entity(), type: pv.forType, period: pv.forPeriod, token: pv.token });
                 st.preview = null; return;
             }
             if (st.view === 'konsep') {
-                if (st.konsepAction === 'create') return P.post('/api/actions/create-konsep', { entity: api.entity(), taxType: st.konsepType, period: st.pp.single() });
+                const ent = api.entity(), masa = st.pp.single(), taxLabel = String(st.konsepType || '').toUpperCase();
+                if (st.konsepAction === 'create') {
+                    if (!await P.confirmDialog({ title: 'Create Konsep SPT', body: 'This creates a draft Konsep SPT in Coretax. You can delete it there if needed.', details: [['Entity', ent.entity_name], ['SPT', taxLabel], ['Masa Pajak', masa ? L.masaLabel(masa) : '']], confirmLabel: 'Create Konsep SPT' })) return;
+                    return P.post('/api/actions/create-konsep', { entity: ent, taxType: st.konsepType, period: masa });
+                }
+                if (st.konsepAction === 'post' && !await P.confirmDialog({ title: 'Posting SPT', body: 'This posts the SPT in Coretax. Posting cannot be undone from this tool.', details: [['Entity', ent.entity_name], ['SPT', taxLabel], ['Masa Pajak', masa ? L.masaLabel(masa) : '']], requireTick: true, tickLabel: 'I have checked the details above', confirmLabel: 'Posting SPT' })) return;
                 return P.post('/api/actions/konsep-download', { entity: api.entity(), taxType: st.konsepType, period: st.pp.single(), post: st.konsepAction === 'post' });
             }
+            if (!await P.confirmDialog({ title: 'Upload to Belum Terbit', body: 'This uploads the file to Belum Terbit in Coretax. Nothing is issued or signed.', details: [['Entity', api.entity().entity_name], ['File', st.file.fileName]], confirmLabel: 'Upload to Belum Terbit' })) return;
             await P.post('/api/actions/import-coretax', { entity: api.entity(), fileBase64: st.file.fileBase64, filePath: st.file.filePath, fileName: st.file.fileName });
         }
     });

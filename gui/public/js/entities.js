@@ -592,13 +592,13 @@
     // dipilih ke sesi manual, membawa nama/NPWP-nya untuk konteks, tanpa kredensial tersimpan.
     E.useManualFor = useManualFor;
     async function deleteLocal(e) {
-        if (!confirm('Delete entity "' + e.entity_name + '" from this computer?')) return;
+        if (!await P.confirmDialog({ title: 'Delete Entity', body: 'This removes the entity and its saved login from this computer only. Nothing changes in Coretax.', details: [['Entity', e.entity_name]], confirmLabel: 'Delete entity', danger: true })) return;
         try {
             await P.post('/api/local-entities/delete', { id: e.local_id });
             if (E.selected && L.entityKey(E.selected.entity) === L.entityKey(e)) E.clear();
             await E.load();
             paintPalette();
-        } catch (err) { alert('Failed to delete: ' + err.message); }
+        } catch (err) { P.toast('Failed to delete: ' + err.message); }
     }
 
     // ---------- Dialog tambah / ubah entitas lokal ----------

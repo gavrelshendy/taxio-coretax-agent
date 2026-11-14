@@ -244,10 +244,13 @@
     P.on('runs-data', () => render(true));
 
     // ---------- Aksi ----------
-    const failed = (e) => alert('Failed: ' + e.message);
+    const failed = (e) => P.toast('Failed: ' + e.message);
     async function control(btn) {
         const act = btn.dataset.rnAct, key = btn.dataset.key;
-        if (btn.dataset.confirm && !confirm('Stop this run? It stops safely after the current step. Other runs keep going.')) return;
+        if (btn.dataset.confirm) {
+            const row = btn.closest('.rn-row'), who = row && row.querySelector('.rn-t1 b'), what = row && row.querySelector('.rn-t2');
+            if (!await P.confirmDialog({ title: 'Stop Run', body: 'This run stops safely after the current step. Other runs keep going.', details: [['Run', who && who.textContent], ['Task', what && what.textContent]], confirmLabel: 'Stop run', danger: true })) return;
+        }
         btn.disabled = true;
         try { await P.post('/api/run/' + act + '?session=' + encodeURIComponent(key)); } catch (e) { failed(e); }
         X.load();
@@ -265,12 +268,15 @@
             if (f) { try { await P.post('/api/runs/open-folder', { key: f.dataset.key }); } catch (err) { failed(err); } return; }
             const sb = e.target.closest('[data-rn-stop-batch]');
             if (sb) {
-                if (!confirm('Stop every run in this batch? Running clients stop at a safe point and waiting ones are cancelled.')) return;
+                const brow = sb.closest('li, .rn-batch'), bn = brow && brow.querySelector('b');
+                if (!await P.confirmDialog({ title: 'Stop All Runs', body: 'Running clients stop at a safe point and waiting ones are cancelled.', details: [['Batch', bn && bn.textContent]], confirmLabel: 'Stop all', danger: true })) return;
                 sb.disabled = true;
                 try { await P.post('/api/runs/stop-batch', { id: sb.dataset.rnStopBatch }); } catch (err) { failed(err); }
                 X.load(); return;
             }
-            if (e.target.closest('[data-rn-clear]')) { try { await P.post('/api/runs/clear-done'); } catch (err) { failed(err); } X.load(); }
+            if (e.target.closest('[data-rn-clear]')) {
+                if (!await P.confirmDialog({ title: 'Clear Done', body: 'This removes the finished runs from this list. Downloaded files stay in their folders.', confirmLabel: 'Clear Done' })) return;
+                try { await P.post('/api/runs/clear-done'); } catch (err) { failed(err); } X.load(); }
         });
     }
     document.addEventListener('pointerup', () => { pressed = false; if (pendingRender) { pendingRender = false; setTimeout(() => render(true), 0); } });
