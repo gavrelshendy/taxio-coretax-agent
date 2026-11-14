@@ -89,7 +89,7 @@ const keepAlive = setInterval(() => {}, 1000); // timers in lib/session-store.js
         writeStored(client, session('mati', -60));
         store.markAuthed(client);
         const r = await client.rpc('get_coretax_pic_credential_for_automation', { p_org: 'o', p_pic_id: 'p' });
-        assert.ok(r.error && /sesi login sudah kedaluwarsa - putuskan lalu hubungkan ulang/.test(r.error.message), JSON.stringify(r.error));
+        assert.ok(r.error && /login session expired. Disconnect and reconnect/.test(r.error.message), JSON.stringify(r.error));
         assert.strictEqual(restCalls(seen).length, 0, 'no anon request');
         assert.strictEqual((await store.ensureFresh(client)).status, 'invalid');
     });
@@ -100,14 +100,14 @@ const keepAlive = setInterval(() => {}, 1000); // timers in lib/session-store.js
         writeStored(client, session('habis', -60));
         store.markAuthed(client);
         const r = await client.from('memberships').select('org_id');
-        assert.ok(r.error && /tidak bisa dihubungi/.test(r.error.message), JSON.stringify(r.error));
+        assert.ok(r.error && /could not be reached/.test(r.error.message), JSON.stringify(r.error));
         assert.strictEqual(restCalls(seen).length, 0);
         assert.ok(store.storedSession(client), 'session kept on disk');
         assert.strictEqual((await store.ensureFresh(client)).status, 'network');
         assert.ok(store.isNetworkError(r.error));
     });
 
-    await test('stalled request: aborted after TAXIO_PILOT_HUB_TIMEOUT_MS with an Indonesian message, not retried', async () => {
+    await test('stalled request: aborted after TAXIO_PILOT_HUB_TIMEOUT_MS with an English message, not retried', async () => {
         const seen = fakeHub({ refresh: 'ok', rest: 'hang' });
         const { client } = store.clientFor('taxio_hub');
         writeStored(client, session('segar', 3600));
@@ -115,7 +115,7 @@ const keepAlive = setInterval(() => {}, 1000); // timers in lib/session-store.js
         const t0 = Date.now();
         const r = await client.from('memberships').select('org_id');
         const ms = Date.now() - t0;
-        assert.ok(r.error && /Taxio Hub tidak menjawab dalam 0 detik \(timeout\)|Taxio Hub tidak menjawab dalam \d+ detik/.test(r.error.message), JSON.stringify(r.error));
+        assert.ok(r.error && /Taxio Hub did not respond within \d+ seconds/.test(r.error.message), JSON.stringify(r.error));
         assert.ok(ms >= 350 && ms < 3000, 'took ' + ms + 'ms');
         assert.strictEqual(restCalls(seen).length, 1, 'GET not retried after our timeout');
         assert.ok(store.isNetworkError(r.error));

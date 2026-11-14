@@ -12,7 +12,7 @@ module.exports = async function () {
     assert.deepEqual(order, imp.TYPES.mp.fields, 'urutan elemen = template resmi');
     const rx = imp.readXml(Buffer.from(x));
     assert.deepEqual([rx.type, rx.tin, rx.count], ['mp', TIN, 1]);
-    assert.throws(() => imp.readXml(Buffer.from('<?xml version="1.0"?><Foo><TIN>1</TIN></Foo>')), /tidak dikenali/);
+    assert.throws(() => imp.readXml(Buffer.from('<?xml version="1.0"?><Foo><TIN>1</TIN></Foo>')), /Unrecognised XML/);
     // Excel template DJP: tabel XML map (xpath per kolom, judul kolom bebas), Target rel absolut, sel inlineStr, tanggal serial
     const z = new JSZip();
     z.file('xl/workbook.xml', '<workbook xmlns:r="r"><sheets><sheet name="DATA" sheetId="1" r:id="rId1"/><sheet name="BP21" sheetId="2" r:id="rId2"/></sheets></workbook>');
@@ -29,7 +29,7 @@ module.exports = async function () {
     assert.deepEqual([p.type, p.label, p.count, p.tin, p.problems.length], ['bp21', 'BP21', 1, TIN, 0]);
     assert.match(p.xml, /<Bp21Bulk[\s\S]*<TIN>0123456789012345<\/TIN>[\s\S]*<CounterpartTin>3401010101900001<\/CounterpartTin>[\s\S]*<Gross>6400000<\/Gross>[\s\S]*<WithholdingDate>2026-10-31<\/WithholdingDate>/);
     // NPWP pemotong di file harus = entitas
-    await assert.rejects(imp.prepare(Buffer.from(x), 'a.xml', '9999999999999999'), /berbeda dengan NPWP entitas/);
+    await assert.rejects(imp.prepare(Buffer.from(x), 'a.xml', '9999999999999999'), /differs from the entity NPWP/);
     // NIK penerima bukan 16 digit -> masalah, tidak diunggah
     const bad = imp.buildXml('mp', TIN, [{ CounterpartOpt: 'Resident', CounterpartTin: '123', TaxPeriodMonth: '10' }]);
     assert.equal((await imp.prepare(Buffer.from(bad), 'b.xml', TIN)).problems.length, 0, 'XML tidak diperiksa per baris (Coretax yang memvalidasi)');

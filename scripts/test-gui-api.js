@@ -110,9 +110,9 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
 
     await test('signup: input tidak valid ditolak dengan kalimat yang sama dengan Taxio Hub', async () => {
         const a = await POST('/api/signup', { initial: '', email: 'baru@contoh.com', password: '123456' });
-        assert.strictEqual(a.status, 400); assert.strictEqual(a.json.error, 'Inisial wajib diisi.');
+        assert.strictEqual(a.status, 400); assert.strictEqual(a.json.error, 'Enter your initials.');
         const b = await POST('/api/signup', { initial: 'SGA', email: 'baru@contoh.com', password: '123' });
-        assert.strictEqual(b.json.error, 'Kata sandi minimal 6 karakter.');
+        assert.strictEqual(b.json.error, 'The password must be at least 6 characters.');
     });
 
     await test('signup valid: akun dibuat, status menunggu konfirmasi email (belum terhubung)', async () => {
@@ -129,7 +129,7 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
 
     await test('masuk dengan kata sandi salah: pesan Indonesia', async () => {
         const a = await POST('/api/connect', { project: 'taxio_hub', email: 'baru@contoh.com', password: 'salah' });
-        assert.strictEqual(a.status, 400); assert.strictEqual(a.json.error, 'Email atau kata sandi salah.');
+        assert.strictEqual(a.status, 400); assert.strictEqual(a.json.error, 'Wrong email or password.');
     });
 
     await test('masuk sebelum konfirmasi email: bukan galat, tampil status confirm-email', async () => {
@@ -196,9 +196,9 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         const bad = await POST('/api/local-entities/save', { name: 'Ani Sample Wijaya', type: 'op', npwp: '123', password: 'x' });
         assert.strictEqual(bad.status, 400); assert.ok(/16 digit/.test(bad.json.error));
         const nopass = await POST('/api/local-entities/save', { name: 'Ani Sample Wijaya', type: 'op', npwp: '1234567890123456' });
-        assert.strictEqual(nopass.status, 400); assert.ok(/[Kk]ata sandi wajib diisi/.test(nopass.json.error));
+        assert.strictEqual(nopass.status, 400); assert.ok(/[Ee]nter the password/.test(nopass.json.error));
         const badan = await POST('/api/local-entities/save', { name: 'CV Klien Baru Sejahtera', type: 'badan', npwp: '0678901234560000', pics: [] });
-        assert.strictEqual(badan.status, 400); assert.ok(/wajib menautkan minimal satu PIC/.test(badan.json.error));
+        assert.strictEqual(badan.status, 400); assert.ok(/must link at least one PIC/.test(badan.json.error));
     });
 
     await test('entitas lokal: Orang Pribadi tersimpan; kata sandi tidak pernah bocor ke respons', async () => {
@@ -261,7 +261,7 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         await test('sesi manual polos: ' + label + ' tetap membutuhkan jendela Coretax yang sudah dibuka (perilaku lama, tidak berubah)', async () => {
             const a = await POST(url, Object.assign({ entity: manualSelEntity }, extra));
             assert.strictEqual(a.status, 401);
-            assert.ok(/Sesi manual belum ada/.test(a.json.error), label);
+            assert.ok(/No manual session yet/.test(a.json.error), label);
         });
     }
 
@@ -289,14 +289,14 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         const a = await POST('/api/actions/billing-pph25', { entity: localSelEntity(), masaInput: '1326', nominal: '1000' });
         assert.strictEqual(a.status, 400); assert.ok(/MMYY/.test(a.json.error));
         const b = await POST('/api/actions/billing-pph25', { entity: localSelEntity(), masaInput: '0726', nominal: '' });
-        assert.strictEqual(b.status, 400); assert.ok(/Nominal/.test(b.json.error));
+        assert.strictEqual(b.status, 400); assert.ok(/PPh 25 amount/.test(b.json.error));
         const c = await POST('/api/actions/billing-pph25', { masaInput: '0726', nominal: '1000' });
         assert.strictEqual(c.status, 400);
     });
 
     await test('login otomatis untuk sesi manual polos ditolak dengan arahan yang jelas (tombol khusus entitas otomatis)', async () => {
         const a = await POST('/api/actions/login-entity', { entity: manualSelEntity });
-        assert.strictEqual(a.status, 400); assert.ok(/login sendiri/.test(a.json.error));
+        assert.strictEqual(a.status, 400); assert.ok(/logs in by itself/.test(a.json.error));
     });
 
     await test('dua sesi (PIC berbeda) berjalan bersamaan; sesi yang sama ditolak dengan nama prosesnya', async () => {
@@ -317,7 +317,7 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
             assert.strictEqual(sa.active, true); assert.strictEqual(sa.key, a.json.session); assert.ok(/^Coretax login/.test(sa.label));
             const c = await POST('/api/actions/login-entity', { entity: e1 });
             // Perintah IDENTIK (login entitas yang sama) selagi yang pertama berjalan: ditolak (aturan keluaran, gui/server.js withRules).
-            assert.strictEqual(c.status, 409); assert.ok(/Perintah yang sama untuk entitas ini sudah berjalan \("Coretax login/.test(c.json.error), c.json.error);
+            assert.strictEqual(c.status, 409); assert.ok(/The same command for this entity is already running \("Coretax login/.test(c.json.error), c.json.error);
             const idle = (await GET('/api/run/status?session=' + encodeURIComponent('p-tidak-ada'))).json;
             assert.strictEqual(idle.active, false, 'sesi tanpa proses tampil idle walau sesi lain sibuk');
         } finally { loginDelay = 0; }
@@ -341,7 +341,7 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
         const nt = await call('POST', '/api/ebupot/check-nik', { entity: localSelEntity(), ids: ['3201011201900013'] }, { Authorization: '' });
         assert.strictEqual(nt.status, 401, 'tanpa token harus ditolak: ' + JSON.stringify(nt.json));
         const ne = await POST('/api/ebupot/check-nik', { ids: ['3201011201900013'] });
-        assert.strictEqual(ne.status, 400); assert.strictEqual(ne.json.error, 'Entitas belum dipilih.');
+        assert.strictEqual(ne.status, 400); assert.strictEqual(ne.json.error, 'Select an entity first.');
         const a = await POST('/api/ebupot/check-nik', { entity: localSelEntity(), ids: ['3201011201900013'] });
         assert.strictEqual(a.status, 400, JSON.stringify(a.json)); assert.ok(a.json.error && !/Cek NIK gagal/.test(a.json.error), 'galat tanpa awalan log: ' + a.json.error);
         await waitIdle();
@@ -354,7 +354,7 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
     await test('kirim / batal dengan kode yang tidak dikenal dan tanpa type -> 400, tidak ada proses', async () => {
         for (const url of ['/api/actions/ebupot-amend', '/api/actions/ebupot-cancel']) {
             const a = await POST(url, { entity: localSelEntity(), token: 'ZZZZ99' });
-            assert.strictEqual(a.status, 400, url); assert.ok(/Pratinjau untuk kode ZZZZ99 tidak ditemukan/.test(a.json.error), a.json.error);
+            assert.strictEqual(a.status, 400, url); assert.ok(/No preview found for code ZZZZ99/.test(a.json.error), a.json.error);
         }
         assert.ok(!(await GET('/api/run/status')).json.anyActive);
     });
@@ -409,17 +409,17 @@ const hub = () => GET('/api/session').then((x) => x.json.taxio_hub);
             assert.deepStrictEqual(a.json, { filePath: picked, fileName: 'dividen-uji.xlsx', size: 3 });
             const notPicked = await POST('/api/actions/import-dividen', { filePath: other });
             assert.strictEqual(notPicked.status, 400);
-            assert.ok(/dipilih lewat tombol pilih file/.test(notPicked.json.error), notPicked.json.error);
+            assert.ok(/Pick the file with the file picker button/.test(notPicked.json.error), notPicked.json.error);
             // Path dari dialog: file terbaca, lalu jalan seperti base64 (di sini berhenti di "sesi manual belum ada").
             for (const url of ['/api/actions/import-dividen', '/api/actions/check-dividen']) {
                 const ok = await POST(url, { filePath: picked });
                 assert.strictEqual(ok.status, 401, url + ': ' + JSON.stringify(ok.json));
-                assert.ok(/Sesi manual belum ada/.test(ok.json.error));
+                assert.ok(/No manual session yet/.test(ok.json.error));
             }
             const base64 = await POST('/api/actions/check-dividen', { fileBase64: Buffer.from('isi').toString('base64') });
             assert.strictEqual(base64.status, 401, 'base64 (seret-lepas / input file) tetap diterima');
             const none = await POST('/api/actions/import-pajak-masukan', { entity: { project: 'manual' } });
-            assert.strictEqual(none.status, 400); assert.strictEqual(none.json.error, 'File template belum dipilih.');
+            assert.strictEqual(none.status, 400); assert.strictEqual(none.json.error, 'No template file selected.');
         } finally { shell.reset(); }
     });
 

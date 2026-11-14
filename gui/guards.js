@@ -63,7 +63,7 @@ function authProblem(req, port, token) {
     if (c) return tokenEquals(c, token) ? null : 'cookie token salah (Taxio Pilot sudah dibuka ulang?)';
     return 'tanpa token';
 }
-const UNAUTHORIZED_MESSAGE = 'Tidak diizinkan: token Taxio Pilot tidak ada atau salah. Buka dashboard lewat ikon / pintasan Taxio Pilot (alat lokal: baca port dan token dari runtime.json).';
+const UNAUTHORIZED_MESSAGE = 'Not allowed: the Taxio Pilot token is missing or wrong. Open the dashboard from the Taxio Pilot icon or shortcut (local tools: read the port and token from runtime.json).';
 function setAuthCookieHeader(port, token) {
     return authCookieName(port) + '=' + token + '; Path=/; HttpOnly; SameSite=Strict';
 }
@@ -157,7 +157,7 @@ function isIndividualEntityBlocked(restricted, entity) {
 function rejectIfOutdated(res) {
     const info = updater.getOutdatedInfo();
     if (!info.outdated) return false;
-    sendJson(res, 426, { error: 'Taxio Pilot versi ' + (info.current || '') + ' sudah usang (v' + info.latestVersion + ' tersedia) - update otomatis akan berjalan begitu tidak ada proses aktif. Coba lagi sebentar lagi, atau klik "Cek Update" di Pengaturan.', outdated: true, latestVersion: info.latestVersion });
+    sendJson(res, 426, { error: 'Taxio Pilot version ' + (info.current || '') + ' is out of date (v' + info.latestVersion + ' is available). The automatic update will run as soon as no process is active. Try again shortly, or click "Check for updates" in Settings.', outdated: true, latestVersion: info.latestVersion });
     return true;
 }
 

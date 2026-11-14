@@ -588,9 +588,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         // Hasil pemeriksaan & ekspor ditiru di browser: tes ini tidak boleh menyentuh jaringan / Downloads asli.
         const healthUrls = [];
         const rep = (detail) => ({ at: new Date().toISOString(), summary: { ok: 1, warn: 1, fail: 1 }, checks: [
-            { id: 'data-root', label: 'Folder data dapat ditulis', status: 'ok', detail, fix: '' },
-            { id: 'clock', label: 'Jam PC', status: 'warn', detail: 'Jam PC lebih cepat 5 menit dari jam server.', fix: 'Aktifkan "Atur waktu secara otomatis".' },
-            { id: 'hub', label: 'Taxio Hub terjangkau', status: 'fail', detail: 'Taxio Hub tidak terjangkau: <b>x</b>', fix: 'Periksa koneksi internet.' }] });
+            { id: 'data-root', label: 'Data folder is writable', status: 'ok', detail, fix: '' },
+            { id: 'clock', label: 'PC clock', status: 'warn', detail: 'Jam PC lebih cepat 5 menit dari jam server.', fix: 'Aktifkan "Atur waktu secara otomatis".' },
+            { id: 'hub', label: 'Taxio Hub reachable', status: 'fail', detail: 'Taxio Hub tidak terjangkau: <b>x</b>', fix: 'Periksa koneksi internet.' }] });
         await page.route('**/api/health**', (route) => { healthUrls.push(route.request().url()); return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rep(healthUrls.length === 1 ? 'C:\\data' : 'C:\\data (ulang)')) }); });
         await page.route('**/api/diagnostics/export', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ file: 'C:\\Users\\Budi\\Downloads\\TaxioPilot-diagnostik-1.zip', bytes: 1000, entries: [] }) }));
         try {

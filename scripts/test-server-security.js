@@ -165,7 +165,7 @@ async function test(name, fn) {
                 assert.strictEqual(e.status, 403, 'GET /events Origin ' + origin);
                 const p = await R({ method: 'POST', path: '/api/run/stop', origin, body: {} });
                 assert.strictEqual(p.status, 403, 'POST Origin ' + origin);
-                assert.ok(/lintas-origin/.test(p.json.error));
+                assert.ok(/cross-origin/.test(p.json.error));
             }
         });
 

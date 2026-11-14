@@ -92,7 +92,7 @@ const ok = (name) => { passed++; console.log('  ok   ' + name); };
     await sleep(5);
     await runcontrol.isolate(async () => {
         runcontrol.start('SPT HBI', { key: 'pic-A', tag: 'HBI' });
-        assert.throws(() => runcontrol.assertWindowFree('pic-B'), /sedang dipakai proses lain \("SPT KAP"\)/);
+        assert.throws(() => runcontrol.assertWindowFree('pic-B'), /in use by another process \("SPT KAP"\)/);
         assert.doesNotThrow(() => runcontrol.assertWindowFree('pic-A'));
         assert.doesNotThrow(() => runcontrol.assertWindowFree('pic-C'));
         // Jalur produksi: jendela PIC lain DIPINJAM - jendela bebas PIC itu, bukan yang sedang dipakai KAP.
@@ -112,7 +112,7 @@ const ok = (name) => { passed++; console.log('  ok   ' + name); };
     // Perilaku lama tanpa kunci sesi tetap: satu proses sekaligus.
     await runcontrol.isolate(async () => {
         runcontrol.start('lama');
-        assert.throws(() => runcontrol.isolate(() => runcontrol.start('lama 2')), /Masih ada proses lain/);
+        assert.throws(() => runcontrol.isolate(() => runcontrol.start('lama 2')), /Another process is still running/);
         runcontrol.finish();
     });
     await runcontrol.checkpoint(); // di luar proses: tidak menahan, tidak melempar
@@ -125,7 +125,7 @@ const ok = (name) => { passed++; console.log('  ok   ' + name); };
     const q1 = hold('satu', { key: 'pic-Q', tag: 'Q', entity: 'E1' });
     const q2 = hold('dua', { key: 'pic-Q', tag: 'Q', entity: 'E2' });
     assert.strictEqual(q1.run.key, 'pic-Q'); assert.strictEqual(q2.run.key, 'pic-Q~2');
-    assert.throws(() => runcontrol.isolate(() => runcontrol.start('tiga', { key: 'pic-Q' })), /Sesi ini masih menjalankan "satu"/, 'start() sinkron tetap menolak bila penuh');
+    assert.throws(() => runcontrol.isolate(() => runcontrol.start('tiga', { key: 'pic-Q' })), /This session is still running "satu"/, 'start() sinkron tetap menolak bila penuh');
     const q3 = hold('tiga', { key: 'pic-Q', tag: 'Q', entity: 'E3' });
     const q4 = hold('empat', { key: 'pic-Q', tag: 'Q', entity: 'E4' });
     const q5 = hold('lima', { key: 'pic-Q', tag: 'Q', entity: 'E5' });
@@ -176,7 +176,7 @@ const ok = (name) => { passed++; console.log('  ok   ' + name); };
 
     // ---------- Perintah identik ditolak; fitur sama entitas sama antre (kunci); fitur lain paralel ----------
     const d1 = hold('SPT 01', { key: 'pic-D', entity: 'ENT', sig: 'spt|ENT|01', lock: 'ENT|spt' });
-    assert.throws(() => runcontrol.isolate(() => runcontrol.enqueue('SPT 01 lagi', { key: 'pic-D2', entity: 'ENT', sig: 'spt|ENT|01', lock: 'ENT|spt' })), (e) => e.duplicate && /Perintah yang sama untuk entitas ini sudah berjalan \("SPT 01"\)/.test(e.message), 'identik (walau lewat PIC lain) ditolak');
+    assert.throws(() => runcontrol.isolate(() => runcontrol.enqueue('SPT 01 lagi', { key: 'pic-D2', entity: 'ENT', sig: 'spt|ENT|01', lock: 'ENT|spt' })), (e) => e.duplicate && /The same command for this entity is already running \("SPT 01"\)/.test(e.message), 'identik (walau lewat PIC lain) ditolak');
     const d2 = hold('SPT 02', { key: 'pic-D2', entity: 'ENT', sig: 'spt|ENT|02', lock: 'ENT|spt' });
     assert.strictEqual(d2.run.state, 'queued', 'fitur sama, entitas sama, parameter lain: antre di belakang');
     assert.strictEqual(runcontrol.status('run:' + d2.run.id).waitReason, 'lock');
@@ -195,7 +195,7 @@ const ok = (name) => { passed++; console.log('  ok   ' + name); };
     settings._reset({ perPic: 1, total: 6 });
     const w1 = hold('Find BPMP', { key: 'pic-W' });
     const w2 = runcontrol.isolate(() => runcontrol.enqueue('Check NIK', { key: 'pic-W', maxWaitMs: 40 }));
-    await assert.rejects(w2.ready, (e) => e.queueTimeout && /Sesi ini masih menjalankan "Find BPMP"/.test(e.message));
+    await assert.rejects(w2.ready, (e) => e.queueTimeout && /This session is still running "Find BPMP"/.test(e.message));
     runcontrol.finish(w2.run); runcontrol.finish(w1.run);
     ok('antrean berbatas waktu: pesan lama "Sesi ini masih menjalankan ..." sesudah batasnya');
 

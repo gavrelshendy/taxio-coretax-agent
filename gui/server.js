@@ -92,17 +92,17 @@ onLogLine((entry) => {
  *   1. versi usang -> 426 (kecuali `outdated: false`, hanya untuk route yang tidak menyentuh Coretax);
  *   2. body JSON -> 400 bila tidak valid (`body: 'large'` = batas 20MB untuk file base64;
  *      `body: 'lenient'` = body rusak dianggap kosong);
- *   3. `entity` (bawaan: wajib) -> 400 'Entitas belum dipilih.' (`entity: false` bila opsional);
+ *   3. `entity` (bawaan: wajib) -> 400 'Select an entity first.' (`entity: false` bila opsional);
  *   4. `restricted: '<pesan>'` -> 403 untuk pengguna Restricted Editor.
  *  Lalu memanggil fn(req, res, body, ctx) dengan body yang selalu berupa objek. */
 /** Validasi `batch` ({ id, label, index, total }) dari body aksi. Mengembalikan { batch } atau { error }. */
 function parseBatch(b) {
-    if (typeof b !== 'object' || Array.isArray(b)) return { error: 'Batch tidak valid.' };
-    if (typeof b.id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(b.id)) return { error: 'ID batch tidak valid (1-64 karakter huruf, angka, _ atau -).' };
+    if (typeof b !== 'object' || Array.isArray(b)) return { error: 'Invalid batch.' };
+    if (typeof b.id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(b.id)) return { error: 'Invalid batch ID (1-64 characters: letters, digits, _ or -).' };
     const label = b.label === undefined || b.label === null ? '' : b.label;
-    if (typeof label !== 'string' || label.length > 120) return { error: 'Label batch tidak valid (teks, maks. 120 karakter).' };
+    if (typeof label !== 'string' || label.length > 120) return { error: 'Invalid batch label (text, max 120 characters).' };
     const total = b.total, index = b.index;
-    if (!Number.isInteger(total) || total < 1 || total > 10000 || !Number.isInteger(index) || index < 0 || index >= total) return { error: 'Urutan batch tidak valid (total 1 sampai 10000, index 0 sampai total-1).' };
+    if (!Number.isInteger(total) || total < 1 || total > 10000 || !Number.isInteger(index) || index < 0 || index >= total) return { error: 'Invalid batch order (total 1 to 10000, index 0 to total-1).' };
     return { batch: { id: b.id, label: label.trim(), index, total } };
 }
 function action(opts, fn) {
@@ -114,13 +114,13 @@ function action(opts, fn) {
         } else {
             const large = opts.body === 'large';
             try { body = await (large ? readLargeJsonBody(req) : readJsonBody(req)); }
-            catch (e) { return sendJson(res, 400, { error: (large && e.message) || 'Body tidak valid.' }); }
+            catch (e) { return sendJson(res, 400, { error: (large && e.message) || 'Invalid request body.' }); }
         }
         body = body || {};
         // Sesi Taxio Hub masih dipulihkan di latar (lib/session-restore.js): tunggu (terbatas), jangan
         // langsung "belum terhubung".
         await sessionRestore.waitIfRestoring();
-        if (opts.entity !== false && !(body.entity && body.entity.project)) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
+        if (opts.entity !== false && !(body.entity && body.entity.project)) return sendJson(res, 400, { error: 'Select an entity first.' });
         if (opts.restricted && rejectIfRestricted(res, opts.restricted)) return;
         if (body.batch !== undefined && body.batch !== null) {
             const b = parseBatch(body.batch);
@@ -161,7 +161,7 @@ async function handleSessionRetry(req, res) {
     let body;
     try { body = await readJsonBody(req); } catch (e) { body = {}; }
     const project = (body && body.project) || 'taxio_hub';
-    if (!PROJECTS[project]) return sendJson(res, 400, { error: 'Project tidak dikenal.' });
+    if (!PROJECTS[project]) return sendJson(res, 400, { error: 'Unknown project.' });
     if (sessionRestore.active(project)) {
         let timer;
         await Promise.race([sessionRestore.retryNow(project), new Promise((r) => { timer = setTimeout(r, sessionRestore.WAIT_MAX_MS); })]);
@@ -172,10 +172,10 @@ async function handleSessionRetry(req, res) {
 
 async function handleConnect(req, res) {
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     const { project, email, password } = body || {};
-    if (!PROJECTS[project]) return sendJson(res, 400, { error: 'Project tidak dikenal.' });
-    if (!email || !password) return sendJson(res, 400, { error: 'Email & kata sandi wajib diisi.' });
+    if (!PROJECTS[project]) return sendJson(res, 400, { error: 'Unknown project.' });
+    if (!email || !password) return sendJson(res, 400, { error: 'Enter your email and password.' });
     sessionRestore.cancel(project); // masuk sendiri menggantikan pemulihan sesi lama yang mungkin masih dicoba
     try {
         const auth = await sessionStore.connectWithPassword(project, email, password);
@@ -200,11 +200,11 @@ async function handleConnect(req, res) {
  *  menempatkannya ke grup. */
 async function handleSignup(req, res) {
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     const { initial, email, password } = body || {};
     const project = (body && body.project) || 'taxio_hub';
-    if (!PROJECTS[project]) return sendJson(res, 400, { error: 'Project tidak dikenal.' });
-    if (state.isConnected(project)) return sendJson(res, 409, { error: 'Anda sudah masuk. Putuskan akun ini dulu untuk mendaftarkan akun lain.' });
+    if (!PROJECTS[project]) return sendJson(res, 400, { error: 'Unknown project.' });
+    if (state.isConnected(project)) return sendJson(res, 409, { error: 'You are already signed in. Disconnect this account first to register another one.' });
     const problem = registration.validateSignup({ initial, email, password });
     if (problem) return sendJson(res, 400, { error: problem });
     try {
@@ -232,8 +232,8 @@ async function handleRegistrationCheck(req, res) {
     const project = (body && body.project) || 'taxio_hub';
     await sessionRestore.waitIfRestoring();
     const p = PROJECTS[project] && state.getPending(project);
-    if (!p) return sendJson(res, 400, { error: 'Tidak ada pendaftaran yang sedang menunggu.' });
-    if (!p.client || !p.user) return sendJson(res, 409, { error: 'Konfirmasi email dulu, lalu masuk dengan email dan kata sandi Anda.', needsLogin: true });
+    if (!p) return sendJson(res, 400, { error: 'No registration is pending.' });
+    if (!p.client || !p.user) return sendJson(res, 409, { error: 'Confirm your email first, then sign in with your email and password.', needsLogin: true });
     try {
         await sessionStore.refreshIfNeeded(p.client);
         const reg = await connection.attach(project, { client: p.client, project: p.project, session: p.session, user: p.user });
@@ -248,10 +248,10 @@ async function handleRegistrationCheck(req, res) {
  *  perangkat lain sehingga inisial yang tersimpan tidak ada). */
 async function handleRegistrationInitial(req, res) {
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     const project = (body && body.project) || 'taxio_hub';
     const p = PROJECTS[project] && state.getPending(project);
-    if (!p || !p.client) return sendJson(res, 400, { error: 'Masuk dulu dengan email dan kata sandi Anda.' });
+    if (!p || !p.client) return sendJson(res, 400, { error: 'Sign in with your email and password first.' });
     try {
         const r = await registration.submitInitial(p.client, p.email, body && body.initial);
         state.setPending(project, Object.assign({}, p, { status: r.status, initial: r.initial }));
@@ -266,7 +266,7 @@ async function handleDisconnect(req, res) {
     let body;
     try { body = await readJsonBody(req); } catch (e) { body = {}; }
     const projectId = body && body.project;
-    if (!PROJECTS[projectId]) return sendJson(res, 400, { error: 'Project tidak dikenal.' });
+    if (!PROJECTS[projectId]) return sendJson(res, 400, { error: 'Unknown project.' });
     // Keluar selagi sesi tersimpan masih dipulihkan / menunggu jaringan: hentikan pemulihannya, lalu buang
     // sesi tersimpan itu juga (pengguna memilih "Masuk dengan akun lain").
     const wasRestoring = sessionRestore.active(projectId);
@@ -284,7 +284,7 @@ async function handleDisconnect(req, res) {
 async function handleEntities(req, res, mode) {
     await sessionRestore.waitIfRestoring();
     const connectedIds = state.connectedProjectIds();
-    if (!connectedIds.length) return sendJson(res, 401, { error: 'Belum terhubung ke akun manapun.' });
+    if (!connectedIds.length) return sendJson(res, 401, { error: 'Not connected to any account.' });
     const all = [];
     const errors = [];
     for (const projectId of connectedIds) {
@@ -299,7 +299,7 @@ async function handleEntities(req, res, mode) {
             // Sejak penguncian kredensial Taxio Hub (2026-10-21) coretax_pics hanya bisa dibaca saat login;
             // permintaan tanpa sesi yang sah (token gagal diperbarui) ditolak dengan 42501.
             // Sesi yang hilang kini ditolak lib/session-store.js sendiri ("... kedaluwarsa ...") sebelum terkirim anonim.
-            const expired = e.code === '42501' || /permission denied|kedaluwarsa/i.test(e.message || '');
+            const expired = e.code === '42501' || /permission denied|kedaluwarsa|expired/i.test(e.message || '');
             errors.push(PROJECTS[projectId].label + ': ' + (expired ? 'sesi login sudah kedaluwarsa - putuskan lalu hubungkan ulang akun ini.' : e.message));
         }
     }
@@ -318,8 +318,8 @@ async function handleEntities(req, res, mode) {
 // (lib/local-auth-client.js menyamar sebagai klien Supabase di depan lib/entities.js). ----
 async function guardLocalEntities(res) {
     await sessionRestore.waitIfRestoring();
-    if (!state.connectedProjectIds().length) { sendJson(res, 401, { error: 'Belum terhubung ke akun manapun.' }); return false; }
-    if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai entitas lokal.')) return false;
+    if (!state.connectedProjectIds().length) { sendJson(res, 401, { error: 'Not connected to any account.' }); return false; }
+    if (rejectIfRestricted(res, 'Restricted Editor cannot use local entities.')) return false;
     return true;
 }
 
@@ -331,7 +331,7 @@ async function handleLocalEntities(req, res) {
 async function handleLocalEntitySave(req, res) {
     if (!await guardLocalEntities(res)) return;
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     const uid = currentUserId();
     try {
         const rec = body && body.id ? localEntities.update(uid, body.id, body) : localEntities.create(uid, body);
@@ -345,7 +345,7 @@ async function handleLocalEntitySave(req, res) {
 async function handleLocalEntityDelete(req, res) {
     if (!await guardLocalEntities(res)) return;
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     try {
         localEntities.remove(currentUserId(), body && body.id);
         return sendJson(res, 200, { ok: true });
@@ -361,9 +361,9 @@ async function handleLocalEntityDelete(req, res) {
 const handleBillingPph25 = action({}, async (req, res, body) => {
     const { entity, masaInput, nominal, saveRoot } = body;
     const mmYY = String(masaInput || '').trim();
-    if (!/^(0[1-9]|1[0-2])\d{2}$/.test(mmYY)) return sendJson(res, 400, { error: 'Masa harus berformat MMYY, misalnya 0726.' });
+    if (!/^(0[1-9]|1[0-2])\d{2}$/.test(mmYY)) return sendJson(res, 400, { error: 'Masa must be in MMYY format, for example 0726.' });
     const amount = Number(String(nominal || '').replace(/[^\d]/g, ''));
-    if (!amount || amount <= 0) return sendJson(res, 400, { error: 'Nominal PPh 25 wajib diisi.' });
+    if (!amount || amount <= 0) return sendJson(res, 400, { error: 'Enter the PPh 25 amount.' });
 
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
@@ -398,13 +398,13 @@ async function handleSessionsList(req, res) {
 }
 async function handleSessionFront(req, res) {
     let body; try { body = await readJsonBody(req); } catch (e) { body = {}; }
-    if (!body || !body.picId) return sendJson(res, 400, { error: 'picId wajib diisi.' });
+    if (!body || !body.picId) return sendJson(res, 400, { error: 'picId is required.' });
     try { return sendJson(res, 200, { ok: await chrome.bringSessionToFront(body.picId) }); }
     catch (e) { return sendJson(res, 400, { error: e.message }); }
 }
 async function handleSessionClose(req, res) {
     let body; try { body = await readJsonBody(req); } catch (e) { body = {}; }
-    if (!body || !body.picId) return sendJson(res, 400, { error: 'picId wajib diisi.' });
+    if (!body || !body.picId) return sendJson(res, 400, { error: 'picId is required.' });
     try { return sendJson(res, 200, { ok: await chrome.closeLiveSession(body.picId) }); }
     catch (e) { return sendJson(res, 400, { error: e.message }); }
 }
@@ -422,10 +422,10 @@ function currentUserId() {
  *  berkredensial (yang sekarang login otomatis, lihat resolveEntitySource). Mengembalikan
  *  { manualPage, runEntity }, atau null setelah membalas galat. */
 async function prepareManual(res) {
-    if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai login manual.')) return null;
+    if (rejectIfRestricted(res, 'Restricted Editor cannot use manual login.')) return null;
     const manualPage = chrome.getManualPage();
     if (!manualPage) {
-        sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Buka Coretax", login dulu, lalu coba lagi.' });
+        sendJson(res, 401, { error: 'No manual session yet. Click "Open Coretax", log in, then try again.' });
         return null;
     }
     return { manualPage, ...await manualIdentity() };
@@ -464,11 +464,11 @@ async function resolveEntitySource(res, entity) {
         return { kind: 'manual', manualPage: m.manualPage, runEntity: m.runEntity, label: m.label, tag: m.tag };
     }
     if (entity.project === 'local') {
-        if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai entitas lokal.')) return null;
+        if (rejectIfRestricted(res, 'Restricted Editor cannot use local entities.')) return null;
         const uid = currentUserId();
-        if (!entity.local_id || !entity.pic_id) { sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' }); return null; }
+        if (!entity.local_id || !entity.pic_id) { sendJson(res, 400, { error: 'Select an entity and PIC first.' }); return null; }
         const resolved = uid ? localEntities.resolveLogin(uid, entity.local_id, entity.pic_id) : null;
-        if (!resolved) { sendJson(res, 404, { error: 'Entitas lokal tidak ditemukan atau kredensialnya belum lengkap. Buka lagi dialog entitas ini di tab Saya.' }); return null; }
+        if (!resolved) { sendJson(res, 404, { error: 'Local entity not found or its credentials are incomplete. Reopen this entity\'s edit dialog.' }); return null; }
         const picId = localAuth.buildPicId(entity.local_id, entity.pic_id);
         const fallbackPicIds = resolved.entity.individual ? [] : localEntities.otherPicRefs(uid, entity.local_id, entity.pic_id).map((r) => localAuth.buildPicId(entity.local_id, r));
         return {
@@ -477,24 +477,24 @@ async function resolveEntitySource(res, entity) {
             passphrase: resolved.passphrase, fallbackPicIds, label: resolved.entity.entity_name
         };
     }
-    if (!entity.entity_id || !entity.pic_id) { sendJson(res, 400, { error: 'Entitas/PIC belum dipilih.' }); return null; }
+    if (!entity.entity_id || !entity.pic_id) { sendJson(res, 400, { error: 'Select an entity and PIC first.' }); return null; }
     const s = state.get(entity.project);
-    if (!s || !state.isConnected(entity.project)) { sendJson(res, 401, { error: 'Belum terhubung ke ' + (PROJECTS[entity.project] || {}).label + '.' }); return null; }
+    if (!s || !state.isConnected(entity.project)) { sendJson(res, 401, { error: 'Not connected to ' + (PROJECTS[entity.project] || {}).label + '.' }); return null; }
     // Token segar SEBELUM membaca PIC (lib/session-store.js); sesi hilang / Taxio Hub tak terjangkau dijawab jelas di sini.
     const fresh = await sessionStore.refreshIfNeeded(s.client);
-    if (fresh && fresh.status === 'invalid') { sendJson(res, 401, { error: (PROJECTS[entity.project] || {}).label + ': ' + sessionStore.EXPIRED_MESSAGE }); return null; }
-    if (fresh && fresh.status === 'network') { sendJson(res, 503, { error: (PROJECTS[entity.project] || {}).label + ' tidak bisa dihubungi untuk memperbarui sesi login - periksa koneksi internet, lalu coba lagi.' }); return null; }
+    if (fresh && fresh.status === 'invalid') { sendJson(res, 401, { error: (PROJECTS[entity.project] || {}).label + ': ' + sessionStore.EXPIRED_MESSAGE_EN }); return null; }
+    if (fresh && fresh.status === 'network') { sendJson(res, 503, { error: (PROJECTS[entity.project] || {}).label + ' could not be reached to refresh the login session. Check your internet connection and try again.' }); return null; }
     const restricted = isProjectRestricted(entity.project);
-    if (isIndividualEntityBlocked(restricted, entity)) { sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses akun Individual.' }); return null; }
+    if (isIndividualEntityBlocked(restricted, entity)) { sendJson(res, 403, { error: 'Restricted Editor cannot access Individual accounts.' }); return null; }
     const allowedEbupotSections = (s.membership && s.membership.allowed_ebupot_sections) || null;
     const linkedOthers = await entitiesLib.getOtherLinkedPicIds(s.client, s.orgId, entity.entity_id, entity.pic_id).catch(() => []);
     const authorized = await entitiesLib.resolveAuthorizedPic(s.client, s.orgId, entity.pic_id, linkedOthers);
     // A session that failed to refresh makes every PIC read anonymous, which Taxio Hub refuses the
     // same way it refuses a PIC you may not use (seorang pengguna, editor, 2026-11-04) - say which.
     if (authorized.denied && !(await s.client.auth.getUser().then(({ data, error }) => !error && data && data.user).catch(() => false))) {
-        sendJson(res, 401, { error: (PROJECTS[entity.project] || {}).label + ': sesi login sudah kedaluwarsa - putuskan lalu hubungkan ulang akun ini.' }); return null;
+        sendJson(res, 401, { error: (PROJECTS[entity.project] || {}).label + ': login session expired. Disconnect and reconnect this account.' }); return null;
     }
-    if (authorized.denied) { sendJson(res, 403, { error: 'Anda tidak berwenang memakai PIC yang dipilih untuk entitas ini di Taxio Hub. Pilih PIC lain di palet entitas, atau minta admin memberi akses.' }); return null; }
+    if (authorized.denied) { sendJson(res, 403, { error: 'You are not authorized to use the selected PIC for this entity in Taxio Hub. Choose another PIC in the entity palette, or ask an admin for access.' }); return null; }
     const passphrase = authorized.passphrase;
     const fallbackPicIds = authorized.fallbackPicIds;
     return {
@@ -553,7 +553,7 @@ async function prepareEntityPage(res, entity) {
         return {
             label: src.label, folder: src.runEntity.entity_id, session: sessionOf(src), entityId: src.runEntity.entity_id,
             open: async () => {
-                if (chrome.isLoggedOut(src.manualPage)) throw new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.');
+                if (chrome.isLoggedOut(src.manualPage)) throw Object.assign(new Error('Sesi manual belum login ke Coretax - silakan login dulu di jendela Coretax.'), { userMessage: 'The manual session is not logged in to Coretax. Log in first in the Coretax window.' });
                 return src.manualPage;
             }
         };
@@ -572,13 +572,13 @@ async function prepareEntityPage(res, entity) {
 const handleDownloadEbupot = action({}, async (req, res, body) => {
     const { entity, bupotType, masaInput, kodeInput, saveRoot, pageSize, outputMode } = body;
     const documentStatus = body.documentStatus ? body.documentStatus : 'issued';
-    if (!bupotType || !masaInput) return sendJson(res, 400, { error: 'Jenis bupot & masa wajib diisi.' });
-    if (!['issued', 'not_issued'].includes(documentStatus)) return sendJson(res, 400, { error: 'Status dokumen e-Bupot tidak valid.' });
+    if (!bupotType || !masaInput) return sendJson(res, 400, { error: 'Select the Bukti Potong type and enter the Masa.' });
+    if (!['issued', 'not_issued'].includes(documentStatus)) return sendJson(res, 400, { error: 'Invalid e-Bupot document status.' });
 
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
     if (src.kind === 'auto' && src.restricted && !isEbupotTypeAllowed(src.allowedEbupotSections, bupotType)) {
-        return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis e-Bupot ini.' });
+        return sendJson(res, 403, { error: 'Restricted Editor cannot download this e-Bupot type.' });
     }
     const runOpts = runOptsFor(src, { bupotType, documentStatus, masaInput, kodeInput, saveRoot, pageSize, outputMode });
     // One automation run per session (Chrome window): two runs in the same window would fight
@@ -592,13 +592,13 @@ const handleDownloadEbupot = action({}, async (req, res, body) => {
 const handleDownloadMyBupot = action({}, async (req, res, body) => {
     let { buktiTypeKeys } = body;
     const { entity, masaInput, saveRoot, pageSize, outputMode } = body;
-    if (!Array.isArray(buktiTypeKeys) || !buktiTypeKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis bukti potong & masa wajib diisi.' });
+    if (!Array.isArray(buktiTypeKeys) || !buktiTypeKeys.length || !masaInput) return sendJson(res, 400, { error: 'Select the Bukti Potong type and enter the Masa.' });
 
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
     if (src.kind === 'auto' && src.restricted) {
         if (!isMyBupotAllowed(src.allowedEbupotSections)) {
-            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengakses Bukti Potong Saya.' });
+            return sendJson(res, 403, { error: 'Restricted Editor cannot access Bukti Potong Saya.' });
         }
         // Filters the blocked types OUT and proceeds with whatever's left, rather than
         // rejecting the whole (multi-select) request - CONFIRMED LIVE 2026-08-13: a restricted
@@ -611,7 +611,7 @@ const handleDownloadMyBupot = action({}, async (req, res, body) => {
         }
         buktiTypeKeys = filtered;
         if (!buktiTypeKeys.length) {
-            return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan mengunduh jenis Bukti Potong Saya yang dipilih.' });
+            return sendJson(res, 403, { error: 'Restricted Editor cannot download the selected Bukti Potong Saya type.' });
         }
     }
     const runOpts = runOptsFor(src, { buktiTypeKeys, masaInput, saveRoot, pageSize, outputMode });
@@ -622,18 +622,18 @@ const handleDownloadMyBupot = action({}, async (req, res, body) => {
 // Entitas dicek SESUDAH blokir PPh 21 / Mode A1 untuk Restricted (urutan lama dipertahankan).
 const handleDownloadSpt = action({ entity: false }, async (req, res, body) => {
     if ((body.a1Year !== undefined || (Array.isArray(body.jenisPajakKeys) && body.jenisPajakKeys.includes('pph21')))
-        && rejectIfRestricted(res, 'Seluruh unduhan SPT PPh 21 diblokir untuk pengguna Restricted.')) return;
+        && rejectIfRestricted(res, 'All PPh 21 SPT downloads are blocked for Restricted users.')) return;
     if (body.a1Year !== undefined) {
         // Use trusted session roles, never a role supplied in the request body.
         // Check every active connection so selecting a manual/other project cannot bypass this.
-        if (rejectIfRestricted(res, 'Mode A1 tidak tersedia untuk pengguna Restricted.')) return;
-        if (!/^20\d{2}$/.test(String(body.a1Year)) || Number(body.a1Year) < 2025) return sendJson(res, 400, { error: 'Tahun Mode A1 harus mulai 2025.' });
+        if (rejectIfRestricted(res, 'Mode A1 is not available to Restricted users.')) return;
+        if (!/^20\d{2}$/.test(String(body.a1Year)) || Number(body.a1Year) < 2025) return sendJson(res, 400, { error: 'The Mode A1 year must be 2025 or later.' });
         const yy = String(body.a1Year).slice(2);
         body = { ...body, jenisPajakKeys: ['pph21'], masaInput: '01' + yy + '-12' + yy, includeLampiran: true, includeBpe: true, includeInduk: true, lampiranMode: 'full', lampiranFormat: 'pdf', outputLayout: 'combined', checkPph25: false };
     }
     const { entity, jenisPajakKeys, masaInput, saveRoot, checkPph25, includeLampiran, includeBpe, includeInduk, lampiranMode, lampiranFormat, outputLayout, layoutStyle } = body;
-    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Entitas belum dipilih.' });
-    if (!Array.isArray(jenisPajakKeys) || !jenisPajakKeys.length || !masaInput) return sendJson(res, 400, { error: 'Jenis pajak & masa wajib diisi.' });
+    if (!entity || !entity.project) return sendJson(res, 400, { error: 'Select an entity first.' });
+    if (!Array.isArray(jenisPajakKeys) || !jenisPajakKeys.length || !masaInput) return sendJson(res, 400, { error: 'Select the Jenis Pajak and enter the Masa.' });
 
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
@@ -666,7 +666,7 @@ const handleDownloadSpt = action({ entity: false }, async (req, res, body) => {
  *  Excel" Coretax sendiri (terbukti murni client-side) - generate sendiri dari /inputinvoice/list. */
 const handleDownloadPajakMasukan = action({}, async (req, res, body) => {
     const { entity, masaInput, saveRoot } = body;
-    if (!masaInput) return sendJson(res, 400, { error: 'Masa wajib diisi.' });
+    if (!masaInput) return sendJson(res, 400, { error: 'Enter the Masa.' });
     let masaList;
     try { masaList = masaLib.parseMasaListInput(masaInput); } catch (e) { return sendJson(res, 400, { error: e.message }); }
 
@@ -682,11 +682,11 @@ const handleDownloadPajakMasukan = action({}, async (req, res, body) => {
  *  Excel diambil langsung dari daftar Coretax; CSV resmi dibuat oleh Coretax sendiri (ekspor massal). */
 const handleDownloadEfaktur = action({}, async (req, res, body) => {
     const { entity, masaInput, types, excel, csv, saveRoot } = body;
-    if (!masaInput) return sendJson(res, 400, { error: 'Masa wajib diisi.' });
+    if (!masaInput) return sendJson(res, 400, { error: 'Enter the Masa.' });
     const known = new Set(efaktur.DOC_TYPES.map((t) => t.key));
     const typeKeys = Array.isArray(types) ? [...new Set(types.map(String))] : [];
-    if (!typeKeys.length || typeKeys.some((k) => !known.has(k))) return sendJson(res, 400, { error: 'Pilih minimal satu jenis dokumen yang valid.' });
-    if (excel === false && !csv) return sendJson(res, 400, { error: 'Pilih minimal satu format (Excel atau CSV resmi).' });
+    if (!typeKeys.length || typeKeys.some((k) => !known.has(k))) return sendJson(res, 400, { error: 'Select at least one valid document type.' });
+    if (excel === false && !csv) return sendJson(res, 400, { error: 'Select at least one format (Excel or official CSV).' });
     let masaList;
     try { masaList = masaLib.parseMasaListInput(masaInput); } catch (e) { return sendJson(res, 400, { error: e.message }); }
 
@@ -701,11 +701,11 @@ const handleDownloadEfaktur = action({}, async (req, res, body) => {
 /** Pajak Masukan - pengkreditan per baris Excel. Entitas+PIC (login otomatis) atau sesi manual. */
 const handleImportPajakMasukan = action({ body: 'large' }, async (req, res, body) => {
     const { entity, targetMasaInput } = body;
-    if (!body.fileBase64 && !body.filePath) return sendJson(res, 400, { error: 'File template belum dipilih.' });
+    if (!body.fileBase64 && !body.filePath) return sendJson(res, 400, { error: 'No template file selected.' });
     if (targetMasaInput && !/^(0[1-9]|1[0-2])\d{2}$/.test(String(targetMasaInput).trim())) {
-        return sendJson(res, 400, { error: 'Masa Pengkreditan harus berformat MMYY, misalnya 0726.' });
+        return sendJson(res, 400, { error: 'Masa Pengkreditan must be in MMYY format, for example 0726.' });
     }
-    const fileBuffer = readUploadedFile(res, body, 'File template belum dipilih.');
+    const fileBuffer = readUploadedFile(res, body, 'No template file selected.');
     if (!fileBuffer) return;
 
     const target = await prepareEntityPage(res, entity);
@@ -725,9 +725,9 @@ const CASE_URL = /(?:case-routing|case-overview|form-render)\/[0-9a-f-]{36}/i;
 async function prepareDividenPage(res, entity, needCase) {
     if (!entity || !entity.project || entity.project === 'manual') {
         // Sesi manual: aturan yang sama dengan prepareManual (Restricted Editor tidak boleh login manual).
-        if (rejectIfRestricted(res, 'Restricted Editor tidak diizinkan memakai login manual.')) return null;
+        if (rejectIfRestricted(res, 'Restricted Editor cannot use manual login.')) return null;
         const manualPage = chrome.getManualPage();
-        if (!manualPage) { sendJson(res, 401, { error: 'Sesi manual belum ada - klik "Login Coretax" dan login dulu' + (needCase ? ', lalu buka kasus e-Reporting.' : '.') }); return null; }
+        if (!manualPage) { sendJson(res, 401, { error: 'No manual session yet. Click "Open Coretax" and log in first' + (needCase ? ', then open the e-Reporting case.' : '.') }); return null; }
         const who = await manualIdentity();
         return { label: who.label, session: { ...MANUAL_SESSION, tag: who.tag, entity: who.runEntity.entity_id }, open: async () => manualPage };
     }
@@ -746,7 +746,7 @@ async function prepareDividenPage(res, entity, needCase) {
             const live = chrome.getLiveEntityPage(target.picId), who = loginStatus.get(runcontrol.windowKeyFor(target.picId));
             const onCase = live && CASE_URL.test(live.url());
             if (!onCase || !who || who.picId !== target.picId || who.entityId !== target.entityId) {
-                throw new Error('Belum ada kasus e-Reporting yang terbuka untuk ' + target.label + ' - klik "Buat Kasus Baru" dulu, atau buka kasusnya (Alur Kasus) di jendela Coretax entitas ini.');
+                throw Object.assign(new Error('Belum ada kasus e-Reporting yang terbuka untuk ' + target.label + ' - klik "Buat Kasus Baru" dulu, atau buka kasusnya (Alur Kasus) di jendela Coretax entitas ini.'), { userMessage: 'No e-Reporting case is open for ' + target.label + '. Click "Create New Case" first, or open the case in this entity\'s Coretax window.' });
             }
             return live;
         }
@@ -757,8 +757,8 @@ async function prepareDividenPage(res, entity, needCase) {
  *  proses dimulai - mana yang datanya sudah ada (Excel lama / cache) dan apakah PDF-nya ada. Hanya membaca disk. */
 const handleA1Inspect = action({ outdated: false, entity: false }, async (req, res, body) => {
     const { entity, year, source, saveRoot } = body;
-    if (!entity || !entity.entity_id) return sendJson(res, 400, { error: 'Pilih entitas dulu.' });
-    if (!/^20\d{2}$/.test(String(year))) return sendJson(res, 400, { error: 'Tahun tidak valid.' });
+    if (!entity || !entity.entity_id) return sendJson(res, 400, { error: 'Select an entity first.' });
+    if (!/^20\d{2}$/.test(String(year))) return sendJson(res, 400, { error: 'Invalid year.' });
     try {
         const p = require('../lib/a1-paths').a1Paths({ entity, saveRoot, year: String(year) });
         const out = await require('../lib/a1-source').inspect({ a1Dir: p.readDirs, source: source || undefined, year: String(year), sptDir: p.sptDir, pdfDir: p.taxServer ? [p.pdfDir, p.outDir] : undefined });
@@ -771,9 +771,9 @@ const handleA1Inspect = action({ outdated: false, entity: false }, async (req, r
  *  atau di sebelah rekap: "<kode> <tahun> - BPA1 Desember (impor).xml"; tidak membuka Coretax. */
 const handleBpa1Xml = action({ outdated: false, entity: false }, async (req, res, body) => {
     const { filePath, year, outDir } = body;
-    if (!filePath || !/\.xlsx$/i.test(filePath)) return sendJson(res, 400, { error: 'Pilih Excel rekap (.xlsx) dulu.' });
-    if (outDir && !fs.existsSync(outDir)) return sendJson(res, 400, { error: 'Folder tujuan tidak ditemukan: ' + outDir });
-    if (!/^20\d{2}$/.test(String(year || ''))) return sendJson(res, 400, { error: 'Tahun pajak tidak valid.' });
+    if (!filePath || !/\.xlsx$/i.test(filePath)) return sendJson(res, 400, { error: 'Select the recap Excel (.xlsx) first.' });
+    if (outDir && !fs.existsSync(outDir)) return sendJson(res, 400, { error: 'Destination folder not found: ' + outDir });
+    if (!/^20\d{2}$/.test(String(year || ''))) return sendJson(res, 400, { error: 'Invalid tax year.' });
     try {
         const ExcelJS = require('exceljs'), wb = new ExcelJS.Workbook();
         await wb.xlsx.readFile(filePath);
@@ -785,25 +785,25 @@ const handleBpa1Xml = action({ outdated: false, entity: false }, async (req, res
         log('XML BPA1 Desember: ' + out.count + ' bukti potong -> ' + target);
         return sendJson(res, 200, { file: target, count: out.count, skipped: out.skipped, totalTax: money(out.totalTax), totalDes: (out.totalDes < 0 ? '-' : '') + money(Math.abs(out.totalDes)) });
     } catch (e) {
-        return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.code === 'EBUSY' ? 'Excel rekap sedang dibuka - tutup dulu.' : e.message });
+        return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Recap Excel not found: ' + filePath : e.code === 'EBUSY' ? 'The recap Excel is open. Close it first.' : e.message });
     }
 });
 
 /** Pembetulan NIK BPMP (bagian halaman Mode A1): isian NIK Baru / Nama Baru Excel Mode A1 -> Coretax lewat API
  *  (automation/bpmp-amend.js). submit=false hanya menguji; submit=true mengirim lalu memeriksa ulang. */
-const handleBpmpAmend = action({ body: 'large', restricted: 'Pembetulan NIK BPMP tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+const handleBpmpAmend = action({ body: 'large', restricted: 'BPMP NIK correction is not available to Restricted users.' }, async (req, res, body) => {
     const { entity, fileBase64, filePath, year, submit, saveRoot, sweepOnly, allowSimilar, confirmCancel } = body;
     const amend = require('../automation/bpmp-amend');
     if (sweepOnly) return handleBpmpSweep(res, amend, entity, String(year || ''), saveRoot);
-    if (!fileBase64 && !filePath) return sendJson(res, 400, { error: 'Excel rekap belum dipilih.' });
+    if (!fileBase64 && !filePath) return sendJson(res, 400, { error: 'No recap Excel selected.' });
     let parsed;
     // filePath: "Pakai rekap terakhir" (Excel hasil tab Unduh setahun di folder A1 entitas ini).
-    try { parsed = await amend.readTargets(fileBase64 ? Buffer.from(fileBase64, 'base64') : (/\.xlsx$/i.test(String(filePath)) ? fs.readFileSync(filePath) : (() => { throw new Error('File harus .xlsx'); })())); }
-    catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.message }); }
+    try { parsed = await amend.readTargets(fileBase64 ? Buffer.from(fileBase64, 'base64') : (/\.xlsx$/i.test(String(filePath)) ? fs.readFileSync(filePath) : (() => { throw new Error('The file must be .xlsx.'); })())); }
+    catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Recap Excel not found: ' + filePath : e.message }); }
     const taxYear = String(year || parsed.year || '');
-    if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Tahun pajak tidak terbaca dari Excel - pilih tahunnya.' });
+    if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Could not read the tax year from the Excel. Select the year.' });
     if (filePath) require('../lib/a1-autorefresh').watch(filePath);
-    if (!parsed.targets.length && !parsed.cancels.length) return sendJson(res, 400, { error: 'Belum ada NIK Baru yang terisi di sheet NIK atau per bukti potong di sheet Pembetulan, dan tidak ada Tindakan = Batalkan.' + (parsed.skipped.length ? ' ' + parsed.skipped[0] : '') });
+    if (!parsed.targets.length && !parsed.cancels.length) return sendJson(res, 400, { error: 'No new NIK is filled in on the NIK sheet or per Bukti Potong on the Pembetulan sheet, and no row has Tindakan = Batalkan.' + (parsed.skipped.length ? ' ' + parsed.skipped[0] : '') });
     // Pembatalan hanya untuk nomor yang dikonfirmasi pengguna (dialog daftar bukti potong di GUI, dari /api/bpmp-amend/preview).
     const confirmed = Array.isArray(confirmCancel) ? confirmCancel.map(String) : [];
 
@@ -871,14 +871,14 @@ const handleBpmpAmendPreview = action({ outdated: false, body: 'large', entity: 
     try {
         const p = await require('../automation/bpmp-amend').readTargets(fileBase64 ? Buffer.from(fileBase64, 'base64') : fs.readFileSync(filePath));
         return sendJson(res, 200, { byNik: p.targets.filter((t) => !t.number).length, perSlip: p.targets.filter((t) => t.number).length, cancels: p.cancels, skipped: p.skipped, year: p.year });
-    } catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Excel rekap tidak ditemukan: ' + filePath : e.message }); }
+    } catch (e) { return sendJson(res, 400, { error: e.code === 'ENOENT' ? 'Recap Excel not found: ' + filePath : e.message }); }
 });
 /** Perbarui rekap: susun ulang Excel rekap di tempat (lib/a1-import.js convertA1Workbook) tanpa membuka Coretax - sheet NIK dan
  *  Draft SPT Desember mengikuti isian terbaru (mis. NIK salah per bukti potong mendapat barisnya sendiri), isian ikut. */
 const handleA1Refresh = action({ body: 'large', entity: false }, async (req, res, body) => {
     const file = String(body.filePath || '');
-    if (!/\.xlsx$/i.test(file) || !fs.existsSync(file)) return sendJson(res, 400, { error: 'Pilih Excel rekap (.xlsx) yang ada di disk - "Use latest rekap" atau pilih file dari folder.' });
-    try { fs.closeSync(fs.openSync(file, 'r+')); } catch (e) { return sendJson(res, 409, { error: 'Excel rekap sedang terbuka - tutup dulu di Excel, lalu klik Perbarui rekap lagi.' }); }
+    if (!/\.xlsx$/i.test(file) || !fs.existsSync(file)) return sendJson(res, 400, { error: 'Select a recap Excel (.xlsx) that exists on disk: use "Use latest recap" or pick a file from a folder.' });
+    try { fs.closeSync(fs.openSync(file, 'r+')); } catch (e) { return sendJson(res, 409, { error: 'The recap Excel is open. Close it in Excel, then click Refresh recap again.' }); }
     // Di sesi entitas yang dipilih (pool PIC + entitas, sama dengan sessionOf): log ber-tag [kode] dan tampil di
     // "This entity"; laporan Pembetulan ke rekap yang sama menunggu sampai rekap selesai disusun (kunci berkas).
     const ent = body.entity;
@@ -897,9 +897,9 @@ const handleA1Refresh = action({ body: 'large', entity: false }, async (req, res
 /** Upload Format Impor Coretax (lib/coretax-import.js): baca file (Excel template impor DJP atau XML) dari base64 / path. */
 async function readImportFile(body) {
     const { fileBase64, filePath, fileName } = body || {};
-    if (!fileBase64 && !filePath) throw new Error('File impor belum dipilih.');
+    if (!fileBase64 && !filePath) throw new Error('No import file selected.');
     const name = fileName || (filePath ? path.basename(filePath) : 'impor.xlsx');
-    if (!/\.(xlsx|xml)$/i.test(name)) throw new Error('File harus .xlsx (template impor DJP) atau .xml.');
+    if (!/\.(xlsx|xml)$/i.test(name)) throw new Error('The file must be .xlsx (DJP import template) or .xml.');
     const buf = fileBase64 ? Buffer.from(fileBase64, 'base64') : fs.readFileSync(filePath);
     return { buf, name };
 }
@@ -914,13 +914,13 @@ const handleImportInspect = action({ outdated: false, body: 'large', entity: fal
     } catch (e) { return sendJson(res, 400, { error: e.message }); }
 });
 /** Unggah ke Belum Terbit e-Bupot entitas (tidak menerbitkan); hasil dari XML monitoring Coretax. */
-const handleImportUpload = action({ body: 'large', restricted: 'Upload impor e-Bupot tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+const handleImportUpload = action({ body: 'large', restricted: 'e-Bupot import upload is not available to Restricted users.' }, async (req, res, body) => {
     const { entity } = body;
     const imp = require('../lib/coretax-import');
     let prepared, name;
     try { const f = await readImportFile(body); name = f.name; prepared = await imp.prepare(f.buf, f.name, entity.project === 'manual' ? '' : entity.npwp); }
     catch (e) { return sendJson(res, 400, { error: e.message }); }
-    if (prepared.problems.length) return sendJson(res, 400, { error: 'Periksa file dulu: ' + prepared.problems.slice(0, 5).join('; ') + (prepared.problems.length > 5 ? ' (dan ' + (prepared.problems.length - 5) + ' lagi)' : '') });
+    if (prepared.problems.length) return sendJson(res, 400, { error: 'Check the file first: ' + prepared.problems.slice(0, 5).join('; ') + (prepared.problems.length > 5 ? ' (and ' + (prepared.problems.length - 5) + ' more)' : '') });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     return runInBackground(res, { label: 'Upload ' + prepared.label + ' to Belum Terbit · ' + target.label, session: withRules(target.session, 'import-coretax', { file: fileSig(prepared.xml ? Buffer.from(String(prepared.xml)) : Buffer.from(JSON.stringify(prepared.rows || []))), type: prepared.type }, 'ebupot-upload'), extra: { type: prepared.type, count: prepared.count } }, async () => {
@@ -969,8 +969,8 @@ const handleImportUpload = action({ body: 'large', restricted: 'Upload impor e-B
 /** Buat Konsep SPT Masa (PPh 21/26 atau Unifikasi) - tanpa lapor / tanda tangan. */
 const handleCreateKonsep = action({}, async (req, res, body) => {
     const { entity, taxType, period } = body;
-    if (!['ICT_WIT', 'ICT_WT'].includes(taxType)) return sendJson(res, 400, { error: 'Jenis SPT: ICT_WIT (PPh 21/26) atau ICT_WT (Unifikasi).' });
-    if (taxType === 'ICT_WIT' && rejectIfRestricted(res, 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.')) return;
+    if (!['ICT_WIT', 'ICT_WT'].includes(taxType)) return sendJson(res, 400, { error: 'SPT type must be ICT_WIT (PPh 21/26) or ICT_WT (Unifikasi).' });
+    if (taxType === 'ICT_WIT' && rejectIfRestricted(res, 'Konsep SPT PPh 21 is not available to Restricted users.')) return;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     return runInBackground(res, { label: 'Create Konsep SPT ' + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, session: withRules(target.session, 'create-konsep', { taxType, period }, 'konsep:' + taxType) }, async () => {
@@ -1015,11 +1015,11 @@ const handleIssuePreview = action({ restricted: ISSUE_RESTRICTED }, async (req, 
 /** Terbitkan Belum Terbit satu jenis & masa - hanya dengan kode konfirmasi dari pratinjau (daftar harus belum berubah). */
 const handleIssueEbupot = action({ restricted: ISSUE_RESTRICTED }, async (req, res, body) => {
     const { entity, type, period, token } = body;
-    if (!token) return sendJson(res, 400, { error: 'Kode konfirmasi pratinjau wajib - jalankan pratinjau terbitkan dulu.' });
+    if (!token) return sendJson(res, 400, { error: 'A preview confirmation code is required. Run the issue preview first.' });
     const iss = require('../lib/coretax-issue');
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
-    if (iss.NEEDS_SIGN.has(type) && !target.signer) return sendJson(res, 400, { error: 'Jenis ini perlu tanda tangan; sesi manual tidak menyimpan passphrase PIC - pakai entitas dengan login otomatis.' });
+    if (iss.NEEDS_SIGN.has(type) && !target.signer) return sendJson(res, 400, { error: 'This type needs a signature, and the manual session does not store the PIC passphrase. Use an entity with automatic login.' });
     return runInBackground(res, { label: (iss.NEEDS_SIGN.has(type) ? 'Issue & sign ' : 'Issue ') + typeLabel(type) + ' ' + period + ' · ' + target.label, session: withRules(target.session, 'issue-ebupot', { type, period, token }, 'ebupot-issue:' + type) }, async () => {
         const signer = iss.NEEDS_SIGN.has(type) ? await target.signer() : null;
         const page = await target.open();
@@ -1043,8 +1043,8 @@ const handleIssueEbupot = action({ restricted: ISSUE_RESTRICTED }, async (req, r
 /** Posting (opsional) dan unduh Konsep SPT (lib/konsep-download.js): lampiran lewat alat unduh SPT, Induk dibuat ulang. */
 const handleKonsepDownload = action({}, async (req, res, body) => {
     const { entity, taxType, period, post } = body;
-    if (!['ICT_WIT', 'ICT_WT'].includes(taxType)) return sendJson(res, 400, { error: 'Jenis SPT: ICT_WIT (PPh 21/26) atau ICT_WT (Unifikasi).' });
-    if (taxType === 'ICT_WIT' && rejectIfRestricted(res, 'Konsep SPT PPh 21 tidak tersedia untuk pengguna Restricted.')) return;
+    if (!['ICT_WIT', 'ICT_WT'].includes(taxType)) return sendJson(res, 400, { error: 'SPT type must be ICT_WIT (PPh 21/26) or ICT_WT (Unifikasi).' });
+    if (taxType === 'ICT_WIT' && rejectIfRestricted(res, 'Konsep SPT PPh 21 is not available to Restricted users.')) return;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     return runInBackground(res, { label: (post ? 'Posting & download Konsep SPT ' : 'Download Konsep SPT ') + (taxType === 'ICT_WIT' ? 'PPh 21' : 'Unifikasi') + ' ' + period + ' · ' + target.label, session: Object.assign(withRules(target.session, 'konsep-download', { taxType, period, post: !!post, saveRoot: body.saveRoot }, 'konsep:' + taxType), { changesCoretax: !!post }) }, async () => {
@@ -1069,7 +1069,7 @@ function rememberPreview(token, data) {
 }
 /** NIK / NPWP penerima di file impor dicek ke Coretax sebelum upload (MCP upload_ebupot): bila ada yang tidak dikenal,
  *  pengguna ditanya lanjut atau tidak. Maks 30 nomor (lebih dari itu: tidak dicek - terlalu lama). Hanya membaca. */
-const handleImportCheckNik = action({ body: 'large', restricted: 'Upload impor e-Bupot tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+const handleImportCheckNik = action({ body: 'large', restricted: 'e-Bupot import upload is not available to Restricted users.' }, async (req, res, body) => {
     const { entity } = body;
     let prepared;
     try { const f = await readImportFile(body); prepared = await require('../lib/coretax-import').prepare(f.buf, f.name, entity.project === 'manual' ? '' : entity.npwp); }
@@ -1077,7 +1077,7 @@ const handleImportCheckNik = action({ body: 'large', restricted: 'Upload impor e
     const tins = prepared.rows ? prepared.rows.map((x) => x.CounterpartTin) : [...String(prepared.xml).matchAll(/<CounterpartTin>\s*(\d+)\s*<\/CounterpartTin>/g)].map((m) => m[1]);
     const temp = tins.filter((t) => String(t) === '9990000000999000').length;
     const uniq = [...new Set(tins.map(String).filter((t) => /^\d{16}$/.test(t) && t !== '9990000000999000'))];
-    if (!uniq.length || uniq.length > 30) return sendJson(res, 200, { checked: false, count: uniq.length, tempRows: temp, unknown: [], note: uniq.length ? 'Lebih dari 30 NIK / NPWP - tidak dicek (terlalu lama). NIK yang tidak dikenal Coretax akan diganti NIK sementara.' : 'Tidak ada NIK / NPWP 16 digit untuk dicek.' });
+    if (!uniq.length || uniq.length > 30) return sendJson(res, 200, { checked: false, count: uniq.length, tempRows: temp, unknown: [], note: uniq.length ? 'More than 30 NIK / NPWP, so they were not checked (too slow). Any NIK Coretax does not recognise will be replaced by a temporary NIK.' : 'There is no 16-digit NIK / NPWP to check.' });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     return runForResult(res, { label: 'Check NIK before upload · ' + target.label, session: withRules(target.session, 'import-check-nik', { ids: uniq }, null) }, async () => {
@@ -1089,7 +1089,7 @@ const handleImportCheckNik = action({ body: 'large', restricted: 'Upload impor e
     }, { failPrefix: 'Cek NIK file impor gagal: ' });
 });
 /** Cek NIK / NPWP di Coretax (terdaftar + nama resmi) - hanya membaca. */
-const handleCheckNik = action({ restricted: 'Cek NIK tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+const handleCheckNik = action({ restricted: 'NIK check is not available to Restricted users.' }, async (req, res, body) => {
     const { entity, ids } = body;
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
@@ -1101,27 +1101,27 @@ const handleCheckNik = action({ restricted: 'Cek NIK tidak tersedia untuk penggu
     }, { failPrefix: 'Cek NIK gagal: ' });
 });
 function ebupotEdit(kind) {
-    return action({ restricted: 'Ubah / batal BPMP tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+    return action({ restricted: 'Editing / cancelling BPMP is not available to Restricted users.' }, async (req, res, body) => {
         if ((kind === 'amend' || kind === 'cancel') && body.token) {
             const pv = ebupotPreviews.get(String(body.token));
             if (pv) {
-                if (pv.kind !== kind) return sendJson(res, 400, { error: 'Kode ' + body.token + ' berasal dari pratinjau ' + (pv.kind === 'amend' ? 'pembetulan' : 'pembatalan') + ', bukan ' + (kind === 'amend' ? 'pembetulan' : 'pembatalan') + '.' });
-                if (body.type && body.type !== pv.type) return sendJson(res, 400, { error: 'Jenis "' + body.type + '" berbeda dengan pratinjau (' + pv.type + ') untuk kode ' + body.token + ' - tidak dikirim.' });
-                if (pv.entityId && body.entity && body.entity.entity_id !== pv.entityId) return sendJson(res, 400, { error: 'Kode ' + body.token + ' milik pratinjau entitas ' + pv.entityId + ' - tidak dikirim.' });
+                if (pv.kind !== kind) return sendJson(res, 400, { error: 'Code ' + body.token + ' comes from a ' + (pv.kind === 'amend' ? 'Pembetulan' : 'cancellation') + ' preview, not a ' + (kind === 'amend' ? 'Pembetulan' : 'cancellation') + ' one.' });
+                if (body.type && body.type !== pv.type) return sendJson(res, 400, { error: 'Type "' + body.type + '" differs from the preview (' + pv.type + ') for code ' + body.token + '. Nothing was sent.' });
+                if (pv.entityId && body.entity && body.entity.entity_id !== pv.entityId) return sendJson(res, 400, { error: 'Code ' + body.token + ' belongs to the preview of entity ' + pv.entityId + '. Nothing was sent.' });
                 // Isian yang tidak disebut diambil dari pratinjau.
                 for (const k of ['type', 'period', 'numbers', 'changes', 'filePath']) if (body[k] == null && pv[k] != null) body[k] = pv[k];
-            } else if (!body.type) return sendJson(res, 400, { error: 'Pratinjau untuk kode ' + body.token + ' tidak ditemukan (Pilot dimulai ulang?) - sebutkan jenisnya (type) atau jalankan pratinjau lagi.' });
+            } else if (!body.type) return sendJson(res, 400, { error: 'No preview found for code ' + body.token + ' (was Pilot restarted?). Specify the type or run the preview again.' });
         }
         const { entity } = body;
-        if ((kind === 'amend' || kind === 'cancel') && !body.token) return sendJson(res, 400, { error: 'Kode konfirmasi pratinjau wajib - jalankan pratinjau dulu.' });
-        if (body.filePath && !fs.existsSync(String(body.filePath))) return sendJson(res, 400, { error: 'File revisi tidak ditemukan: ' + body.filePath });
+        if ((kind === 'amend' || kind === 'cancel') && !body.token) return sendJson(res, 400, { error: 'A preview confirmation code is required. Run the preview first.' });
+        if (body.filePath && !fs.existsSync(String(body.filePath))) return sendJson(res, 400, { error: 'Revision file not found: ' + body.filePath });
         const ed = require('../lib/ebupot-edit');
         const type = String(body.type || 'mp');
-        if (!ed.SPEC[type]) return sendJson(res, 400, { error: 'Jenis tidak dikenal: ' + type + ' (' + Object.keys(ed.SPEC).join(', ') + ').' });
+        if (!ed.SPEC[type]) return sendJson(res, 400, { error: 'Unknown type: ' + type + ' (' + Object.keys(ed.SPEC).join(', ') + ').' });
         const target = await prepareEntityPage(res, entity);
         if (!target) return;
         const needsSigner = (kind === 'amend' || kind === 'cancel') && ed.SPEC[type].sign;
-        if (needsSigner && !target.signer) return sendJson(res, 400, { error: ed.SPEC[type].label + ' perlu tanda tangan; sesi manual tidak menyimpan passphrase PIC - pakai entitas dengan login otomatis.' });
+        if (needsSigner && !target.signer) return sendJson(res, 400, { error: ed.SPEC[type].label + ' needs a signature, and the manual session does not store the PIC passphrase. Use an entity with automatic login.' });
         const npwp = entity.project === 'manual' ? null : entity.npwp;
         const input = { npwp, type, issued: body.issued !== false, period: body.period, nik: body.nik, name: body.name, numbers: body.numbers, detail: !!body.detail, changes: body.changes, filePath: body.filePath, token: body.token };
         const L = ed.SPEC[type].label;
@@ -1165,7 +1165,7 @@ function ebupotEdit(kind) {
 /** Rekam API Coretax (lib/coretax-recorder.js) selama `minutes` menit (atau sampai Stop) di jendela PIC entitas: pengguna
  *  mengerjakan aksinya sendiri di Coretax; hasilnya (tanpa token / passphrase) menjadi dasar otomasi jenis baru.
  *  Tidak untuk Restricted Editor: rekaman berisi lalu lintas API Coretax entitas apa adanya. */
-const handleCoretaxRecord = action({ restricted: 'Rekam API Coretax tidak tersedia untuk pengguna Restricted.' }, async (req, res, body) => {
+const handleCoretaxRecord = action({ restricted: 'Coretax API recording is not available to Restricted users.' }, async (req, res, body) => {
     const { entity } = body;
     const minutes = Math.min(30, Math.max(1, Number(body.minutes) || 10));
     const target = await prepareEntityPage(res, entity);
@@ -1190,7 +1190,7 @@ const handleCoretaxRecord = action({ restricted: 'Rekam API Coretax tidak tersed
 
 /** Penyisiran saja (tanpa Excel, tanpa mengubah apa pun): masih ada NIK bermasalah di BPMP Telah Terbit tahun ini? */
 async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
-    if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Pilih tahun pajak dulu.' });
+    if (!/^20\d{2}$/.test(taxYear)) return sendJson(res, 400, { error: 'Select the tax year first.' });
     const target = await prepareEntityPage(res, entity);
     if (!target) return;
     return runInBackground(res, { label: 'BPMP NIK check ' + taxYear + ' · ' + target.label, session: withRules(target.session, 'bpmp-sweep', { year: taxYear }, 'bpmp-amend') }, async () => {
@@ -1214,7 +1214,7 @@ async function handleBpmpSweep(res, amend, entity, taxYear, saveRoot) {
 
 const handleImportDividen = action({ body: 'large', entity: false }, async (req, res, body) => {
     const { entity } = body;
-    const fileBuffer = readUploadedFile(res, body, 'File template belum dipilih.');
+    const fileBuffer = readUploadedFile(res, body, 'No template file selected.');
     if (!fileBuffer) return;
 
     const target = await prepareDividenPage(res, entity, true);
@@ -1246,7 +1246,7 @@ const handleCreateDividenCase = action({ body: 'lenient', entity: false }, async
 
 const handleLoginEntity = action({}, async (req, res, body) => {
     const { entity } = body;
-    if (entity.project === 'manual') return sendJson(res, 400, { error: 'Sesi manual sudah login sendiri - tombol ini khusus entitas dengan login otomatis.' });
+    if (entity.project === 'manual') return sendJson(res, 400, { error: 'The manual session logs in by itself. This button is only for entities with automatic login.' });
     const src = await resolveEntitySource(res, entity);
     if (!src) return;
     return runInBackground(res, { label: 'Coretax login · ' + src.label, session: withRules(sessionOf(src), 'login', { pic: src.picId }, null) }, () => runLoginOnly({
@@ -1264,8 +1264,8 @@ const handleLoginEntity = action({}, async (req, res, body) => {
  *  Host check in createGuiServer). */
 async function handleDeepLink(req, res, ctx) {
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
-    if (!body || !body.url) return sendJson(res, 400, { error: 'URL kosong.' });
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
+    if (!body || !body.url) return sendJson(res, 400, { error: 'The URL is empty.' });
     sendJson(res, 202, { received: true });
     await shell.showDashboard(dashboardUrl(req, ctx));
     deeplink.dispatch(body.url).catch((e) => log('Deep link gagal: ' + e.message));
@@ -1274,10 +1274,10 @@ async function handleDeepLink(req, res, ctx) {
 async function handleOpenCoretaxManual(req, res) {
     if (rejectIfOutdated(res)) return;
     await sessionRestore.waitIfRestoring();
-    if (!state.connectedProjectIds().length) return sendJson(res, 401, { error: 'Harus terhubung ke setidaknya satu akun Taxio/Taxio.me sebelum membuka Coretax manual.' });
+    if (!state.connectedProjectIds().length) return sendJson(res, 401, { error: 'Connect to at least one Taxio/Taxio.me account before opening manual Coretax.' });
     if (anyRestricted()) {
         log('Akses Coretax Manual ditolak untuk akun Restricted Editor.');
-        return sendJson(res, 403, { error: 'Restricted Editor tidak diizinkan menggunakan Login Coretax Manual. Silakan pilih entitas dan klik tombol Login pada entitas tersebut.' });
+        return sendJson(res, 403, { error: 'Restricted Editor cannot use manual Coretax login. Select an entity and click its Login button.' });
     }
     sendJson(res, 202, { started: true, session: runSessionKey() });
     chrome.openCoretaxManual(false, null).catch((e) => log('Gagal membuka Coretax manual: ' + e.message));
@@ -1319,12 +1319,12 @@ function gracefulQuit({ finalize } = {}) {
  *  yang dikecualikan: yang dihapus hanya data di PC ini (sama dengan "Bersihkan profil Chrome"). */
 function isQuitting() { return !!_quitting; }
 const handleResetAll = action({ outdated: false, entity: false }, async (req, res, body) => {
-    if (body.confirm !== true) return sendJson(res, 400, { error: 'Konfirmasi reset belum diberikan.' });
-    if (runcontrol.anyActive()) return sendJson(res, 409, { error: 'Masih ada proses yang berjalan atau antre. Hentikan atau tunggu sampai selesai, lalu coba lagi.' });
-    if (isQuitting()) return sendJson(res, 409, { error: 'Taxio Pilot sedang ditutup.' });
+    if (body.confirm !== true) return sendJson(res, 400, { error: 'Reset was not confirmed.' });
+    if (runcontrol.anyActive()) return sendJson(res, 409, { error: 'Some processes are still running or queued. Stop them or wait for them to finish, then try again.' });
+    if (isQuitting()) return sendJson(res, 409, { error: 'Taxio Pilot is closing.' });
     const reset = require('../lib/reset');
     try { reset.request({ version: pkg.version }); }
-    catch (e) { log('Reset semua data gagal dimulai: ' + e.message); return sendJson(res, 500, { error: 'Tidak bisa menyiapkan reset: ' + e.message }); }
+    catch (e) { log('Reset semua data gagal dimulai: ' + e.message); return sendJson(res, 500, { error: 'Could not prepare the reset: ' + e.message }); }
     // Keluar dari Taxio Hub di PC ini saja (tanpa jaringan: token di Hub dibiarkan kedaluwarsa sendiri).
     for (const projectId of Object.keys(PROJECTS)) {
         try { sessionRestore.cancel(projectId); sessionStore.forgetStored(projectId); state.clear(projectId); state.clearPending(projectId); } catch (e) { /* abaikan */ }
@@ -1378,19 +1378,19 @@ function rollbackInfo() {
  *  data yang dibocorkan dan deep link TIDAK dijalankan (tetap butuh token). */
 let _lastLegacyNotice = 0;
 async function handleLegacyProbe(kind, req, res, ctx) {
-    if (kind === 'session') return sendJson(res, 200, { app: 'Taxio Pilot', version: pkg.version, legacyProbe: true, message: 'Taxio Pilot versi ' + pkg.version + ' sedang berjalan di port ini.' });
+    if (kind === 'session') return sendJson(res, 200, { app: 'Taxio Pilot', version: pkg.version, legacyProbe: true, message: 'Taxio Pilot version ' + pkg.version + ' is running on this port.' });
     // Habiskan body dulu: versi 3 menulis body deep link, dan koneksi yang ditutup sebelum body terkirim
     // membuatnya mengira tidak ada yang menjawab (lalu mencoba bind port dan menampilkan popup galat).
     try { await readJsonBody(req); } catch (e) { /* bukan JSON / kosong */ }
-    if (kind === 'deeplink') sendJson(res, 409, { error: 'Taxio Pilot versi ' + pkg.version + ' sedang berjalan; tautan dari versi lama tidak dijalankan.', legacyProbe: true });
+    if (kind === 'deeplink') sendJson(res, 409, { error: 'Taxio Pilot version ' + pkg.version + ' is running; the link from the old version was not run.', legacyProbe: true });
     else sendJson(res, 200, { ok: true, legacyProbe: true });
     await shell.showDashboard(dashboardUrl(req, ctx));
     const now = Date.now();
     if (now - _lastLegacyNotice < 60000) return;
     _lastLegacyNotice = now;
-    showPopup('Taxio Pilot versi 3 (coretax-agent.exe) baru saja dibuka, padahal versi ' + pkg.version + ' sedang berjalan - versi 3 langsung ditutup dan jendela ini dibawa ke depan.'
-        + (kind === 'deeplink' ? ' Tautan taxio-coretax:// yang dibukanya tidak dijalankan; buka lagi tautannya dari Taxio Hub.' : '')
-        + '\nUntuk kembali ke versi 3: Settings -> Quit app, lalu buka coretax-agent.exe (lihat Settings -> "Back to version 3").', 'Versi lama dibuka', 'Info');
+    showPopup('Taxio Pilot version 3 (coretax-agent.exe) was just opened while version ' + pkg.version + ' is running. Version 3 was closed right away and this window was brought to the front.'
+        + (kind === 'deeplink' ? ' The taxio-coretax:// link it opened was not run; open the link again from Taxio Hub.' : '')
+        + '\nTo go back to version 3: Settings -> Quit app, then open coretax-agent.exe (see Settings -> "Back to version 3").', 'Old version opened', 'Info');
 }
 
 /** "Open the dashboard" over HTTP (older launchers forwarded double-clicks here). Headless: no-op. */
@@ -1448,7 +1448,7 @@ const handleProfilesStale = action({ outdated: false, entity: false }, async (re
 });
 const handleProfilesDelete = action({ outdated: false, entity: false }, async (req, res, body) => {
     const dirs = Array.isArray(body.dirs) ? body.dirs.filter((d) => typeof d === 'string' && d) : [];
-    if (!dirs.length) return sendJson(res, 400, { error: 'Pilih minimal satu profil.' });
+    if (!dirs.length) return sendJson(res, 400, { error: 'Select at least one profile.' });
     const hk = require('../lib/profile-housekeeping');
     const out = await hk.removeProfiles(dirs, { days: profileDays(body), busy: await profileBusyCheck() });
     log('Bersihkan profil Chrome: ' + out.deleted.length + ' profil dihapus (' + hk.MB(out.freedBytes) + ')' + (out.skipped.length ? ', ' + out.skipped.length + ' dilewati (' + out.skipped.map((s) => path.basename(s.dir) + ': ' + s.reason).join('; ').slice(0, 300) + ')' : '') + '. PIC-nya cukup login otomatis lagi saat dipakai.');
@@ -1492,7 +1492,7 @@ async function handlePickFile(req, res) {
     // yang belum pernah diterima route itu hanya boleh dibaca bila diserahkan dialog ini (rememberPicked).
     let size;
     try { size = fs.statSync(filePath).size; }
-    catch (e) { return sendJson(res, 400, { error: 'Gagal membaca file dari ' + filePath + ': ' + e.message }); }
+    catch (e) { return sendJson(res, 400, { error: 'Could not read the file from ' + filePath + ': ' + e.message }); }
     rememberPicked(filePath);
     return sendJson(res, 200, { filePath, fileName: path.basename(filePath), size });
 }
@@ -1517,14 +1517,14 @@ function wasPicked(p) { return !!p && pickedFiles.has(pickedKey(p)); }
 function readUploadedFile(res, body, missingMsg) {
     const { fileBase64, filePath } = body;
     if (fileBase64) {
-        try { return Buffer.from(fileBase64, 'base64'); } catch (e) { sendJson(res, 400, { error: 'File tidak bisa dibaca.' }); return null; }
+        try { return Buffer.from(fileBase64, 'base64'); } catch (e) { sendJson(res, 400, { error: 'The file could not be read.' }); return null; }
     }
     if (!filePath) { sendJson(res, 400, { error: missingMsg }); return null; }
-    if (!wasPicked(filePath)) { sendJson(res, 400, { error: 'File harus dipilih lewat tombol pilih file di dashboard (path ini tidak berasal dari dialog pilih file).' }); return null; }
+    if (!wasPicked(filePath)) { sendJson(res, 400, { error: 'Pick the file with the file picker button in the dashboard (this path did not come from the file picker).' }); return null; }
     try {
-        if (fs.statSync(filePath).size > PICKED_MAX_BYTES) { sendJson(res, 400, { error: 'File terlalu besar.' }); return null; }
+        if (fs.statSync(filePath).size > PICKED_MAX_BYTES) { sendJson(res, 400, { error: 'The file is too large.' }); return null; }
         return fs.readFileSync(filePath);
-    } catch (e) { sendJson(res, 400, { error: e.code === 'ENOENT' ? 'File tidak ditemukan: ' + filePath : 'File tidak bisa dibaca: ' + e.message }); return null; }
+    } catch (e) { sendJson(res, 400, { error: e.code === 'ENOENT' ? 'File not found: ' + filePath : 'The file could not be read: ' + e.message }); return null; }
 }
 
 async function handlePickFolder(req, res) {
@@ -1539,7 +1539,7 @@ async function handlePickFolder(req, res) {
 /** Log satu proses: ?session = run:<id> / kunci jendela / pool, &lines (default 40, maks 400). */
 function handleRunLog(req, res, { sess, url }) {
     const r = runcontrol.pick(sess, url.searchParams.get('entity') || undefined);
-    if (!r) return sendJson(res, 404, { error: 'Proses tidak ditemukan' + (sess ? ' untuk ' + sess : '') + '.' });
+    if (!r) return sendJson(res, 404, { error: 'Process not found' + (sess ? ' for ' + sess : '') + '.' });
     const n = Math.min(RUN_LOG_MAX, Math.max(1, Number(url.searchParams.get('lines')) || 40));
     return sendJson(res, 200, { key: r.key, id: r.id, tag: r.tag, label: r.label, active: r.active, lines: (runLogs.get(r.id) || []).slice(-n) });
 }
@@ -1550,7 +1550,7 @@ const runKeyOf = (k) => (/^\d+$/.test(String(k || '')) ? 'run:' + k : String(k |
 function handleRunsDetail(req, res, { url }) {
     const key = runKeyOf(url.searchParams.get('key'));
     const rec = key ? runcontrol.runDetail(key) : null;
-    if (!rec) return sendJson(res, 404, { error: 'Proses tidak ditemukan' + (key ? ' untuk ' + key : '') + '.' });
+    if (!rec) return sendJson(res, 404, { error: 'Process not found' + (key ? ' for ' + key : '') + '.' });
     const n = Math.min(RUN_LOG_MAX, Math.max(1, Number(url.searchParams.get('lines')) || 40));
     return sendJson(res, 200, Object.assign({}, rec, { lines: (runLogs.get(rec.id) || []).slice(-n) }));
 }
@@ -1558,17 +1558,17 @@ function handleRunsDetail(req, res, { url }) {
  *  body hanya membawa { key } - path dari permintaan tidak pernah dipakai. */
 async function handleRunsOpenFolder(req, res) {
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     const key = runKeyOf(body && body.key);
     const rec = key ? runcontrol.runDetail(key) : null;
-    if (!rec) return sendJson(res, 404, { error: 'Proses tidak ditemukan.' });
+    if (!rec) return sendJson(res, 404, { error: 'Process not found.' });
     const dir = runcontrol.outputDirOf(rec.key);
-    if (!dir) return sendJson(res, 404, { error: 'Proses ini belum mencatat folder hasil.' });
+    if (!dir) return sendJson(res, 404, { error: 'This process has not recorded an output folder.' });
     let isDir = false;
     try { isDir = fs.statSync(dir).isDirectory(); } catch (e) { /* belum ada */ }
-    if (!isDir) return sendJson(res, 404, { error: 'Folder hasil belum ada di disk: ' + dir });
+    if (!isDir) return sendJson(res, 404, { error: 'The output folder does not exist on disk yet: ' + dir });
     const err = await shell.openPath(dir);
-    if (err) return sendJson(res, 500, { error: 'Gagal membuka folder: ' + err });
+    if (err) return sendJson(res, 500, { error: 'Could not open the folder: ' + err });
     return sendJson(res, 200, { ok: true, dir });
 }
 function handleRunsClearDone(req, res) {
@@ -1580,11 +1580,11 @@ function handleRunsClearDone(req, res) {
 /** POST /api/runs/stop-batch { id }: Stop untuk semua proses aktif / antre dalam satu batch. */
 async function handleRunsStopBatch(req, res) {
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     const id = body && body.id;
-    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return sendJson(res, 400, { error: 'ID batch tidak valid.' });
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return sendJson(res, 400, { error: 'Invalid batch ID.' });
     const n = runcontrol.stopBatch(id);
-    if (n === null) return sendJson(res, 404, { error: 'Batch tidak ditemukan.' });
+    if (n === null) return sendJson(res, 404, { error: 'Batch not found.' });
     return sendJson(res, 200, { ok: true, stopped: n });
 }
 
@@ -1595,7 +1595,7 @@ function parallelSettingsReply() {
 }
 async function handleParallelSettings(req, res) {
     let body;
-    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     try {
         const next = require('../lib/parallel-settings').set({ perPic: body && body.perPic, total: body && body.total });
         log('Batas sesi paralel: ' + next.perPic + ' jendela per PIC, ' + next.total + ' jendela berjalan bersamaan.');
@@ -1609,7 +1609,7 @@ const runControl = (fn) => (req, res, { sess }) => { fn(sess); return sendJson(r
 
 async function handleRunPageSize(req, res, { sess }) {
     let b;
-    try { b = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Body tidak valid.' }); }
+    try { b = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: 'Invalid request body.' }); }
     const n = Number(b && b.size);
     if ([10, 25, 50, 100].includes(n)) runcontrol.setPageSizeOverride(n, sess);
     return sendJson(res, 200, runcontrol.status(sess));
@@ -1790,14 +1790,14 @@ function createGuiServer(port, opts) {
             const problem = requestOriginProblem(req, boundPort);
             if (problem) {
                 logRejected(req, pathname, problem);
-                return sendJson(res, 403, { error: 'Ditolak: permintaan lintas-origin tidak diizinkan.' });
+                return sendJson(res, 403, { error: 'Rejected: cross-origin requests are not allowed.' });
             }
             // Pembuka jendela dashboard: /?t=<token> -> cookie HttpOnly, lalu redirect ke / (token tidak
             // tertinggal di alamat / riwayat halaman). t yang salah ditolak 401.
             if (pathname === '/' && url.searchParams.has('t')) {
                 if (!runtime.tokenEquals(url.searchParams.get('t'), token)) {
                     logRejected(req, pathname, 'token ?t= salah');
-                    return sendJson(res, 401, { error: 'Tautan dashboard tidak berlaku (Taxio Pilot sudah dibuka ulang?). Buka Taxio Pilot lagi dari ikon / pintasannya.', auth: true });
+                    return sendJson(res, 401, { error: 'This dashboard link is no longer valid (was Taxio Pilot reopened?). Open Taxio Pilot again from its icon or shortcut.', auth: true });
                 }
                 res.writeHead(302, { 'Set-Cookie': setAuthCookieHeader(boundPort, token), Location: '/', 'Cache-Control': 'no-store' });
                 return res.end();

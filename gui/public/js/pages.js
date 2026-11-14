@@ -532,7 +532,9 @@
         if (!i) return buttons + '<div class="hint" style="margin-top:8px">Without selecting a file, previous results are looked up in the "Save to" folder. Click Check to see which periods already exist.</div>';
         if (i.loading) return buttons + '<div class="hint" style="margin-top:8px">Checking…</div>';
         if (i.error) return buttons + '<div class="hint warn" style="margin-top:8px">' + esc(i.error) + '</div>';
-        const data = (r) => r.cache ? 'Cache · Pembetulan ' + r.cache.revision : r.excel && /^Lengkap/.test(r.excel.data) ? 'Old Excel · Pembetulan ' + r.excel.revision : r.excel ? esc(r.excel.data) : '—';
+        // Teks status dibaca dari sheet Kontrol Excel lama (isi Indonesia); pencocokan tetap pada teks aslinya, hanya tampilannya Inggris.
+        const excelStatus = (t) => ({ 'Lengkap': 'Complete', 'Lengkap (dari proses sebelumnya)': 'Complete (from an earlier run)', 'Belum ada SPT': 'No SPT yet', 'Gagal dibaca': 'Could not be read', 'Belum diperiksa': 'Not checked' })[t] || t;
+        const data = (r) => r.cache ? 'Cache · Pembetulan ' + r.cache.revision : r.excel && /^Lengkap/.test(r.excel.data) ? 'Old Excel · Pembetulan ' + r.excel.revision : r.excel ? esc(excelStatus(r.excel.data)) : '—';
         const plan = (r) => (r.cache || (r.excel && /^Lengkap/.test(r.excel.data))) && r.pdf ? '<b>Reuse</b>*' : r.excel && /Belum ada SPT/.test(r.excel.data) ? 'Re-check' : 'Download';
         const rows = i.rows.map((r) => '<tr><td>' + r.masa + '</td><td>' + data(r) + '</td><td style="text-align:center">' + (r.pdf ? '✓' : '—') + '</td><td>' + plan(r) + '</td></tr>').join('');
         return buttons + (i.a1Dir ? '<div class="hint" style="margin-top:10px">Recap saved to: <b>' + esc(i.a1Dir) + '</b>' + (i.taxServer ? ' (Tax Server folder)' : '') + '</div>' : '') + '<div class="hint" style="margin-top:10px">' + (i.excel ? 'Excel: ' + esc(i.excel) : 'No old recap Excel (… ' + st.year + ' - Rekap SPT PPh 21 Setahun (A1).xlsx) in this source.') + (i.excelError ? ' <span class="warn">(' + esc(i.excelError) + ')</span>' : '') + '</div>'

@@ -333,7 +333,7 @@ function main() {
         const r = await require('../lib/runtime').probe(51733, null);
         if (r.status !== 200 || r.pilot) return; // bukan versi 3 (versi 4 memasang header x-taxio-pilot)
         log('Taxio Pilot versi 3 (coretax-agent.exe) masih berjalan di port 51733 - dua versi berjalan bersamaan.');
-        require('../lib/log').showPopup('Taxio Pilot versi 3 (coretax-agent.exe) masih berjalan di PC ini. Jangan jalankan dua versi bersamaan: tutup versi 3 lewat menu "Keluar" di ikon tray-nya, lalu lanjutkan di jendela ini.', 'Versi lama masih berjalan', 'Warning');
+        require('../lib/log').showPopup('Taxio Pilot version 3 (coretax-agent.exe) is still running on this PC. Do not run two versions at the same time: close version 3 from the "Quit" menu of its tray icon, then continue in this window.', 'Old version still running', 'Warning');
     }
 
     async function onReady() {

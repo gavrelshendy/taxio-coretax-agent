@@ -44,11 +44,11 @@ const USER = { id: 'u-1', email: 'baru@contoh.com' };
     console.log('registration');
 
     await test('validateSignup memakai kalimat yang sama dengan Taxio Hub', () => {
-        assert.strictEqual(registration.validateSignup({ initial: '', email: 'a@b.co', password: '123456' }), 'Inisial wajib diisi.');
-        assert.strictEqual(registration.validateSignup({ initial: 'SGA', email: '', password: '123456' }), 'Email & kata sandi wajib diisi.');
-        assert.strictEqual(registration.validateSignup({ initial: 'SGA', email: 'a@b.co', password: '12345' }), 'Kata sandi minimal 6 karakter.');
-        assert.strictEqual(registration.validateSignup({ initial: 'ABCDEFGHI', email: 'a@b.co', password: '123456' }), 'Inisial maksimal 8 karakter.');
-        assert.strictEqual(registration.validateSignup({ initial: 'sga', email: 'bukan-email', password: '123456' }), 'Format email tidak valid.');
+        assert.strictEqual(registration.validateSignup({ initial: '', email: 'a@b.co', password: '123456' }), 'Enter your initials.');
+        assert.strictEqual(registration.validateSignup({ initial: 'SGA', email: '', password: '123456' }), 'Enter your email and password.');
+        assert.strictEqual(registration.validateSignup({ initial: 'SGA', email: 'a@b.co', password: '12345' }), 'The password must be at least 6 characters.');
+        assert.strictEqual(registration.validateSignup({ initial: 'ABCDEFGHI', email: 'a@b.co', password: '123456' }), 'Initials can be at most 8 characters.');
+        assert.strictEqual(registration.validateSignup({ initial: 'sga', email: 'bukan-email', password: '123456' }), 'Invalid email format.');
         assert.strictEqual(registration.validateSignup({ initial: 'sga', email: 'a@b.co', password: '123456' }), null);
     });
 
@@ -71,20 +71,20 @@ const USER = { id: 'u-1', email: 'baru@contoh.com' };
 
     await test('signUp email sudah terdaftar (respons samaran Supabase) -> galat dan inisial dilupakan', async () => {
         const c = fakeClient({ signUp: () => ({ data: { user: { identities: [] }, session: null }, error: null }) });
-        await assert.rejects(() => registration.signUp(c, { initial: 'XY', email: 'ada@contoh.com', password: '123456' }), /sudah terdaftar/);
+        await assert.rejects(() => registration.signUp(c, { initial: 'XY', email: 'ada@contoh.com', password: '123456' }), /already registered/);
         assert.strictEqual(registration.recallInitial('ada@contoh.com'), '');
     });
 
     await test('signUp menerjemahkan galat Supabase', async () => {
         const c = fakeClient({ signUp: () => ({ data: null, error: { message: 'User already registered' } }) });
-        await assert.rejects(() => registration.signUp(c, { initial: 'XY', email: 'lagi@contoh.com', password: '123456' }), /sudah terdaftar. Silakan masuk/);
+        await assert.rejects(() => registration.signUp(c, { initial: 'XY', email: 'lagi@contoh.com', password: '123456' }), /already registered. Please sign in/);
         const c2 = fakeClient({ signUp: () => ({ data: null, error: { message: 'email rate limit exceeded' } }) });
-        await assert.rejects(() => registration.signUp(c2, { initial: 'XY', email: 'lagi@contoh.com', password: '123456' }), /Terlalu banyak percobaan/);
+        await assert.rejects(() => registration.signUp(c2, { initial: 'XY', email: 'lagi@contoh.com', password: '123456' }), /Too many attempts/);
     });
 
     await test('signUp menolak input tidak valid sebelum menghubungi server', async () => {
         const c = fakeClient();
-        await assert.rejects(() => registration.signUp(c, { initial: '', email: 'a@b.co', password: '123456' }), /Inisial wajib diisi/);
+        await assert.rejects(() => registration.signUp(c, { initial: '', email: 'a@b.co', password: '123456' }), /Enter your initials/);
         assert.strictEqual(c.calls.length, 0);
     });
 
@@ -135,13 +135,13 @@ const USER = { id: 'u-1', email: 'baru@contoh.com' };
 
     await test('resolveStatus: galat jaringan dilempar, bukan dianggap need-initial', async () => {
         const c = fakeClient({ get_my_active_membership: { error: 'TypeError: fetch failed' } });
-        await assert.rejects(() => registration.resolveStatus(c, USER, USER.email), /Tidak bisa menghubungi server/);
+        await assert.rejects(() => registration.resolveStatus(c, USER, USER.email), /Could not reach the Taxio Hub server/);
     });
 
     await test('submitInitial: sukses, tidak valid, dan galat server', async () => {
         const ok = fakeClient({ request_membership: { data: 'ok' } });
         assert.deepStrictEqual(await registration.submitInitial(ok, USER.email, ' abc '), { status: 'waiting-assignment', initial: 'ABC', submitted: true });
-        await assert.rejects(() => registration.submitInitial(ok, USER.email, ''), /Inisial wajib diisi/);
+        await assert.rejects(() => registration.submitInitial(ok, USER.email, ''), /Enter your initials/);
         const bad = fakeClient({ request_membership: { error: 'Akun ini sudah memiliki membership' } });
         await assert.rejects(() => registration.submitInitial(bad, USER.email, 'ABC'), /sudah memiliki membership/);
     });

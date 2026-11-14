@@ -47,10 +47,10 @@ function readBody(req, cap, tooLargeMsg) {
         req.on('aborted', () => fail(new Error('Permintaan dibatalkan.')));
     });
 }
-function readJsonBody(req) { return readBody(req, BODY_LIMIT, 'Body terlalu besar.'); }
+function readJsonBody(req) { return readBody(req, BODY_LIMIT, 'The request body is too large.'); }
 /** Batas lebih besar dari readJsonBody (1MB) - impor Dividen / Pajak Masukan / rekap mengirim
  *  seluruh .xlsx sebagai base64, bisa beberapa ratus KB; 20MB tetap menahan unggahan yang kebablasan. */
-function readLargeJsonBody(req, maxBytes) { return readBody(req, maxBytes || LARGE_BODY_LIMIT, 'File terlalu besar.'); }
+function readLargeJsonBody(req, maxBytes) { return readBody(req, maxBytes || LARGE_BODY_LIMIT, 'The file is too large.'); }
 
 function serveStatic(req, res, pathname) {
     const rel = pathname === '/' ? '/index.html' : pathname;

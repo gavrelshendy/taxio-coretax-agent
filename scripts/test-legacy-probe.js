@@ -91,7 +91,7 @@ async function test(name, fn) {
         await new Promise((r) => setTimeout(r, 50));
         assert.strictEqual(shown.length, 1);
         assert.ok(shown[0].startsWith('http://127.0.0.1:' + port + '/?t='), 'opens the dashboard with the launch token (inside v4 only)');
-        const n = pendingNotices().filter((x) => /versi 3/.test(x.msg));
+        const n = pendingNotices().filter((x) => /version 3/.test(x.msg));
         assert.strictEqual(n.length, 1);
         assert.ok(/Quit app/.test(n[0].msg));
     });
@@ -112,7 +112,7 @@ async function test(name, fn) {
         assert.strictEqual(shown.length, before + 1);
         const r = await raw(port, { method: 'POST', path: '/api/deeplink', body: JSON.stringify({ url: 'taxio-coretax://x' }) });
         assert.strictEqual(r.status, 409);
-        assert.strictEqual(pendingNotices().filter((x) => /versi 3/.test(x.msg)).length, 1, 'notice at most once a minute');
+        assert.strictEqual(pendingNotices().filter((x) => /version 3/.test(x.msg)).length, 1, 'notice at most once a minute');
     });
 
     await test('token protection unchanged for anything that is not the bare v3 probe', async () => {

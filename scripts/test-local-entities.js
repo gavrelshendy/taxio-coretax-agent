@@ -24,7 +24,7 @@ const U1 = 'user-1'; const U2 = 'user-2';
 
 test('Orang Pribadi: NPWP 16 digit dan kata sandi wajib, passphrase opsional', () => {
     throwsMsg(() => store.create(U1, { name: 'Budi', type: 'op', npwp: '123', password: 'x' }), /16 digit/);
-    throwsMsg(() => store.create(U1, { name: 'Budi', type: 'op', npwp: '1234567890123456' }), /Kata sandi wajib diisi/);
+    throwsMsg(() => store.create(U1, { name: 'Budi', type: 'op', npwp: '1234567890123456' }), /Enter the password/);
     const rec = store.create(U1, { name: '  Ani   Sample  Wijaya ', type: 'op', npwp: '1234-5678-9012-3456', password: 'rahasia123' });
     assert.strictEqual(rec.name, 'Ani Sample Wijaya');
     assert.strictEqual(rec.npwp, '1234567890123456'); // strip dibuang, tetap 16 digit
@@ -49,9 +49,9 @@ test('toEntity: tidak pernah membawa kata sandi/passphrase', () => {
 });
 
 test('Badan wajib menautkan minimal satu PIC dengan kredensial lengkap', () => {
-    throwsMsg(() => store.create(U1, { name: 'CV Tanpa PIC', type: 'badan', npwp: '1234567890123456', pics: [] }), /wajib menautkan minimal satu PIC/);
+    throwsMsg(() => store.create(U1, { name: 'CV Tanpa PIC', type: 'badan', npwp: '1234567890123456', pics: [] }), /must link at least one PIC/);
     throwsMsg(() => store.create(U1, { name: 'CV PIC Salah', type: 'badan', npwp: '1234567890123456', pics: [{ name: 'X', npwp: '123' }] }), /16 digit/);
-    throwsMsg(() => store.create(U1, { name: 'CV Tanpa Sandi', type: 'badan', npwp: '1234567890123456', pics: [{ name: 'X', npwp: '9999888877776666' }] }), /Kata sandi PIC "X" wajib diisi/);
+    throwsMsg(() => store.create(U1, { name: 'CV Tanpa Sandi', type: 'badan', npwp: '1234567890123456', pics: [{ name: 'X', npwp: '9999888877776666' }] }), /Enter the password for PIC "X"/);
 });
 
 let cv;
@@ -70,12 +70,12 @@ test('Badan dengan 2 PIC tersimpan lengkap; NPWP badan beda dari NPWP PIC', () =
 });
 
 test('PIC dengan NPWP sama dua kali di entitas yang sama ditolak', () => {
-    throwsMsg(() => store.create(U1, { name: 'CV Dobel', type: 'badan', npwp: '1234567890120000', pics: [{ name: 'A', npwp: '1111222233334444', password: 'x' }, { name: 'B', npwp: '1111222233334444', password: 'y' }] }), /dipakai dua kali/);
+    throwsMsg(() => store.create(U1, { name: 'CV Dobel', type: 'badan', npwp: '1234567890120000', pics: [{ name: 'A', npwp: '1111222233334444', password: 'x' }, { name: 'B', npwp: '1111222233334444', password: 'y' }] }), /used twice/);
 });
 
 test('Maksimal 5 PIC', () => {
     const many = Array.from({ length: 6 }, (_, i) => ({ name: 'PIC ' + i, npwp: String(1000000000000000 + i), password: 'x' }));
-    throwsMsg(() => store.create(U1, { name: 'CV Banyak PIC', type: 'badan', npwp: '1234567890129999', pics: many }), /Maksimal 5 PIC/);
+    throwsMsg(() => store.create(U1, { name: 'CV Banyak PIC', type: 'badan', npwp: '1234567890129999', pics: many }), /At most 5 PIC/);
 });
 
 test('toEntity Badan: pic_id = id PIC asli, PIC pertama jadi utama, tanpa kredensial', () => {
@@ -137,11 +137,11 @@ test('update: kata sandi/passphrase dikosongkan di form = tetap yang lama; NPWP 
 });
 
 test('update: PIC baru ditambahkan (tanpa id) tetap wajib kata sandi', () => {
-    throwsMsg(() => store.update(U1, cv.id, { name: cv.name, type: 'badan', npwp: cv.npwp, pics: cv.pics.concat({ name: 'PIC Baru', npwp: '7777888899990000' }) }), /Kata sandi PIC "PIC Baru" wajib diisi/);
+    throwsMsg(() => store.update(U1, cv.id, { name: cv.name, type: 'badan', npwp: cv.npwp, pics: cv.pics.concat({ name: 'PIC Baru', npwp: '7777888899990000' }) }), /Enter the password for PIC "PIC Baru"/);
 });
 
 test('update: entitas tidak ada -> galat', () => {
-    throwsMsg(() => store.update(U1, 'le_tidakada', { name: 'X', type: 'op', npwp: '1234567890123456', password: 'x' }), /tidak ditemukan/);
+    throwsMsg(() => store.update(U1, 'le_tidakada', { name: 'X', type: 'op', npwp: '1234567890123456', password: 'x' }), /not found/);
 });
 
 test('update: ubah Badan jadi Orang Pribadi menghapus daftar PIC', () => {
@@ -156,11 +156,11 @@ test('remove: entitas terhapus, kredensialnya ikut hilang', () => {
     const id = cv.id;
     assert.strictEqual(store.remove(U1, id), true);
     assert.strictEqual(store.getEntity(U1, id), null);
-    throwsMsg(() => store.remove(U1, id), /tidak ditemukan/);
+    throwsMsg(() => store.remove(U1, id), /not found/);
 });
 
 test('Nama unik per akun, boleh sama di akun lain; data terisolasi per akun', () => {
-    throwsMsg(() => store.create(U1, { name: 'ani sample wijaya', type: 'op', npwp: '9999999999999999', password: 'x' }), /sudah ada/);
+    throwsMsg(() => store.create(U1, { name: 'ani sample wijaya', type: 'op', npwp: '9999999999999999', password: 'x' }), /already exists/);
     const other = store.create(U2, { name: 'Ani Sample Wijaya', type: 'op', npwp: '1234567890123456', password: 'lain' });
     assert.strictEqual(store.listFor(U2).length, 1);
     assert.ok(store.listFor(U1).length >= 1);

@@ -79,7 +79,7 @@ function assertNoSecrets(entries) {
 
     let zipEntries;
     await test('exportZip: expected entries, health/runtime/log content, no secrets, home -> %USERPROFILE%', async () => {
-        const health = { at: 'x', summary: { ok: 1, warn: 0, fail: 0 }, checks: [{ id: 'data-root', label: 'Folder data dapat ditulis', status: 'ok', detail: 'ok', fix: '' }] };
+        const health = { at: 'x', summary: { ok: 1, warn: 0, fail: 0 }, checks: [{ id: 'data-root', label: 'Data folder is writable', status: 'ok', detail: 'ok', fix: '' }] };
         const out = await diagnostics.exportZip({ health, runtimeInfo: { port: 51733, pid: 1, version: '3.0.44', token: RUNTIME_TOKEN }, secrets: [RUNTIME_TOKEN], now: new Date(2026, 10, 12, 9, 5, 7) });
         assert.strictEqual(out.file, path.join(TMP, 'Downloads', 'TaxioPilot-diagnostik-20261112-090507.zip'));
         assert.ok(out.bytes > 0 && fs.statSync(out.file).size === out.bytes);

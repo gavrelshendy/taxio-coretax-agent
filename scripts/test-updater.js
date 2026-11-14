@@ -164,8 +164,8 @@ function fakeEngine() {
         // Ladder (1, 2, 5 min) exhausted without a successful download: the gate is lifted, one notice.
         const lifted = updater.getOutdatedInfo();
         assert.deepStrictEqual([lifted.outdated, lifted.reason, lifted.latestVersion], [false, 'download-failed', '99.0.0']);
-        assert.strictEqual(notices.filter((n) => n.title === 'Update tertunda').length, 1);
-        assert.ok(notices.find((n) => n.title === 'Update tertunda').msg.includes(updater.installerUrl('99.0.0')));
+        assert.strictEqual(notices.filter((n) => n.title === 'Update delayed').length, 1);
+        assert.ok(notices.find((n) => n.title === 'Update delayed').msg.includes(updater.installerUrl('99.0.0')));
 
         // A deferral is not a failure: regular cadence, ladder reset.
         runActive = true;
@@ -201,7 +201,7 @@ function fakeEngine() {
         const gate = [];
         for (let i = 0; i < 4; i++) { await fire(); gate.push(updater.getOutdatedInfo().outdated); }
         assert.deepStrictEqual(gate, [true, true, true, false]);
-        assert.strictEqual(notices.filter((n) => n.title === 'Update tertunda').length, 1, 'notice once per version');
+        assert.strictEqual(notices.filter((n) => n.title === 'Update delayed').length, 1, 'notice once per version');
         engine.downloadFails = false;
         const q = quits;
         await fire();
@@ -222,7 +222,7 @@ function fakeEngine() {
         assert.deepStrictEqual([r.status, r.blocked], ['failed', false]);
         assert.strictEqual(notices.length, 1);
         assert.ok(notices[0].msg.includes(updater.installerUrl('99.0.0')));
-        assert.ok(/sekali lagi/.test(notices[0].msg));
+        assert.ok(/try once more/.test(notices[0].msg));
         assert.strictEqual(notices[0].level, 'Warning');
         // first failure: still auto-installed once more, and the gate stays on meanwhile
         engine.latest = '99.0.0';
@@ -237,7 +237,7 @@ function fakeEngine() {
         guardStore.data = { target: '99.0.0', attempts: 2, firstAt: 'x', lastAt: 'x' };
         const r = updater.checkPreviousInstall();
         assert.deepStrictEqual([r.status, r.blocked], ['failed', true]);
-        assert.ok(/tidak akan dipasang otomatis lagi/.test(notices[0].msg));
+        assert.ok(/will not be installed automatically again/.test(notices[0].msg));
         engine.latest = '99.0.0';
         const d0 = engine.calls.download, q0 = quits;
         const a = await updater.checkAndApply();

@@ -214,7 +214,7 @@ const finishRun = async (id) => { const g = gates.get(id); if (g) { g.all = true
         R.J = (await POST('/api/actions/billing-pph25', { entity: ent('GHI', 'p-andi'), masaInput: '0726', nominal: '5' })).json;
         assert.strictEqual(R.F.queued, true); assert.strictEqual(R.F.position, 1); assert.strictEqual(R.F.session, 'run:' + R.F.run);
         assert.strictEqual(R.G.queued, true, 'batas total 5');
-        assert.strictEqual(H.status, 409); assert.ok(/Perintah yang sama untuk entitas ini sudah berjalan \("e-Faktur download/.test(H.json.error), H.json.error);
+        assert.strictEqual(H.status, 409); assert.ok(/The same command for this entity is already running \("e-Faktur download/.test(H.json.error), H.json.error);
         assert.strictEqual(R.I.queued, true);
         assert.strictEqual(R.J.queued, true); assert.strictEqual(R.J.position, 3);
         const f = await statusOf('run:' + R.F.run);
@@ -277,7 +277,7 @@ const finishRun = async (id) => { const g = gates.get(id); if (g) { g.all = true
         gates.get(R.K.run).all = true;
         await done(R.K.run);
         const t = fallbackTries.find((x) => x.run === R.K.run);
-        assert.ok(t && /Jendela Coretax PIC ini sedang dipakai proses lain/.test(t.error), JSON.stringify(t));
+        assert.ok(t && /This PIC's Coretax window is in use by another process/.test(t.error), JSON.stringify(t));
         assert.ok(lines.some((e) => e.run === R.K.run && /Gagal masuk sebagai PIC lain \(p-andi\)/.test(e.msg)));
         for (const w of ['p-andi', 'p-andi~2', 'p-andi~3']) assert.ok(runcontrol.isBusy(w), w + ' tetap milik prosesnya');
     });
@@ -323,7 +323,7 @@ const finishRun = async (id) => { const g = gates.get(id); if (g) { g.all = true
         // Jendela p-andi masih dipakai F (SPT DEF).
         const t0 = Date.now();
         const a = await POST('/api/ebupot/issue-preview', { entity: ent('GHI', 'p-andi'), type: 'bpu', period: '0126' });
-        assert.strictEqual(a.status, 409); assert.ok(/Sesi ini masih menjalankan "SPT pph21/.test(a.json.error), a.json.error);
+        assert.strictEqual(a.status, 409); assert.ok(/This session is still running "SPT pph21/.test(a.json.error), a.json.error);
         assert.ok(Date.now() - t0 >= 250, 'menunggu dulu, tidak langsung 409');
         W.limits.RESULT_QUEUE_MS = 3000;
         const pending = POST('/api/ebupot/issue-preview', { entity: ent('GHI', 'p-andi'), type: 'bpu', period: '0126' });
@@ -342,7 +342,7 @@ const finishRun = async (id) => { const g = gates.get(id); if (g) { g.all = true
         const d1 = deeplink.dispatch(url('Z1')), d2 = deeplink.dispatch(url('Z2'));
         await until(() => runcontrol.isBusy('p-zed') && runcontrol.isBusy('p-zed~2'), 3000, 'dua jendela p-zed');
         await deeplink.dispatch(url('Z1'));
-        assert.ok(lines.some((e) => /Deep link taxio-coretax:\/\/ ditolak: Perintah yang sama untuk entitas ini sudah berjalan/.test(e.msg)));
+        assert.ok(lines.some((e) => /Deep link taxio-coretax:\/\/ ditolak: The same command for this entity is already running/.test(e.msg)));
         release(); deeplinkGate = null;
         await Promise.all([d1, d2]);
         assert.strictEqual(lines.filter((e) => /Deep link selesai/.test(e.msg)).length, 2);

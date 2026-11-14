@@ -56,7 +56,7 @@ const call = (fn) => runcontrol.isolate(fn); // every HTTP request runs in its o
         const res2 = fakeRes();
         await call(() => W.runForResult(res2, { label: 'Check NIK · UJI', session: SESSION }, async () => 1, { failPrefix: 'x: ' }));
         assert.strictEqual(res2.status, 409);
-        assert.ok(/Sesi ini masih menjalankan "Find BPMP · UJI"/.test(res2.body.error), res2.body.error);
+        assert.ok(/This session is still running "Find BPMP · UJI"/.test(res2.body.error), res2.body.error);
         assert.ok(logs.some((l) => /masih berjalan di latar - sesi ini tetap ditandai sibuk/.test(l)));
         w.finish('ok');
         await sleep(10);

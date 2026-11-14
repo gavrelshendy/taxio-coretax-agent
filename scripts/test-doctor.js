@@ -74,10 +74,10 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
     });
 
     await test('browser: bundled ready / installed fallback (warn) / neither (fail) / disabled', async () => {
-        assert.ok(/bawaan/.test(byId(await run()).browser.detail));
+        assert.ok(/built-in/.test(byId(await run()).browser.detail));
         const notReady = () => ({ ready: false, disabled: false, version: '1' });
         const fallback = byId(await run({ browser: notReady })).browser;
-        assert.strictEqual(fallback.status, 'warn'); assert.ok(/terpasang/.test(fallback.detail));
+        assert.strictEqual(fallback.status, 'warn'); assert.ok(/installed/.test(fallback.detail));
         assert.strictEqual(byId(await run({ browser: notReady, installedChrome: () => null })).browser.status, 'fail');
         assert.strictEqual(byId(await run({ browser: () => ({ ready: false, disabled: true }) })).browser.status, 'ok');
     });
@@ -87,7 +87,7 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
         const honoured = byId(await run({ proxy, proxyHonoured: () => true })).proxy;
         assert.strictEqual(honoured.status, 'ok'); assert.ok(/proxy\.kantor:8080/.test(honoured.detail) && /PAC/.test(honoured.detail) && /Taxio Hub/.test(honoured.detail));
         const c = byId(await run({ proxy, proxyHonoured: () => false })).proxy;
-        assert.strictEqual(c.status, 'warn'); assert.ok(/proxy\.kantor:8080/.test(c.detail) && /tidak/.test(c.detail) && /Taxio Hub/.test(c.fix));
+        assert.strictEqual(c.status, 'warn'); assert.ok(/proxy\.kantor:8080/.test(c.detail) && /do not/.test(c.detail) && /Taxio Hub/.test(c.fix));
         // default dep: follows lib/net.js (setFetch = honoured)
         net.setFetch(async () => fakeResponse(200, NOW));
         try { assert.strictEqual(byId(await doctor.runChecks({ deps: { proxy }, only: ['proxy'] })).proxy.status, 'ok'); }
@@ -115,8 +115,8 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
 
     await test('clock: skew > 2 minutes warns (both directions), small skew ok, missing Date header warns', async () => {
         const fast = byId(await run({ fetch: async () => fakeResponse(200, NOW - 5 * 60000) })).clock;
-        assert.strictEqual(fast.status, 'warn'); assert.ok(/lebih cepat 5 menit/.test(fast.detail), fast.detail); assert.ok(/otomatis/.test(fast.fix));
-        assert.ok(/lebih lambat/.test(byId(await run({ fetch: async () => fakeResponse(200, NOW + 3 * 60000) })).clock.detail));
+        assert.strictEqual(fast.status, 'warn'); assert.ok(/5 minutes ahead/.test(fast.detail), fast.detail); assert.ok(/automatically/.test(fast.fix));
+        assert.ok(/behind/.test(byId(await run({ fetch: async () => fakeResponse(200, NOW + 3 * 60000) })).clock.detail));
         assert.strictEqual(byId(await run({ fetch: async () => fakeResponse(200, NOW - 90000) })).clock.status, 'ok');
         assert.strictEqual(byId(await run({ fetch: async () => fakeResponse(200, null) })).clock.status, 'warn');
     });
@@ -134,9 +134,9 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
         assert.strictEqual(v.status, 'warn'); assert.ok(/3\.0\.50/.test(v.detail));
         // Gerbang dibuka (lib/updater.js): tetap peringatan, bukan "(terbaru)".
         const f = byId(await run({ versionInfo: () => ({ current: '4.0.0', outdated: false, latestVersion: '4.0.1', reason: 'install-failed' }) })).version;
-        assert.strictEqual(f.status, 'warn'); assert.ok(/2x gagal/.test(f.detail) && /taxio-pilot-setup-4\.0\.1\.exe/.test(f.fix));
+        assert.strictEqual(f.status, 'warn'); assert.ok(/failed twice/.test(f.detail) && /taxio-pilot-setup-4\.0\.1\.exe/.test(f.fix));
         const g = byId(await run({ versionInfo: () => ({ current: '4.0.0', outdated: false, latestVersion: '4.0.1', reason: 'download-failed' }) })).version;
-        assert.strictEqual(g.status, 'warn'); assert.ok(/belum bisa diunduh/.test(g.detail));
+        assert.strictEqual(g.status, 'warn'); assert.ok(/could not be downloaded yet/.test(g.detail));
     });
 
     await test('each check has its own timeout; a hanging / throwing check never breaks the others', async () => {
@@ -144,7 +144,7 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
         const rep = await doctor.runChecks({ deps: deps({ powershell: () => new Promise(() => {}), fetch: () => new Promise(() => {}), proxy: () => { throw new Error('rusak'); } }), server: SERVER, timeoutMs: 300 });
         const c = byId(rep);
         assert.ok(Date.now() - t0 < 3000, 'took ' + (Date.now() - t0) + 'ms');
-        assert.strictEqual(c.powershell.status, 'warn'); assert.ok(/tidak selesai/.test(c.powershell.detail));
+        assert.strictEqual(c.powershell.status, 'warn'); assert.ok(/did not finish/.test(c.powershell.detail));
         assert.strictEqual(c.coretax.status, 'fail');
         assert.strictEqual(c.proxy.status, 'warn'); assert.ok(/rusak/.test(c.proxy.detail));
         assert.strictEqual(c['data-root'].status, 'ok');
@@ -193,8 +193,8 @@ const byId = (rep) => Object.fromEntries(rep.checks.map((c) => [c.id, c]));
     await test('profiles: count + size; warn from 5 GB with the cleanup hint; partial size marked', async () => {
         const big = byId(await run({ profiles: async () => ({ count: 40, totalBytes: 6 * 1024 ** 3, partial: true, profiles: [] }) })).profiles;
         assert.strictEqual(big.status, 'warn');
-        assert.ok(/40 profil/.test(big.detail) && /≥ 6\.0 GB/.test(big.detail), big.detail);
-        assert.ok(/Bersihkan profil Chrome yang lama/.test(big.fix));
+        assert.ok(/40 profiles/.test(big.detail) && /≥ 6\.0 GB/.test(big.detail), big.detail);
+        assert.ok(/Clean up old Chrome profiles/.test(big.fix));
         const none = byId(await run({ profiles: async () => ({ count: 0, totalBytes: 0, partial: false, profiles: [] }) })).profiles;
         assert.strictEqual(none.status, 'ok');
     });

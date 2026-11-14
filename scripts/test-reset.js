@@ -216,7 +216,7 @@ const NOW = Date.UTC(2026, 10, 14, 10, 0, 0);
             const q = runcontrol.enqueue('UJI proses', { feature: 'download-spt', windowed: false, sig: 'reset-uji|1' });
             const busy = await post({ confirm: true });
             assert.strictEqual(busy.status, 409);
-            assert.ok(/proses yang berjalan atau antre/.test((await busy.json()).error));
+            assert.ok(/processes are still running or queued/.test((await busy.json()).error));
             assert.ok(!exists(reset.pendingFile(R)), 'no marker while a run is active');
             assert.ok(state.isConnected('taxio_hub'), 'still signed in when refused');
             runcontrol.finish(q.run);

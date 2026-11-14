@@ -63,7 +63,7 @@ async function runInBackground(res, { label, session, extra, onStart }, work, { 
     let run, ready;
     // Batch ("unduh untuk banyak klien", divalidasi action() di gui/server.js): hanya fitur hanya-baca.
     if (res.taxioBatch) {
-        if (runControls.changesCoretax(session && session.feature, session && session.changesCoretax)) return sendJson(res, 400, { error: 'Batch hanya boleh untuk unduhan yang hanya membaca. Perintah yang mengubah data di Coretax harus dijalankan satu per satu.' });
+        if (runControls.changesCoretax(session && session.feature, session && session.changesCoretax)) return sendJson(res, 400, { error: 'Batches are only allowed for read-only downloads. Commands that change data in Coretax must be run one at a time.' });
         session = Object.assign({}, session, { batch: res.taxioBatch });
     }
     try { ({ run, ready } = runcontrol.enqueue(label, session)); }
@@ -87,6 +87,11 @@ async function runInBackground(res, { label, session, extra, onStart }, work, { 
 /** Seperti runInBackground, tetapi menunggu hasilnya (pratinjau / pencarian yang hanya membaca):
  *  200 dengan nilai `work()`, atau 400 { error: (errorPrefix || '') + pesan } + log `failPrefix + pesan`.
  *  Balasan keluar segera; sesi baru dilepas sesudah kerja yang ditinggalkan guarded() selesai. */
+/** Teks galat untuk respons (Inggris): e.userMessage bila ada, selain itu e.message; tanpa awalan, huruf pertama dibesarkan. */
+function userText(e, prefix) {
+    const m = String((e && (e.userMessage || e.message)) || '');
+    return prefix ? prefix + m : m.charAt(0).toUpperCase() + m.slice(1);
+}
 async function runForResult(res, { label, session }, work, { failPrefix, errorPrefix }) {
     let run, ready;
     try { ({ run, ready } = runcontrol.enqueue(label, Object.assign({}, session, { maxWaitMs: limits.RESULT_QUEUE_MS }))); }
@@ -100,7 +105,7 @@ async function runForResult(res, { label, session }, work, { failPrefix, errorPr
         if (watch) res.removeListener('close', onClose);
         if (e && e.isStop) runcontrol.markStopped(run, 'Dibatalkan sebelum mulai (antrean).'); else runcontrol.markFailed(run, e && e.message);
         runcontrol.finish(run);
-        if (e && e.isStop) { log(failPrefix + 'dihentikan oleh pengguna.'); if (!res.headersSent) sendJson(res, 400, { error: (errorPrefix || '') + 'dihentikan oleh pengguna.' }); return; }
+        if (e && e.isStop) { log(failPrefix + 'dihentikan oleh pengguna.'); if (!res.headersSent) sendJson(res, 400, { error: errorPrefix ? errorPrefix + 'was stopped by the user.' : 'Stopped by the user.' }); return; }
         if (!res.headersSent) sendJson(res, 409, { error: e.message });
         return;
     }
@@ -109,7 +114,7 @@ async function runForResult(res, { label, session }, work, { failPrefix, errorPr
     catch (e) {
         log(failPrefix + e.message);
         if (e && e.isStop) runcontrol.markStopped(run, failPrefix + e.message); else runcontrol.markFailed(run, failPrefix + e.message);
-        if (!res.headersSent) sendJson(res, 400, { error: (errorPrefix || '') + e.message }); }
+        if (!res.headersSent) sendJson(res, 400, { error: userText(e, errorPrefix) }); }
     finally { releaseRun(run); }
 }
 
@@ -129,8 +134,8 @@ function guarded(promise, ms) {
             }
             rej(err);
         };
-        timer = setTimeout(() => giveUp(new Error('tidak selesai dalam ' + Math.round(ms / 60000) + ' menit - dihentikan. Coba lagi; bila berulang, muat ulang jendela Coretax PIC.')), ms);
-        poll = setInterval(() => { if (run && run.stopRequested) giveUp(Object.assign(new Error('dihentikan oleh pengguna.'), { isStop: true })); }, limits.STOP_POLL_MS);
+        timer = setTimeout(() => giveUp(Object.assign(new Error('tidak selesai dalam ' + Math.round(ms / 60000) + ' menit - dihentikan. Coba lagi; bila berulang, muat ulang jendela Coretax PIC.'), { userMessage: 'did not finish within ' + Math.round(ms / 60000) + ' minutes and was stopped. Try again; if it keeps happening, reload this PIC\'s Coretax window.' })), ms);
+        poll = setInterval(() => { if (run && run.stopRequested) giveUp(Object.assign(new Error('dihentikan oleh pengguna.'), { isStop: true, userMessage: 'was stopped by the user.' })); }, limits.STOP_POLL_MS);
     });
     // Janji yang kalah balapan tidak boleh menjadi unhandled rejection.
     Promise.resolve(promise).catch(() => {});
