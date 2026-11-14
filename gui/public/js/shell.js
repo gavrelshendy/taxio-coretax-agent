@@ -258,7 +258,7 @@
         scrim.innerHTML = '<div class="dialog narrow" role="dialog" aria-label="Settings"><div class="dialog-head"><h2>Settings</h2><button type="button" class="icon-btn" aria-label="Close" data-x="close">' + P.icon('x', 18) + '</button></div>'
             + '<div class="dialog-body">' + themeSectionHtml() + '<div class="stack set-sec"><div class="eyebrow">Account</div><div class="doc-row"><span class="ico">' + P.icon('user', 18) + '</span><div class="t"><b>' + esc(h.email || '') + '</b><span>Taxio Hub · ' + esc(roleLabel()) + '</span></div><button type="button" class="btn btn-sm" data-x="disconnect">Disconnect</button></div></div>'
             + '<div class="stack set-sec"><div class="eyebrow">App version</div><div class="row row-between"><div><b class="t1">Taxio Pilot ' + esc(v.version ? 'v' + v.version : '') + '</b><div class="hint" id="upd-text"></div></div><button type="button" class="btn btn-sm" id="upd-check" data-x="update">Check for updates</button></div></div>'
-            + rollbackHtml(v) + parallelSectionHtml() + healthSectionHtml() + profilesSectionHtml() + '</div>'
+            + rollbackHtml(v) + parallelSectionHtml() + healthSectionHtml() + profilesSectionHtml() + resetSectionHtml() + '</div>'
             + '<div class="dialog-foot"><button type="button" class="btn btn-danger" data-x="quit">' + P.icon('power', 16) + 'Quit app</button><span class="grow"></span><button type="button" class="btn" data-x="close">Done</button></div></div>';
         document.body.appendChild(scrim);
         loadHealth(false); loadParallel();
@@ -285,6 +285,7 @@
             else if (x === 'health') { b.disabled = true; await loadHealth(true); b.disabled = false; }
             else if (x === 'prof-list') { b.disabled = true; await loadStaleProfiles(); b.disabled = false; }
             else if (x === 'prof-delete') { b.disabled = true; await deleteStaleProfiles(); b.disabled = false; }
+            else if (x === 'reset-all') { b.disabled = true; const started = await resetAllData(); if (!started) b.disabled = false; }
             else if (x === 'diag') {
                 const t = P.$('diag-text'); b.disabled = true; t.textContent = 'Preparing the diagnostics file…';
                 try {
@@ -373,6 +374,33 @@
             + '<div class="hint" id="prof-text">Each PIC has its own Chrome profile. Deleting the profile of a PIC you have not used for a while only means that PIC signs in again automatically the next time it is used. Profiles whose window is currently open are never deleted.</div></div>';
     }
     let staleDays = 60;
+
+    // ---------- Reset all data (POST /api/settings/reset-all, lib/reset.js) ----------
+    function resetSectionHtml() {
+        return '<div class="stack set-sec" id="reset-section"><div class="row row-between"><div class="eyebrow">Reset</div>'
+            + '<button type="button" class="btn btn-sm btn-danger" data-x="reset-all">Reset all data…</button></div>'
+            + '<div class="hint" id="reset-text">Removes your Taxio Hub sign-in, the entities you added here and their saved Coretax credentials, all Coretax sign-ins (Chrome profiles), logs and settings, then restarts the app. Downloaded result files and the bundled Chrome are kept.</div></div>';
+    }
+    /** true bila reset dimulai (aplikasi menutup lalu terbuka ulang), false bila dibatalkan / ditolak. */
+    async function resetAllData() {
+        if (!await P.confirmDialog({
+            title: 'Reset All Data',
+            body: 'This removes everything Taxio Pilot stored on this computer and restarts the app. You will have to sign in to Taxio Hub again.',
+            list: ['Taxio Hub sign-in', 'Entities you added here and their saved Coretax credentials', 'Coretax sign-ins (Chrome profiles of every PIC)', 'Logs and settings'],
+            details: [['Kept', 'Downloaded result files (Downloads/CoretaxAgent) and the bundled Chrome'], ['Cannot be undone', 'Yes']],
+            requireTick: true, tickLabel: 'I understand that this cannot be undone', confirmLabel: 'Reset and restart', danger: true
+        })) return false;
+        const t = P.$('reset-text');
+        try {
+            await P.post('/api/settings/reset-all', { confirm: true });
+            if (t) t.textContent = 'Resetting… Taxio Pilot closes its Coretax windows and restarts in a few seconds.';
+            return true;
+        } catch (err) {
+            if (t) t.textContent = 'Could not reset: ' + err.message;
+            P.toast('Could not reset: ' + err.message, 'error');
+            return false;
+        }
+    }
     async function loadStaleProfiles() {
         const box = P.$('prof-list'); if (!box) return;
         staleDays = Math.max(1, Number((P.$('prof-days') || {}).value) || 60);

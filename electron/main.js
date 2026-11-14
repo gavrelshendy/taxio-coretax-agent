@@ -55,6 +55,7 @@ const ICON = path.join(__dirname, '..', 'gui', 'public', 'assets', 'taxio-pilot.
 const PARTITION = 'persist:dashboard';
 const FONT_HOSTS = new Set(['fonts.googleapis.com', 'fonts.gstatic.com']);
 
+let resetResult = null;
 function main() {
     if (SMOKE && !process.env.TAXIO_PILOT_DATA_DIR) {
         console.error('TAXIO_PILOT_SMOKE=1 butuh TAXIO_PILOT_DATA_DIR=<folder sementara>.');
@@ -64,6 +65,10 @@ function main() {
     // userData (cookie dashboard, cache Chromium, kunci satu-instance) di bawah akar data, supaya
     // TAXIO_PILOT_DATA_DIR mengisolasi SEMUANYA. Harus sebelum requestSingleInstanceLock / ready.
     app.setPath('userData', path.join(paths.root(), 'electron'));
+    // "Reset all data" (lib/reset.js): penanda dari sesi sebelumnya diproses SEKARANG - sebelum kunci satu-instance,
+    // Chromium, log, dan apa pun lain membuka folder di bawah akar. Tidak pernah melempar / menahan start.
+    // Hasilnya dicatat sesudah lib/app.js start() (log baru ada sesudah penghapusan).
+    resetResult = require('../lib/reset').runPending();
     app.setAppUserModelId(APP_ID);
     if (!app.requestSingleInstanceLock()) { app.quit(); return; } // instance pertama menerima 'second-instance'
 
@@ -202,6 +207,13 @@ function main() {
             if (code) { app.exit(code); return; }
             app.quit();
             setTimeout(() => app.exit(0), 5000).unref(); // jendela yang macet tidak boleh menahan keluar
+        },
+        // "Reset all data": proses baru dimulai begitu proses ini keluar (lib/reset.js memprosesnya di awal start).
+        relaunch: () => {
+            quitting = true;
+            app.relaunch();
+            app.quit();
+            setTimeout(() => app.exit(0), 5000).unref();
         }
     });
 
@@ -334,7 +346,7 @@ function main() {
             // lewat HTTP. Port 51733 yang dipegang exe pkg lama yang sedang menutup (serah-terima update) atau
             // aplikasi lain -> port bebas.
             core = await require('../lib/app').start({
-                smoke: SMOKE, findPrimary: async () => null, listenTries: 1,
+                smoke: SMOKE, resetResult, findPrimary: async () => null, listenTries: 1,
                 banner: '[Electron ' + process.versions.electron + (app.isPackaged ? '' : ', pengembangan') + (ISOLATED ? ', terisolasi: tanpa protokol/serah-terima, ' + (UPDATE_FEED ? 'update verifikasi-saja dari feed uji' : 'tanpa update') : '') + (SMOKE ? ', SMOKE: tanpa jendela/tray' : '') + ']'
             });
         } catch (e) {

@@ -18,7 +18,8 @@ async function test(name, fn) {
 }
 
 const LEGACY = 'C:\\Vibecoding\\01 Personal\\Coretax Agent\\dist\\coretax-agent.exe';
-const INSTALL = 'C:\\Users\\uji\\AppData\\Local\\Programs\\taxio-pilot';
+const INSTALL = 'C:\\Users\\uji\\AppData\\Local\\Programs\\Taxio Pilot';
+const OLD_ELECTRON_DIR = 'C:\\Users\\uji\\AppData\\Local\\Programs\\coretax-agent'; // folder instalasi 4.0.0 sebelum diganti nama
 const NEW = INSTALL + '\\taxio-pilot.exe';
 const ENV = {}; // not isolated
 
@@ -112,6 +113,24 @@ function fakeDeps(over) {
         assert.deepStrictEqual(seen, [LEGACY], 'not called when skipped');
         const r = await h.run(fakeDeps({ remember: () => { throw new Error('disk penuh'); } }));
         assert.strictEqual(r.done.length, 3, 'a failing remember never stops the hand-over');
+    });
+
+    await test('old Electron install folder (Programs/coretax-agent/taxio-pilot.exe) is NOT the legacy pkg exe, and the new exe is not mistaken for it', async () => {
+        const oldExe = OLD_ELECTRON_DIR + '\\taxio-pilot.exe';
+        assert.ok(!h.isLegacyExeName(oldExe), 'folder name containing coretax-agent must not matter');
+        assert.ok(!h.isLegacyExeName(NEW));
+        assert.ok(h.isLegacyExeName('C:\\Users\\uji\\Downloads\\coretax-agent.exe'));
+        const d = fakeDeps({ readProtocolCommand: () => '"' + oldExe + '" "%1"' });
+        const r = await h.run(d);
+        assert.ok(/instalasi Taxio Pilot lain/.test(r.skip), r.skip);
+        assert.strictEqual(r.legacyExe, oldExe, 'reported, but not as a pkg exe to retarget');
+        assert.strictEqual(d.writes.length, 0, 'no shortcut is retargeted for the old Electron folder');
+        // Even with shortcuts pointing at the old Electron exe: untouched (the installer recreates its own).
+        const d2 = fakeDeps({ readProtocolCommand: () => '"' + oldExe + '" "%1"', listShortcutFiles: () => ['C:\\Users\\uji\\Desktop\\Taxio Pilot.lnk'], readShortcut: () => ({ target: oldExe }) });
+        assert.strictEqual((await h.run(d2)).retarget.length, 0);
+        assert.strictEqual(d2.writes.length, 0);
+        // And the pkg exe still is recognised when the install dir is the new one.
+        assert.strictEqual((await h.run(fakeDeps())).legacyExe, LEGACY);
     });
 
     await test('write failures are reported, never thrown', async () => {
