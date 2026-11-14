@@ -1,6 +1,6 @@
 // Pemeriksaan independen hasil pembetulan NIK BPMP (hanya membaca; logika di automation/bpmp-amend.js check()).
 //
-//   node scripts/bpmp-amend-check.js --port 9741 --npwp 0000000000000753 --dir "<Pembetulan NIK BPMP>" [--dir ...]
+//   node scripts/bpmp-amend-check.js --port 9741 --npwp <NPWP> --dir "<Pembetulan NIK BPMP>" [--dir ...]
 const { chromium } = require('playwright');
 const amend = require('../automation/bpmp-amend');
 const args = (name) => process.argv.flatMap((a, i) => a === '--' + name ? [process.argv[i + 1]] : []);

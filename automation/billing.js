@@ -13,7 +13,7 @@
    and much faster than opening the wizard just to check.
 
    Confirmed live 2026-07-28 (TaxTypeCode 411125/TaxPaymentCode 100, individual account,
-   Rp 10.000 test - real Kode Billing "000000000000000" issued and paid-status confirmed active):
+   Rp 10.000 test - real Kode Billing "<kode billing>" issued and paid-status confirmed active):
      1) POST paymentportal/api/createbillingcode/get-tax-period
         {TaxpayerAggregateIdentifier, TaxTypeAndTaxPaymentCode, LanguageId} -> list of periods,
         each with its own Code field (opaque, MM+MM+YYYY-shaped but CONFIRMED not safe to

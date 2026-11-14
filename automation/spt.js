@@ -2,8 +2,8 @@
 
    REWRITTEN 2026-07-27 from the original click-based version to call Coretax's own listing/
    download APIs directly, mirroring automation/ebupot.js's proven approach - per live
-   investigation (PIC Andi Pratama, entities PT Entity A and PT Berkat Kana
-   Abadi) that found:
+   investigation (PIC Andi Pratama, entities Entity A and
+   Entity B) that found:
      - the listing endpoint (`returnsheetportal/api/returnsheetssubmitted`) returns every field
        needed to drive a download - RecordId, AggregateIdentifier, TaxTypeCode,
        DocumentFormAggregateIdentifier, ReturnSheetNumber, ReturnSheetModel, LastUpdatedDate -
@@ -21,7 +21,7 @@
        DocumentFormAggregateIdentifier the listing currently shows (an all-zero sentinel GUID if
        never generated); a still-generating document responds 200 with
        `Payload:{IsError:true,ErrorMessage:"Generate Document is In Progress",ErrorCode:1}`
-       (CONFIRMED LIVE against PT Mitra Karya Abadi, Feb 2025 PPh21/26 Amendment 001) rather than
+       (CONFIRMED LIVE against Entity B, Feb 2025 PPh21/26 Amendment 001) rather than
        an HTTP error - poll by re-fetching the listing (which eventually reports a real
        DocumentFormAggregateIdentifier) and retrying, exactly like the old click-based version's
        generate-then-refresh loop, just without ever touching the DOM;
@@ -443,7 +443,7 @@ async function fetchBpeHtml(page, authState, row) {
 }
 
 // How long to keep polling a single row that's still generating - CONFIRMED LIVE a real
-// generation can take well over a minute (PT Mitra Karya Abadi's Feb 2025 PPh21/26 Amendment
+// generation can take well over a minute (Entity B's Feb 2025 PPh21/26 Amendment
 // 001 case), so this is generous: up to 12 attempts * 5s = 60s per row before giving up.
 const GENERATE_POLL_ATTEMPTS = 12;
 const GENERATE_POLL_WAIT_MS = 5000;

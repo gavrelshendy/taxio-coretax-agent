@@ -4,8 +4,8 @@
    header comment (auth-header capture + page.evaluate string literals for pkg's bytecode
    Function.toString() constraint).
 
-   Live investigation 2026-07-27 (PIC Andi Pratama, entities PT Entity A / PT
-   Mitra Karya Abadi) found:
+   Live investigation 2026-07-27 (PIC Andi Pratama, entities Entity A /
+   Entity B) found:
      - Listing endpoint: `POST withholdingslipsportal/api/GetMyWithholdingSlip`, one endpoint for
        ALL 8 types (unlike the issued side's one-endpoint-per-type), differentiated by a
        `WithholdingType` body field.
@@ -26,7 +26,7 @@
        taxpayer identity - the JWT's own `taxpayer_id`, never an impersonated company's), while
        BPPU/BPNR/BP26/BPATC are received by whichever COMPANY is impersonated, same as every
        other feature in this app. Confirmed live for BPA1 (a real row only appeared under
-       Fredi's own un-impersonated login, and the real download request Coretax's own frontend
+       PIC A's own un-impersonated login, and the real download request Coretax's own frontend
        sent used his personal `TaxpayerAggregateIdentifier`, NOT the row's own field of that
        name - see `IS_PERSONAL` below) and for BPPU (real data + a working download under PNG-
        impersonated login, using the row's OWN `TaxpayerAggregateIdentifier`, matching

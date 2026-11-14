@@ -1,7 +1,7 @@
 // Pembetulan NIK BPMP dari terminal (logikanya di automation/bpmp-amend.js; di aplikasi: menu OTOMASI
 // "Pembetulan NIK BPMP"). Memakai jendela Chrome PIC yang sudah login + impersonate (port CDP-nya).
 //
-//   node scripts/bpmp-amend.js --excel "<Mode A1.xlsx>" --port 9741 --npwp 0000000000000753 [--year 2026] [--submit] [--mirip] [--only <NIK lama>]
+//   node scripts/bpmp-amend.js --excel "<Mode A1.xlsx>" --port 9741 --npwp <NPWP> [--year 2026] [--submit] [--mirip] [--only <NIK lama>]
 //
 // Tanpa --submit: hanya validasi NIK + pratinjau. Dengan --submit: kirim, lalu pemeriksaan per kolom otomatis.
 const path = require('path');

@@ -82,7 +82,7 @@ test('visibleEntities: tanpa pencarian hanya yang PIC-nya tertaut', () => {
 test('visibleEntities: pencarian memunculkan yang belum tertaut (nama, kode, NPWP, nama PIC)', () => {
     assert.deepStrictEqual(L.visibleEntities(LIST, 'mitra').map((e) => e.entity_id), ['MKA', 'MLU']);
     assert.deepStrictEqual(L.visibleEntities(LIST, 'mlu').map((e) => e.entity_id), ['MLU']);
-    assert.deepStrictEqual(L.visibleEntities(LIST, '0317 9270').map((e) => e.entity_id), ['MKA']);
+    assert.deepStrictEqual(L.visibleEntities(LIST, '0000 0000').map((e) => e.entity_id), ['MKA']);
     assert.deepStrictEqual(L.visibleEntities(LIST, 'rina').map((e) => e.entity_id), ['MKA']);
     assert.deepStrictEqual(L.visibleEntities(LIST, 'tidak-ada'), []);
 });

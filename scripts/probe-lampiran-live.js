@@ -15,7 +15,7 @@ setInterval(() => { const d = Date.now() - tick - 200; tick = Date.now(); if (d 
     require(path.join(root, 'lib/returnsheet-grid-api')).watchContext(page.context());
     await page.goto('https://coretaxdjp.pajak.go.id/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     if (!await chrome.ensureLoggedIn(page, cred)) throw new Error('login gagal');
-    if (!await chrome.switchToEntity(page, cred, { npwp: '0000000000000011', name: 'ENTITY L' })) throw new Error('impersonate gagal');
+    if (!await chrome.switchToEntity(page, cred, { npwp: process.env.PROBE_NPWP, name: 'ENTITY L' })) throw new Error('impersonate gagal');
     const t0 = Date.now();
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     log('[PROBE] halaman SPT dibuka ' + (Date.now() - t0) + ' ms');
