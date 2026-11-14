@@ -44,6 +44,7 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
 
     // Aksi otomasi dicegat di browser: dicatat lalu dijawab 202, tidak sampai ke server.
     const calls = [];
+    const actionRefuse = {}; // entity_id -> { status, error }: aksi untuk entitas itu ditolak server (mis. 409)
     await page.route('**/api/actions/**', async (route) => {
         const req = route.request();
         const url = new URL(req.url()).pathname;
@@ -51,6 +52,8 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         if (url.endsWith('/pick-file')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ canceled: false, fileName: 'faktur-uji.xlsx', fileBase64: 'AAAA' }) });
         if (url.endsWith('/pick-folder')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ canceled: true }) });
         calls.push({ url, body: req.postDataJSON() });
+        const refuse = actionRefuse[((req.postDataJSON() || {}).entity || {}).entity_id];
+        if (refuse) return route.fulfill({ status: refuse.status, contentType: 'application/json', body: JSON.stringify({ error: refuse.error }) });
         return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ started: true }) });
     });
     // Pratinjau isian Pembetulan (tanpa Coretax): 2 NIK dari sheet NIK, tidak ada pembatalan.
@@ -679,29 +682,163 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await pause(4500); // satu putaran polling sesi melihat jendelanya, supaya pelepasan otomatis aktif
         await sessionsGoneThenReselect();
     });
-    await test('antrean: centang beberapa entitas satu sesi, Mulai Otomasi mengunduh berurutan (pindah entitas lalu unduh, per entitas)', async () => {
-        fakes.ctl.sessions = [{ picId: 'p-rina', kind: 'entity', open: true, loggedIn: true, identity: '0317927093541000 · MITRA KARYA ABADI' }];
-        await page.click('.nav-item[data-nav="faktur"]');
-        await page.waitForSelector('.pp');
-        await openWin(); // tab sesi kini di popover "Coretax windows" (meter di topbar)
-        await page.waitForFunction(() => document.querySelectorAll('.sess-tab').length === 1, null, { timeout: 6000 });
-        await page.locator('.sess-tab .sess-drop').click();
-        await page.waitForSelector('.sess-pop');
-        await page.click('[data-sp-all]');
-        await shot('sesi-popover-antrean');
-        assert.ok((await text('.sess-pop')).includes('2 selected'), 'dua entitas tercentang');
-        await page.keyboard.press('Escape');
-        await page.waitForFunction(() => /Download queue: 2 entities/.test(document.body.textContent), null, { timeout: 3000 });
+    // ------------------------------------------------ banyak klien (halaman Download)
+    const chipNames = () => page.locator('.cchip .cc-tx b').allInnerTexts();
+    const addClients = async (names) => {
+        await page.click('[data-act="multi-add"]');
+        await page.waitForSelector('#palette.scrim .pal-multi');
+        for (const n of names) await page.locator('#pal-body .ent-main', { hasText: n }).click();
+    };
+    const spt3 = async () => { await page.click('.nav-item[data-nav="spt"]'); await page.waitForSelector('.pp'); };
+    await test('banyak klien: satu klien = perilaku lama (tanpa batch, tanpa X di chip); "Add clients" ada di halaman Download', async () => {
+        await spt3();
+        assert.ok(await visible('.for-bar'), 'baris For');
+        assert.deepStrictEqual(await chipNames(), ['PT Contoh Sejahtera Abadi']);
+        assert.strictEqual(await page.locator('.cc-x').count(), 0, 'satu klien: tanpa X');
+        assert.ok((await text('[data-act="multi-add"]')).includes('Add clients'));
+        assert.ok(!(await text('#abar')).includes('clients'), 'kalimat satu klien tidak menyebut jumlah klien');
         const before = calls.length;
         await page.click('#abar [data-act="start"]');
-        const seqNow = () => calls.slice(before).map((c) => c.url.replace('/api/actions/', '') + ':' + ((c.body && c.body.entity) || {}).entity_id);
-        for (let i = 0; i < 60 && seqNow().length < 4; i++) await pause(500);
-        assert.deepStrictEqual(seqNow(), ['login-entity:SNM', 'download-efaktur:SNM', 'login-entity:MKA', 'download-efaktur:MKA'], 'tiap entitas: pindah dulu, baru unduh; berurutan');
-        await page.waitForFunction(() => /Queue finished: 2 of 2/.test(document.body.textContent), null, { timeout: 8000 });
-        assert.ok(!(await text('#content')).includes('Download queue:'), 'bar antrean hilang setelah selesai');
+        await pause(300);
+        assert.ok(!(await visible('#review')), 'satu klien: tanpa dialog tinjau');
+        const c = calls.slice(before).filter((x) => x.url === '/api/actions/download-spt');
+        assert.strictEqual(c.length, 1);
+        assert.ok(!('batch' in c[0].body), 'satu klien: tanpa batch');
+        await shot('p5-01-spt-satu-klien');
+    });
+    await test('banyak klien: palet banyak pilih (kotak centang, cari tetap jalan), 3 klien -> chip, kalimat + tombol memakai jumlah', async () => {
+        await addClients(['Sample Niaga']);
+        await page.fill('#pal-q', 'budi');
+        await page.locator('#pal-body .ent-main', { hasText: 'Budi Contoh' }).click();
+        assert.ok(await page.locator('#pal-body .ent-main[aria-checked="true"]').count() >= 1);
+        assert.ok((await text('#pal-foot')).includes('Add 2 clients'), await text('#pal-foot'));
+        await page.fill('#pal-q', '');
+        const own = page.locator('#pal-body .ent-main', { hasText: 'Sejahtera' });
+        assert.strictEqual(await own.getAttribute('aria-disabled'), 'true', 'entitas di topbar sudah termasuk');
+        assert.strictEqual(await page.locator('#pal-body .pal-add').count(), 0, 'tanpa "Add new entity" di mode ini');
+        await shot('p5-02-palet-banyak-pilih');
+        await page.click('[data-act="multi-ok"]');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.deepStrictEqual(await chipNames(), ['PT Contoh Sejahtera Abadi', 'CV Sample Niaga Mandiri', 'Budi Contoh Santoso']);
+        const bar = await text('#abar');
+        assert.ok(bar.includes('3 clients') && /\d+ downloads/.test(bar), bar);
+        assert.ok(/^Start \d+ downloads$/.test((await text('#abar [data-act="start"]')).trim()));
+        assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'), 'topbar tetap klien pertama');
+        await shot('p5-03-spt-tiga-klien');
+    });
+    await test('banyak klien: Start membuka dialog tinjau; konfirmasi mengirim satu permintaan per klien dengan batch yang sama lalu membuka Runs', async () => {
+        const before = calls.length;
+        await page.click('#abar [data-act="start"]');
+        await page.waitForSelector('#review .rv-row');
+        assert.strictEqual(await page.locator('#review .rv-row').count(), 3);
+        const t = await text('#review');
+        assert.ok(t.includes('Coretax windows become available'), t);
+        assert.ok(t.includes('Sample Niaga') && t.includes('Budi Contoh'), t);
+        assert.strictEqual(calls.slice(before).length, 0, 'belum ada yang dikirim sebelum konfirmasi');
+        await shot('p5-04-dialog-tinjau');
+        await page.click('#review [data-rv="go"]');
+        await page.waitForFunction(() => window.Pilot.state.page === 'runs', null, { timeout: 5000 });
+        assert.ok(!(await visible('#review')), 'dialog tertutup');
+        const c = calls.slice(before).filter((x) => x.url === '/api/actions/download-spt');
+        assert.strictEqual(c.length, 3);
+        const id = c[0].body.batch.id;
+        assert.ok(/^[A-Za-z0-9_-]{1,64}$/.test(id));
+        assert.deepStrictEqual(c.map((x) => x.body.batch.id), [id, id, id]);
+        assert.deepStrictEqual(c.map((x) => [x.body.batch.index, x.body.batch.total]), [[0, 3], [1, 3], [2, 3]]);
+        assert.deepStrictEqual(c.map((x) => x.body.entity.entity_id), ['CSA', 'SNM', 'BUDI']);
+        assert.ok(/^SPT · Masa Pajak .* for 3 clients$/.test(c[0].body.batch.label), c[0].body.batch.label);
+        assert.ok(c.every((x) => !('pics' in x.body.entity) && x.body.jenisPajakKeys.length >= 1), 'badan permintaan sama seperti satu klien');
+    });
+    await test('banyak klien: klien ber-2-PIC meminta PIC (tidak memakai PIC terakhir), Start terkunci sampai dipilih, PIC terpilih terkirim', async () => {
+        await spt3();
+        await addClients(['MITRA KARYA']);
+        await page.click('[data-act="multi-ok"]');
+        await page.waitForSelector('.cchip.pending');
+        assert.deepStrictEqual(await page.locator('.cchip.pending .cc-tx b').allInnerTexts(), ['MITRA KARYA ABADI, PT']);
+        assert.strictEqual(await page.locator('.cchip.pending select').inputValue(), '', 'belum ada PIC terpilih');
+        assert.ok(await page.locator('#abar [data-act="start"]').isDisabled(), 'Start terkunci');
+        assert.ok((await text('#abar')).includes('Choose a PIC for MITRA KARYA ABADI, PT'));
+        await shot('p5-05-pic-belum-dipilih');
+        await page.selectOption('.cchip select[data-multi-pic]', 'p-rina');
+        await page.waitForFunction(() => !document.querySelector('.cchip.pending'));
+        assert.ok(!(await page.locator('#abar [data-act="start"]').isDisabled()), 'PIC dipilih: Start aktif');
+        assert.ok((await text('#abar [data-act="start"]')).includes('Start'));
+        const before = calls.length;
+        await page.click('#abar [data-act="start"]');
+        await page.waitForSelector('#review .rv-row');
+        assert.strictEqual(await page.locator('#review .rv-row').count(), 4);
+        assert.ok((await text('#review')).includes('PIC RINA WIJAYA'));
+        await page.click('#review [data-rv="go"]');
+        await page.waitForFunction(() => window.Pilot.state.page === 'runs', null, { timeout: 5000 });
+        const c = calls.slice(before).filter((x) => x.url === '/api/actions/download-spt');
+        assert.strictEqual(c.length, 4);
+        const mka = c.find((x) => x.body.entity.entity_id === 'MKA');
+        assert.strictEqual(mka.body.entity.pic_id, 'p-rina');
+        assert.deepStrictEqual(c.map((x) => x.body.batch.index), [0, 1, 2, 3]);
+        assert.ok(c.every((x) => x.body.batch.total === 4));
+    });
+    await test('banyak klien: satu klien ditolak (409) tampil di daftar hasil, yang lain tetap jalan; Open Runs membuka Runs', async () => {
+        await spt3();
+        actionRefuse.SNM = { status: 409, error: 'The same command is already running for this client.' };
+        const before = calls.length;
+        try {
+            await page.click('#abar [data-act="start"]');
+            await page.waitForSelector('#review .rv-row');
+            await page.click('#review [data-rv="go"]');
+            await page.waitForSelector('#review [data-rv="runs"]');
+        } finally { delete actionRefuse.SNM; }
+        assert.strictEqual(calls.slice(before).filter((x) => x.url === '/api/actions/download-spt').length, 4, 'semua klien dicoba, tidak berhenti di yang gagal');
+        assert.strictEqual(await page.locator('#review .rv-st.ok').count(), 3);
+        assert.strictEqual(await page.locator('#review .rv-st.bad').count(), 1);
+        const bad = await page.locator('#review .rv-row', { has: page.locator('.rv-st.bad') }).innerText();
+        assert.ok(bad.includes('Sample Niaga') && bad.includes('already running'), bad);
+        assert.ok((await text('#review #rv-hint')).includes('1 client was not started'));
+        assert.strictEqual(await page.evaluate(() => window.Pilot.state.page), 'spt', 'belum pindah selama ada yang ditolak');
+        await shot('p5-06-dialog-hasil-ditolak');
+        await page.click('#review [data-rv="runs"]');
+        await page.waitForFunction(() => window.Pilot.state.page === 'runs');
+    });
+    await test('banyak klien: chip bisa dihapus; menghapus klien pertama menggantikannya di topbar dengan klien berikutnya; e-Bupot/Bukti Potong Saya/e-Faktur juga punya baris For', async () => {
+        await spt3();
+        await page.locator('.cchip', { hasText: 'Budi Contoh' }).locator('.cc-x').click();
+        await page.waitForFunction(() => document.querySelectorAll('.cchip').length === 3);
+        for (const id of ['ebupot', 'bpsaya', 'faktur']) {
+            await page.click('.nav-item[data-nav="' + id + '"]');
+            await page.waitForSelector('.pp');
+            assert.strictEqual(await page.locator('.cchip').count(), 3, id + ': klien yang sama');
+            assert.ok(await visible('[data-act="multi-add"]'), id);
+        }
+        await spt3();
+        await page.locator('.cchip', { hasText: 'Sejahtera' }).locator('.cc-x').click();
+        await page.waitForFunction(() => /Sample Niaga/.test(document.querySelector('#entity-chip').textContent));
+        assert.deepStrictEqual(await chipNames(), ['CV Sample Niaga Mandiri', 'MITRA KARYA ABADI, PT']);
+        // kembali ke satu klien: Sejahtera dipilih di topbar, tambahan dibuang
+        await page.evaluate(() => window.Pilot.multi.clear());
+        await page.click('#entity-chip');
+        await page.fill('#pal-q', 'sejahtera'); await page.keyboard.press('Enter');
+        await page.waitForSelector('#palette', { state: 'detached' });
+        assert.strictEqual(await page.locator('.cchip').count(), 1);
+    });
+    await test('banyak klien: halaman yang mengubah data di Coretax tetap satu klien (tanpa baris For / Add clients)', async () => {
+        for (const id of ['billing', 'impor', 'kredit', 'dividen']) {
+            await page.click('.nav-item[data-nav="' + id + '"]');
+            await pause(150);
+            assert.strictEqual(await page.locator('[data-act="multi-add"]').count(), 0, id + ': tanpa Add clients');
+            assert.strictEqual(await page.locator('.for-bar').count(), 0, id + ': tanpa baris For');
+        }
+        await page.click('.nav-item[data-nav="a1"]');
+        await pause(150);
+        assert.strictEqual(await page.locator('[data-act="multi-add"]').count(), 0, 'Annual PPh 21 Recap tetap satu klien');
         await page.click('.nav-item[data-nav="spt"]');
-        await pause(4500); // satu putaran polling sesi melihat jendela entitas terakhir, supaya pelepasan otomatis aktif
-        await sessionsGoneThenReselect();
+        await pause(150);
+    });
+    await test('palet satu entitas (topbar) tetap seperti biasa: tanpa kotak centang', async () => {
+        await page.click('#entity-chip');
+        await page.waitForSelector('#palette');
+        assert.strictEqual(await page.locator('#pal-body .ent-cb').count(), 0);
+        assert.ok(await visible('#pal-body .pal-add'));
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#palette', { state: 'detached' });
     });
     await test('topbar: jendela sesi entitas terpilih hilang -> pilihan otomatis dilepas ("Pilih entitas")', async () => {
         assert.ok((await text('#entity-chip')).includes('PT Contoh Sejahtera Abadi'));
@@ -1259,6 +1396,9 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
     await test('Runs: batch berjalan = satu baris di In Progress ("2 of 6 clients"), dibuka ke baris per klien, Stop all -> stop-batch', async () => {
         const b = row('batch:b-masa-1026'), t = await b.innerText();
         assert.ok(t.includes('SPT Masa Pajak 10/2026 for 6 clients') && t.includes('2 of 6 clients') && t.includes('1 running') && t.includes('3 waiting'), t);
+        const sub1 = await b.locator('.rn-head .rn-t2').first().innerText();
+        assert.ok(/^SPT\b/.test(sub1) && sub1 !== 'spt' && sub1.includes('Masa Pajak'), 'baris kedua batch: nama fitur ramah + parameter, bukan id mentah: ' + sub1);
+        assert.strictEqual((await row('batch:b-old').locator('.rn-head .rn-t2').first().innerText()).split(' · ')[0], 'Bukti Potong Saya');
         await b.locator('.rn-head').first().click();
         await page.waitForSelector('[data-flip="batch:b-masa-1026"] .rn-subs');
         assert.strictEqual(await b.locator('.rn-row.sub').count(), 6);

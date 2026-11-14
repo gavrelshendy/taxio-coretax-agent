@@ -489,7 +489,7 @@
     P.on('sessions', () => { if (view === 'app') S.renderTopbar(); });
     P.on('run', () => { if (view === 'app') S.renderRunsBadge(); });
     P.on('runs-data', () => { if (view === 'app') S.renderRunsNavBadge(); });
-    P.on('batch', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); } });
+    P.on('multi', () => { if (view === 'app') { S.renderTopbar(); S.renderContent(false); } });
     P.on('run', (st) => {
         if (view !== 'app') return;
         S.renderTopbar();

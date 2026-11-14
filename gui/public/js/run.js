@@ -102,7 +102,7 @@
     R.control = {
         pauseResume: () => control(P.state.run.paused ? 'resume' : 'pause'),
         skip: () => control('skip'), retry: () => control('retry'), back: () => control('back'),
-        stop: () => { if (confirm(P.state.run && P.state.run.queued ? 'Cancel this queued process? It has not started yet.' : 'Stop the process in this session? Other sessions keep running.')) { R.queue = []; if (P.batch) P.batch.cancel(); control('stop'); } },
+        stop: () => { if (confirm(P.state.run && P.state.run.queued ? 'Cancel this queued process? It has not started yet.' : 'Stop the process in this session? Other sessions keep running.')) { R.queue = []; control('stop'); } },
         pageSize: (n) => control('pagesize', { size: n })
     };
 
