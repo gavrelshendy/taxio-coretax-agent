@@ -149,14 +149,14 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         const titles = await page.locator('.nav-title').allInnerTexts();
         assert.deepStrictEqual(titles.map((t) => t.trim()), ['Download', 'Change in Coretax', 'Year-End']);
         const items = await page.locator('.nav-item[data-nav]').allInnerTexts();
-        assert.deepStrictEqual(items.map((t) => t.trim()), ['SPT', 'e-Bupot', 'Bukti Potong Saya', 'e-Faktur', 'e-Bupot Upload & Issue', 'Credit Faktur Masukan', 'PPh 25 Kode Billing', 'e-Reporting', 'Annual PPh 21 Recap'], 'urutan & nama menu sidebar');
+        assert.deepStrictEqual(items.map((t) => t.trim()), ['Runs', 'SPT', 'e-Bupot', 'Bukti Potong Saya', 'e-Faktur', 'e-Bupot Upload & Issue', 'Credit Faktur Masukan', 'PPh 25 Kode Billing', 'e-Reporting', 'Annual PPh 21 Recap'], 'urutan & nama menu sidebar');
         assert.ok((await text('#open-settings')).includes('Settings'));
         assert.ok(!(await text('.sidebar')).includes('Fix Bukti Potong'), 'tanpa halaman Fix Bukti Potong (keputusan pemilik)');
         assert.ok(!(await page.locator('.nav-item[data-nav="billing"]').innerText()).includes('NEW'), 'tanpa badge NEW');
-        const change = page.locator('.nav-group').nth(1);
+        const change = page.locator('.nav-group').nth(2);
         assert.ok((await change.innerText()).includes('PPh 25 Kode Billing') && (await change.innerText()).includes('Credit Faktur Masukan'));
-        assert.ok(!(await page.locator('.nav-group').nth(0).innerText()).includes('Billing'));
-        assert.ok((await page.locator('.nav-group').nth(2).innerText()).includes('Annual PPh 21 Recap'), 'Annual PPh 21 Recap di Year-End, tersedia untuk anggota biasa');
+        assert.ok(!(await page.locator('.nav-group').nth(1).innerText()).includes('Billing'));
+        assert.ok((await page.locator('.nav-group').nth(3).innerText()).includes('Annual PPh 21 Recap'), 'Annual PPh 21 Recap di Year-End, tersedia untuk anggota biasa');
         // Label tidak terpotong di sidebar terbuka.
         const cut = await page.evaluate(() => Array.from(document.querySelectorAll('.nav-item .grow')).filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
         assert.deepStrictEqual(cut, [], 'label sidebar tidak terpotong');
@@ -1151,6 +1151,176 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         await page.waitForSelector('#app .sidebar');
     });
 
+    // ------------------------------------------------ halaman Runs
+    // /api/runs dan route kontrol dijawab dari data tiruan (scripts/gui-test-runs-fixture.js) dan dicatat di `rcalls`;
+    // kabar SSE 'runs' dikirim lewat lib/ui-events seperti server sungguhan.
+    const runsFx = require('./gui-test-runs-fixture');
+    const uiEvents = require('../lib/ui-events');
+    let runsData = runsFx.runsFixture();
+    const rcalls = [];
+    const runsRouteMatcher = (u) => /^\/api\/runs(\/|$)|^\/api\/run\/(pause|resume|stop|retry|skip)$/.test(u.pathname);
+    await page.route(runsRouteMatcher, async (route) => {
+        const req = route.request(), u = new URL(req.url());
+        const json = (status, body) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+        if (req.method() === 'GET' && u.pathname === '/api/runs') return json(200, runsData);
+        const m = /^\/api\/runs\/(.+)$/.exec(u.pathname);
+        if (req.method() === 'GET' && m) { const d = runsFx.runDetail(runsData, decodeURIComponent(m[1])); return d ? json(200, d) : json(404, { error: 'tidak ada' }); }
+        rcalls.push({ path: u.pathname, session: u.searchParams.get('session'), body: req.postData() ? JSON.parse(req.postData()) : null });
+        return json(200, { ok: true });
+    });
+    const acceptDialogs = (d) => d.accept();
+    page.on('dialog', acceptDialogs);
+    const pushRuns = async (data) => { if (data) runsData = data; uiEvents.emit('runs'); };
+    const row = (key) => page.locator('[data-flip="' + key + '"]');
+    const waitCall = async (n) => { for (let i = 0; i < 40 && rcalls.length <= n; i++) await pause(50); assert.ok(rcalls.length > n, 'permintaan terkirim'); return rcalls[rcalls.length - 1]; };
+    const clickCall = async (selector) => { const n = rcalls.length; await page.click(selector); return waitCall(n); };
+
+    await test('Runs: item pertama sidebar (di atas Download) dengan lencana kuning = proses yang menunggu keputusan', async () => {
+        await pushRuns();
+        await page.waitForSelector('#nav-runs-badge');
+        const first = await page.locator('.sb-nav .nav-item').first().getAttribute('data-nav');
+        assert.strictEqual(first, 'runs');
+        assert.ok((await text('.sb-nav .nav-item[data-nav="runs"]')).includes('Runs'));
+        assert.strictEqual(await page.locator('.sb-nav .nav-group').first().locator('.nav-title').count(), 0, 'grup Runs tanpa judul');
+        assert.strictEqual((await text('#nav-runs-badge')).trim(), '1');
+        assert.ok(/warn/.test(await page.locator('#nav-runs-badge').getAttribute('class')));
+        assert.ok((await page.locator('#nav-runs-badge').getAttribute('title')).includes('1 run needs your decision'));
+        await page.keyboard.press('Control+b');
+        await pause(350);
+        assert.ok(await visible('.sb-nav .nav-item[data-nav="runs"] .nb'), 'lencana tampil di rel ikon');
+        await shot('60-runs-nav-rail');
+        await page.keyboard.press('Control+b');
+        await pause(350);
+    });
+    await test('Runs: tiga bagian (Needs You / In Progress / Done) dengan baris yang benar; batch menjadi satu baris', async () => {
+        await page.click('.nav-item[data-nav="runs"]');
+        await page.waitForSelector('[data-sec="needs"]');
+        assert.deepStrictEqual(await page.locator('.rn-sec').evaluateAll((els) => els.map((e) => e.dataset.sec)), ['needs', 'prog', 'done']);
+        assert.deepStrictEqual(await page.locator('.rn-sec-h h2').allInnerTexts(), ['Needs You', 'In Progress', 'Done']);
+        assert.deepStrictEqual(await page.locator('.rn-sec-h .rn-count').allInnerTexts(), ['1', '5', '4']);
+        const keys = (sec) => page.locator('[data-sec="' + sec + '"] .rn-list > .rn-row').evaluateAll((els) => els.map((e) => e.dataset.flip));
+        assert.deepStrictEqual(await keys('needs'), ['run:101']);
+        assert.deepStrictEqual(await keys('prog'), ['run:102', 'run:103', 'run:106', 'batch:b-masa-1026', 'run:104']);
+        assert.deepStrictEqual(await keys('done'), ['run:110', 'run:111', 'run:112', 'batch:b-old']);
+        assert.strictEqual(await page.locator('.rn-subs').count(), 0, 'baris batch tertutup dulu');
+        await shot('61-runs-page');
+    });
+    await test('Runs: baris Needs You menampilkan masalah dan pilihan dari hold.choices; tiap pilihan memanggil route kontrol dengan run:<id>', async () => {
+        const r = row('run:101');
+        const t = await r.innerText();
+        assert.ok(t.includes('PT Contoh Sejahtera Abadi') && t.includes('PIC ANDI #1'), t);
+        assert.ok(t.includes('The Lampiran table for 04/2026 could not be read before the time limit'));
+        assert.deepStrictEqual(await r.locator('.rn-choices .btn').allInnerTexts(), ['Try again', 'Skip PPh 21/26 / 0426', 'Stop']);
+        assert.ok(t.includes('3 of 10'));
+        let c = await clickCall('[data-flip="run:101"] [data-rn-act="retry"]');
+        assert.deepStrictEqual([c.path, c.session], ['/api/run/retry', 'run:101']);
+        c = await clickCall('[data-flip="run:101"] [data-rn-act="skip"]');
+        assert.deepStrictEqual([c.path, c.session], ['/api/run/skip', 'run:101']);
+        c = await clickCall('[data-flip="run:101"] [data-rn-act="stop"]');
+        assert.deepStrictEqual([c.path, c.session], ['/api/run/stop', 'run:101']);
+    });
+    await test('Runs: In Progress memuat berjalan, dijeda, berhenti dulu, dan antre; hanya Pause/Resume + Stop; catatan antre', async () => {
+        const run = row('run:102'), t = await run.innerText();
+        assert.ok(t.includes('MITRA KARYA ABADI, PT') && t.includes('PIC ANDI #2') && t.includes('4 of 12') && t.includes('0526'), t);
+        assert.deepStrictEqual(await run.locator('.rn-ctl .btn').allInnerTexts(), ['Pause', 'Stop']);
+        assert.deepStrictEqual(await row('run:103').locator('.rn-ctl .btn').allInnerTexts(), ['Resume', 'Stop']);
+        const stopping = row('run:106');
+        assert.ok((await stopping.innerText()).includes('Stopping…'));
+        assert.strictEqual(await stopping.locator('[data-rn-act]').count(), 0, 'tidak ada tombol saat berhenti');
+        const q = row('run:104');
+        assert.strictEqual((await q.locator('.rn-note').innerText()).trim(), 'Waiting · #2 in line');
+        assert.ok((await q.locator('.rn-note').getAttribute('title')).includes('All Coretax windows of this PIC are in use'));
+        assert.strictEqual(await q.locator('[data-rn-act="stop"]').getAttribute('aria-label'), 'Cancel this queued run');
+        let c = await clickCall('[data-flip="run:102"] [data-rn-act="pause"]');
+        assert.deepStrictEqual([c.path, c.session], ['/api/run/pause', 'run:102']);
+        c = await clickCall('[data-flip="run:103"] [data-rn-act="resume"]');
+        assert.deepStrictEqual([c.path, c.session], ['/api/run/resume', 'run:103']);
+        c = await clickCall('[data-flip="run:102"] [data-rn-act="stop"]');
+        assert.deepStrictEqual([c.path, c.session], ['/api/run/stop', 'run:102']);
+        c = await clickCall('[data-flip="run:104"] [data-rn-act="stop"]');
+        assert.deepStrictEqual([c.path, c.session], ['/api/run/stop', 'run:104']);
+        const d = runsFx.runsFixture(); d.inProgress[0].pauseRequested = true;
+        await pushRuns(d);
+        await page.waitForFunction(() => /Pausing…/.test((document.querySelector('[data-flip="run:102"] .rn-ctl') || {}).textContent || ''));
+        await pushRuns(runsFx.runsFixture());
+        await page.waitForFunction(() => !/Pausing…/.test((document.querySelector('[data-flip="run:102"] .rn-ctl') || {}).textContent || ''));
+    });
+    await test('Runs: Done memuat selesai / gagal / dihentikan dengan ikon, teks hasil, tombol folder, dan Clear', async () => {
+        const ok = row('run:110'), bad = row('run:111'), stop = row('run:112');
+        assert.ok((await ok.innerText()).includes('SELESAI: 10 of 10 Masa Pajak downloaded'));
+        assert.ok(await ok.locator('.rn-ico.ok').count() && await bad.locator('.rn-ico.bad').count() && await stop.locator('.rn-ico.mute').count(), 'ikon centang / silang / henti');
+        assert.ok((await bad.innerText()).includes('GAGAL: Coretax rejected the login for this PIC'));
+        assert.strictEqual(await bad.locator('[data-rn-folder]').count(), 0, 'tanpa folder bila outputDir kosong');
+        let c = await clickCall('[data-flip="run:110"] [data-rn-folder]');
+        assert.deepStrictEqual([c.path, c.body], ['/api/runs/open-folder', { key: 'run:110' }]);
+        c = await clickCall('[data-rn-clear]');
+        assert.strictEqual(c.path, '/api/runs/clear-done');
+    });
+    await test('Runs: batch berjalan = satu baris di In Progress ("2 of 6 clients"), dibuka ke baris per klien, Stop all -> stop-batch', async () => {
+        const b = row('batch:b-masa-1026'), t = await b.innerText();
+        assert.ok(t.includes('SPT Masa Pajak 10/2026 for 6 clients') && t.includes('2 of 6 clients') && t.includes('1 running') && t.includes('3 waiting'), t);
+        await b.locator('.rn-head').first().click();
+        await page.waitForSelector('[data-flip="batch:b-masa-1026"] .rn-subs');
+        assert.strictEqual(await b.locator('.rn-row.sub').count(), 6);
+        assert.ok((await b.locator('.rn-subs').innerText()).includes('Waiting · #3 in line'));
+        await shot('62-runs-batch-expanded');
+        const c = await clickCall('[data-rn-stop-batch="b-masa-1026"]');
+        assert.deepStrictEqual([c.path, c.body], ['/api/runs/stop-batch', { id: 'b-masa-1026' }]);
+        await b.locator('.rn-head').first().click();
+        await page.waitForFunction(() => !document.querySelector('[data-flip="batch:b-masa-1026"] .rn-subs'));
+        const old = row('batch:b-old');
+        assert.ok((await old.innerText()).includes('2 of 2 clients'));
+        assert.strictEqual(await old.locator('[data-rn-stop-batch]').count(), 0, 'tanpa Stop untuk batch selesai');
+        await old.locator('.rn-head').first().click();
+        await page.waitForSelector('[data-flip="batch:b-old"] .rn-subs');
+        assert.strictEqual(await old.locator('.rn-row.sub').count(), 2);
+        await old.locator('.rn-head').first().click();
+    });
+    await test('Runs: klik baris membuka rencana per item + log terakhir di tempat, ikut diperbarui; tampilan proses tidak menggantikan halaman', async () => {
+        await row('run:102').locator('.rn-head').first().click();
+        await page.waitForSelector('[data-flip="run:102"] .rn-detail .rn-log .log-line');
+        assert.strictEqual(await row('run:102').locator('.qpill').count(), 10);
+        assert.ok((await row('run:102').locator('.rn-log').innerText()).includes('Masa Pajak 0226 downloaded'));
+        await shot('63-runs-row-expanded');
+        const d = runsFx.runsFixture(); d.inProgress[0].progress.done = 5;
+        await pushRuns(d);
+        await page.waitForFunction(() => /5 of 12/.test((document.querySelector('[data-flip="run:102"]') || {}).textContent || ''));
+        assert.ok(await row('run:102').locator('.rn-detail').count(), 'tetap terbuka saat diperbarui');
+        fakes.ctl.run = { active: true, paused: false, label: 'SPT PPh 21/26 · PT Contoh Sejahtera Abadi', controls: { stop: true, pause: true, skip: true, retry: true } };
+        await pause(2200);
+        assert.ok(await page.locator('.rn-sec').count() > 0 && !(await page.locator('.run-view').count()), 'halaman Runs tidak diganti tampilan proses');
+        await page.click('.nav-item[data-nav="spt"]');
+        await page.waitForSelector('.run-view');
+        assert.ok(await visible('.run-view [data-go-runs]'), 'tautan "View in Runs" di tampilan proses');
+        await shot('64-run-view-link');
+        await page.click('.run-view [data-go-runs]');
+        await page.waitForSelector('.rn-sec');
+        fakes.ctl.run = null;
+        await pause(1800);
+        await row('run:102').locator('.rn-head').first().click();
+    });
+    await test('Runs: kabar SSE "runs" menggambar ulang; bagian kosong disembunyikan; keadaan kosong satu kalimat', async () => {
+        const d = runsFx.runsFixture();
+        const held = d.needsYou.shift(); held.state = 'running'; held.hold = null; d.inProgress.unshift(held);
+        await pushRuns(d);
+        await page.waitForFunction(() => !document.querySelector('[data-sec="needs"]'));
+        assert.deepStrictEqual(await page.locator('.rn-sec').evaluateAll((els) => els.map((e) => e.dataset.sec)), ['prog', 'done'], 'Needs You tersembunyi saat kosong');
+        assert.ok(!/warn/.test(await page.locator('#nav-runs-badge').getAttribute('class')), 'lencana netral');
+        const only = runsFx.runsFixture(); only.needsYou = []; only.inProgress = []; only.batches = only.batches.filter((x) => x.id === 'b-old'); only.done = only.done.filter((r) => r.key === 'run:110' || (r.batch && r.batch.id === 'b-old'));
+        await pushRuns(only);
+        await page.waitForFunction(() => !document.querySelector('[data-sec="prog"]'));
+        assert.deepStrictEqual(await page.locator('.rn-sec').evaluateAll((els) => els.map((e) => e.dataset.sec)), ['done']);
+        assert.strictEqual(await page.locator('#nav-runs-badge').count(), 0, 'tanpa lencana bila tidak ada yang berjalan');
+        await shot('65-runs-done-only');
+        await pushRuns({ needsYou: [], inProgress: [], done: [], batches: [], limits: {} });
+        await page.waitForSelector('.rn-empty');
+        assert.ok((await text('.rn-empty')).includes('No runs yet today') && (await text('.rn-empty')).includes('Start one from a page in the sidebar'));
+        assert.strictEqual(await page.locator('.rn-sec').count(), 0);
+        await shot('66-runs-empty');
+        await pushRuns(runsFx.runsFixture());
+        await page.waitForSelector('[data-sec="needs"]');
+    });
+
     // ------------------------------------------------ Restricted Editor
     await test('Restricted Editor: tanpa A1, PPh 21 dan BPMP/BPA1 terkunci, tanpa entitas manual dan Buka Coretax', async () => {
         await page.evaluate(() => fetch('/api/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"project":"taxio_hub"}' }));
@@ -1178,6 +1348,14 @@ const PREV_MMYY = String(prev.getMonth() + 1).padStart(2, '0') + String(prev.get
         assert.ok(await page.locator('.tile[data-val="bpmp"]').isDisabled());
         assert.ok(await page.locator('.tile[data-val="bpa1"]').isDisabled());
         await shot('20-restricted');
+    });
+
+    await test('Runs: Restricted Editor juga melihat Runs (proses miliknya sendiri)', async () => {
+        assert.ok(await visible('.sb-nav .nav-item[data-nav="runs"]'));
+        await page.click('.nav-item[data-nav="runs"]');
+        await page.waitForSelector('.rn-sec');
+        page.off('dialog', acceptDialogs);
+        await page.unroute(runsRouteMatcher);
     });
 
     await test('tidak ada error JavaScript selama seluruh alur', async () => { assert.deepStrictEqual(errors, []); });

@@ -115,6 +115,7 @@
             return '<span class="qpill ' + s + '" title="' + P.esc(it.label) + '">' + P.esc(it.short) + icon + '</span>';
         }).join('') + '</div>';
     }
+    R.pillsHtml = pillsHtml; // dipakai halaman Runs (runs.js)
     function tallyHtml(st) {
         const req = st.jenisRequested || [];
         if (!req.length) return '';
@@ -151,9 +152,10 @@
         total: 'All automation windows are in use (Parallel sessions limit in Settings). It starts as soon as one is free.',
         busy: 'All Coretax windows of this PIC are in use (Parallel sessions limit in Settings). It starts as soon as one is free.'
     };
+    const VIEW_IN_RUNS = '<button type="button" class="lnk" data-go-runs>View in Runs</button>';
     const runHead = (tag, cls, label, sub) => '<div class="run-head"><span class="tag lg ' + cls + '">' + tag + '</span><h2>' + P.esc(label || 'Process') + '</h2>' + (sub ? '<div class="hint">' + sub + '</div>' : '') + '</div>';
     function queuedHtml(st) {
-        return '<div class="run-view">' + runHead('Queued · Position ' + (st.position || 1), 'manual', st.label, '')
+        return '<div class="run-view">' + runHead('Queued · Position ' + (st.position || 1), 'manual', st.label, VIEW_IN_RUNS)
             + '<div class="banner info"><span class="ico">' + P.icon('loader', 18) + '</span><div class="body"><b>Waiting for a Coretax window</b><span>' + P.esc(WAIT_TEXT[st.waitReason] || WAIT_TEXT.busy) + ' Nothing has been done in Coretax yet.</span></div></div></div>'
             + '<div class="abar run-abar" id="abar"><div class="abar-sum"><div class="abar-line"><b>Queued</b><span class="abar-dot"> · </span>Position ' + (st.position || 1) + '</div><div class="abar-sub">Other entities can still be started meanwhile.</div></div>'
             + '<button type="button" class="btn btn-ghost" data-run-hide>' + P.icon('plus', 15) + 'Start another command</button>'
@@ -186,13 +188,14 @@
         const pauseBtn = c.pause || st.paused
             ? '<button type="button" class="btn ' + (st.paused ? 'btn-primary' : '') + '" data-run="pause"' + (st.pauseRequested ? ' title="Click to cancel the pause"' : '') + '>' + P.icon(st.paused ? 'play' : 'pause', 15) + (st.pauseRequested ? 'Pausing…' : st.paused ? 'Resume' : 'Pause') + '</button>' : '';
         const stopBtn = c.stop === false ? '' : '<button type="button" class="btn btn-danger" data-run="stop"' + (st.stopRequested ? ' disabled' : '') + '>' + P.icon('stop', 14) + (st.stopRequested ? 'Stopping…' : 'Stop this run') + '</button>';
-        return '<div class="run-view">' + runHead(tag[0], tag[1], st.label, '') + box + progress + tallyHtml(st) + facts + '</div>'
+        return '<div class="run-view">' + runHead(tag[0], tag[1], st.label, VIEW_IN_RUNS) + box + progress + tallyHtml(st) + facts + '</div>'
             + '<div class="abar run-abar" id="abar"><div class="abar-sum"><div class="abar-line">' + (prog ? '<b>' + prog.finished + ' of ' + prog.total + '</b><span class="abar-dot"> · </span>' : '') + P.esc(cur ? cur.label : (st.label || 'Running…')) + '</div><div class="abar-sub">Stop and Pause take effect after the current step. Other sessions keep running.</div></div>'
             + '<button type="button" class="btn btn-ghost" data-run-hide>' + P.icon('plus', 15) + 'Start another command</button>'
             + (pauseBtn ? '<span class="ctl-grid">' + pauseBtn + '</span>' : '') + stopBtn + '</div>';
     };
     R.bindView = function (root) {
         root.addEventListener('click', (e) => {
+            if (e.target.closest('[data-go-runs]')) { P.shell.go('runs'); return; }
             if (e.target.closest('[data-run-hide]')) { R.hidden = P.state.run && P.state.run.id; P.emit('run', P.state.run); return; }
             const b = e.target.closest('[data-run]');
             if (b) { const a = b.dataset.run; if (a === 'pause') R.control.pauseResume(); else R.control[a](); return; }
