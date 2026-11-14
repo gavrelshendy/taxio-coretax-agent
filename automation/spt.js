@@ -731,6 +731,7 @@ async function runSptDownload(opts) {
     const a1P = a1Book ? require('../lib/a1-paths').a1Paths({ entity, year: opts.a1Year, root: a1SaveRoot(opts.saveRoot, require('../lib/entity-folder').folderCode(entity)), outDir: opts.a1OutDir || undefined }) : null;
     const saveRoot = a1Book ? a1P.root : (opts.saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent'));
     const a1Dir = a1Book ? a1P.outDir : null;
+    if (a1Book) runcontrol.setOutput(a1Dir); // folder hasil = folder rekap A1 (PDF per masa di dalamnya / di folder lokal)
     if (a1Book) { a1Book.cacheDir = a1P.cacheDir; log('Mode A1 - rekap disimpan ke ' + a1Dir + (a1P.taxServer ? ' (folder Tax Server).' : '.')); }
     // Hasil sebelumnya: folder A1 standar, atau folder / Excel Mode A1 lama yang dipilih (opts.a1Source).
     if (a1Book && !opts.a1Fresh) {
@@ -877,6 +878,7 @@ async function runSptDownload(opts) {
         try {
             // Mode A1 dengan folder Tax Server: PDF SPT per masa ke subfolder SPT di folder A1 preparation (nama file memuat masanya).
             const finalDir = a1Book && a1P.taxServer ? a1P.pdfDir : path.join(saveRoot, require('../lib/entity-folder').folderCode(entity), 'SPT', mmYY);
+            runcontrol.setOutput(finalDir); // folder hasil (PDF SPT per masa; bersaudara -> digabung ke induk ".../SPT")
             if(a1Book)fs.mkdirSync(finalDir,{recursive:true});
             const saveDir = a1Book ? fs.mkdtempSync(path.join(os.tmpdir(),'coretax-a1-')) : finalDir;
             for (let sessionRetries = 0; ; sessionRetries++) {

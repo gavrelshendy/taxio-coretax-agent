@@ -386,6 +386,7 @@ function saveBillingPdf(entity, mmYY, buffer, saveRoot, compFolder) {
     const root = saveRoot || path.join(os.homedir(), 'Downloads', 'CoretaxAgent');
     const saveDir = path.join(root, require('../lib/entity-folder').folderCode(entity), 'PPh25');
     fs.mkdirSync(saveDir, { recursive: true });
+    runcontrol.setOutput(saveDir); // folder hasil proses ini (halaman Runs)
     const filePath = path.join(saveDir, buildBillingFilename(require('../lib/entity-folder').folderCode(entity), mmYY));
     fs.writeFileSync(filePath, buffer);
     if (compFolder) {

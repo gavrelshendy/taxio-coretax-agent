@@ -676,6 +676,7 @@ async function writeControlFile(sourceParsed, scraped, outPath) {
     }
 
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    runcontrol.setOutput(path.dirname(outPath)); // folder hasil proses ini (halaman Runs)
     await wb.xlsx.writeFile(outPath);
     return outPath;
 }
